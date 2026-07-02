@@ -42,7 +42,14 @@
 
 ## 同步状态
 
-> 当前 pin 到的 RAGFlow commit hash：**TBD**（Task 2 完成后填入）。
+## 当前 Pin
+
+- commit: `828c5789f651d4c4ebe4645190b8b8d244144fe0`
+- 日期: 2026-07-01
+- 主题: `fix(agent/tools): GoogleScholar empty json output and ignored top_n (#16419)`
+- 仓库: https://github.com/infiniflow/ragflow
+
+> 上一版 pin：**TBD**（Task 2 完成后填入）。
 
 抄录前请：
 
