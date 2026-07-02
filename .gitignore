@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+
+# Chapter artifacts
+samples/_derived/
+**/chroma_db/
+**/cache/
+**/*.bin
+**/*.gguf
+
+# OS
+.DS_Store
+Thumbs.db
