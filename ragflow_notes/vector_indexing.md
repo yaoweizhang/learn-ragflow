@@ -3,7 +3,7 @@
 ## 来源
 - 仓库: https://github.com/infiniflow/ragflow
 - 文件: `common/doc_store/es_conn_base.py`
-- 行号: L128-L141 (create_idx) + L141-L160 续 (附 ES 文档)
+- 行号: L128-L141 (create_idx, 14 行, 附 ES 文档)
 - commit: `828c5789f651d4c4ebe4645190b8b8d244144fe0`
 - 引用日期: 2026-07-03
 - GitHub 链接: https://github.com/infiniflow/ragflow/blob/828c5789f651d4c4ebe4645190b8b8d244144fe0/common/doc_store/es_conn_base.py#L128-L141

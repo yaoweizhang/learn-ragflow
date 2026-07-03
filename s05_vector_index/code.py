@@ -4,6 +4,8 @@ s05 向量索引 — 用 Chroma 存向量 + 元数据，支持相似度检索。
 
 运行: python s05_vector_index/code.py
 需要: 跑通 s04；首次跑会建 s05_vector_index/_chroma/ 目录
+
+注意: chroma-hnswlib 0.7.6 在 Windows 上对 >100 向量会段错误。已锁 0.7.3。
 """
 import os
 import sys
