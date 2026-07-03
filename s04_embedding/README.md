@@ -28,7 +28,7 @@ python s04_embedding/code.py
 ## 真实世界的问题
 1. **模型维度不一致会爆索引**。同一向量库混用 512 维 (BGE-small-zh) 和
    1536 维 (text-embedding-3-small) 会让 Chroma / Milvus 直接报错；RAGFlow
-   在 `BuiltinEmbed.MAX_TOKENS` (`embedding_model.py:220`) 用字典显式登记
+   在 `BuiltinEmbed.MAX_TOKENS` (`embedding_model.py:222`) 用字典显式登记
    每个模型的维度上限，避免运行时发现。
 2. **中英文混排选错模型**。BGE 系列按语言分 (`bge-small-zh` 中文、
    `bge-small-en` 英文)，混排文档不分语种直接 embed 会让中英向量在同一

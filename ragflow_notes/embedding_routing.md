@@ -11,7 +11,7 @@ RAGFlow 把每个 Embedding 提供商(OpenAI、Tongyi、BaiduYiyan、Voyage、Si
 写成继承 `Base` 的类、用 `_FACTORY_NAME` 类变量挂"对外名"，由 `__init__.py` 在 import 时自动
 扫一遍、塞进 `EmbeddingModel` 字典；外部按字符串名查表拿到对应类，零条件分支。
 
-## 5-10 行原文 (dispatch loop, `rag/llm/__init__.py:181-192`)
+## 5-10 行原文 (dispatch loop, `rag/llm/__init__.py:169-183`)
 
 ```python
     base_class = None
@@ -31,7 +31,7 @@ RAGFlow 把每个 Embedding 提供商(OpenAI、Tongyi、BaiduYiyan、Voyage、Si
                         mapping_dict[obj._FACTORY_NAME] = obj
 ```
 
-## 5-10 行原文 (示例类, `rag/llm/embedding_model.py:256-265`)
+## 5-10 行原文 (示例类, `rag/llm/embedding_model.py:256-263`)
 
 ```python
 class OpenAIEmbed(Base):
@@ -48,7 +48,7 @@ class OpenAIEmbed(Base):
 
 - **声明式注册，不要 `if/elif` 链**。新增一个提供商只需要"写一个类 + 给它
   `_FACTORY_NAME = "Xxx"`"，import 时 `inspect.getmembers` 自动把类塞进
-  `EmbeddingModel` 字典(行 181-192)。我们 s04 的 `embed()` 字典分发
+  `EmbeddingModel` 字典(行 169-183)。我们 s04 的 `embed()` 字典分发
   (`{"local": ..., "openai": ..., "ollama": ...}`) 是同样思路的最小版；RAGFlow
   把这种模式扩展到 30+ 家提供商。
 - **`_FACTORY_NAME` 可为 list 一对多**。同一 SDK 适配多家(如 `Astraflow` /
