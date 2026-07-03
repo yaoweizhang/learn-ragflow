@@ -45,13 +45,15 @@ python s09_agent_tools/code.py
 实测（MiniMax-M3 over minimaxi.com）：
 
 ```
-A: R3630 G5 配备 32 个 DIMM 内存插槽 [1]。
+Q: R3630 G5 的内存插槽数量
+A: R3630 G5 服务器配备 32 个 DIMM 插槽（内存插槽），支持双路 Hygon 2 号 CPU。
 ```
 
 跳过检索的对照（"1+1等于几"）：
 
 ```
-A: 1+1等于2
+Q: 1+1等于几
+A: 1+1等于2。
 ```
 
 模型**一轮直接 finish**，没碰 `_retrieve`——这是"工具选择权还给 LLM"
