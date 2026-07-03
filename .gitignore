@@ -9,6 +9,7 @@ venv/
 # Chapter artifacts
 samples/_derived/
 **/chroma_db/
+**/_chroma/
 **/cache/
 **/*.bin
 **/*.gguf
