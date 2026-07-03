@@ -33,15 +33,17 @@ python s07_rerank/code.py
 预期（实测，top_k=3 over 10 candidates from s06）：
 
 ```
-[server_whitepaper.pdf#24] rerank=0.974 vec=0.976 | 图12 内存标识 ...
-[server_whitepaper.pdf#2]  rerank=0.673 vec=0.905 | 2 内存 ...
-[server_whitepaper.pdf#24] rerank=0.092 vec=0.869 | 4.2 内存 ...
+[server_whitepaper.pdf#2]   rerank=0.954 vec=0.905 | 2 内存 ...
+[disclosure.docx#None]      rerank=0.913 vec=0.575 | 7. 存货
+[server_whitepaper.pdf#24] rerank=0.644 vec=0.976 | 图12 内存标识 ...
 ```
 
-注意 rerank 分数和原 vec 分数**不同步**——cross-encoder 觉得
-"4.2 内存"和"内存"查询相关度只有 0.092（虽然向量相似度 0.869）；
-这就是 cross-encoder 比 bi-encoder 准的地方：它能看到具体词而不是
-被一个向量平均值糊弄。
+注意 rerank 分数和原 vec 分数**不同步**——s06 把 vec=#1 的混合表
+chunk（`#24 图12 内存标识`，vec=0.976）排到第一，但 cross-encoder
+觉得它只有 0.644（因为正文是配置表，`内存`只是表里一行），而纯
+"2 内存"章节虽然 vec 只有 0.905，rerank 却给到 0.954。这就是
+cross-encoder 比 bi-encoder 准的地方：它能看到具体词而不是被一
+个向量平均值糊弄。
 
 ## 真实世界的问题
 
@@ -53,7 +55,7 @@ python s07_rerank/code.py
    中文任务用 `bge-reranker-v2-m3` 或 `bge-reranker-large` 更稳。
    这次默认 base 是因为模型小、下载快；换中文重排序模型只需改
    `_reranker()` 里那行字符串。
-3. **LLM rerank 太贵**——Canoical 还能再叠一层：拿 rerank 后的 top-N
+3. **LLM rerank 太贵**——还能再叠一层：拿 rerank 后的 top-N
    让 GPT-4 / Claude 做"哪个最相关"判断。RAGFlow 把这条线
    抽象成 `RerankModel.Base` 的多 provider（Cohere / Voyage / Qwen），
    准但每千次调用都要花 token 钱。本次 MVP 不接——教学仓库只要
@@ -73,8 +75,11 @@ rerank 分。`RerankModel.Base.similarity` 把十几个云 provider
 ## 思考题
 
 - **如果召回了 100 个、rerank 要跑多少对？**
-  答：100 × 1 = **100 对**（cross-encoder 不是双塔那样对每个 chunk
-  单独算一次，而是 `(query, chunk)` 一对一对地 forward）。
+  答：**100 对** (1 query × 100 candidates)。Cross-encoder 的
+  query+chunk 是 1 对 1，不是 1 对 N。100 个 chunk 就是 100 对，
+  O(n) 不是 O(n²)。注意原 plan/brief 这里写的是 10000 对，那是
+  因为把 BM25 + 向量那种双塔检索的笛卡尔积混淆进来了——cross-encoder
+  没有 N×N 那回事。
   100 对 × ~3ms/对 ≈ 300ms-1s；如果召回 1000 个直接 3-10s，
   线上不可接受。所以**召回量要压到 cross-encoder 能吃的范围**
   （一般 50-100），再多就让粗召回用更便宜的近似（量化向量、IVF 索引）

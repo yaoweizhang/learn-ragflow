@@ -2,11 +2,11 @@
 
 ## 如果召回了 100 个、rerank 要跑多少对？
 
-**100 对**。cross-encoder 不是像双塔那样对每个 chunk 单独做一次 embedding
-（前向一次），而是**把 `(query, chunk_text)` 拼成一个序列**送进 BERT，
-让 query 的 token 和 chunk 的 token 在每一层 Transformer 里做完整的
-cross-attention。所以每多一个候选就多一次 BERT forward，N 个候选就是
-N 对。
+**100 对** (1 query × 100 candidates)。Cross-encoder 的 query+chunk
+是 1 对 1，不是 1 对 N。100 个 chunk 就是 100 对，O(n) 不是 O(n²)。
+
+注意原 plan/brief 这里写的是 10000 对，那是因为把 BM25 + 向量那种
+双塔检索的笛卡尔积混淆进来了——cross-encoder 没有 N×N 那回事。
 
 时间粗算：单对 cross-encoder forward 在 CPU 上 ~3-5ms，GPU 上 ~1-2ms。
 - top-10：~30-100ms，可以接受；

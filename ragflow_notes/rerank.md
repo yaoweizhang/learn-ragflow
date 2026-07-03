@@ -86,7 +86,7 @@ LLM 风格的端点，本地类（BGE）才是真正的 cross-encoder。
   公式里——这是它"既能本地又能云端"的核心技巧。
 
 - **我们这版为什么不接？**
-  本 MVP 只接 BGE 本地 cross-anker，原因有三：(1) **教学聚焦**——
+  本 MVP 只接 BGE 本地 cross-encoder，原因有三：(1) **教学聚焦**——
   重排序的"为什么"是 cross-encoder 比 bi-encoder 准这一个点，加多家
   cloud provider 会冲淡主题；(2) **离线可复现**——BAAI/bge-reranker-base
   ~1GB 一次下载完就一直在本地，**不需要 API key、不需要网络**，CI /
