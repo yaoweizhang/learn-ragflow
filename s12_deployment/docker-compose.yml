@@ -1,0 +1,12 @@
+services:
+  rag:
+    build:
+      context: ..
+      dockerfile: s12_deployment/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../.env
+    volumes:
+      - ../samples:/app/samples:ro
+      - ../s05_vector_index/_chroma:/app/s05_vector_index/_chroma
