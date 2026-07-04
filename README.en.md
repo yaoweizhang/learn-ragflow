@@ -1,6 +1,6 @@
 # Learn RAGFlow — A 12-Chapter RAG Tutorial, Zero to Deployment
 
-> **This is a Chinese-first tutorial.** Each chapter ships a 30–80 line self-written MVP in Chinese, paired with a guided reading of [RAGFlow](https://github.com/infiniflow/ragflow)'s industrial-grade source. English summaries per chapter will be added on request — the canonical text is in `README.md`. Below is the chapter index with one-line English titles so non-Chinese readers can follow the progression.
+> **This is a Chinese-first tutorial.** Each chapter ships a 30–80 line self-written MVP in Chinese, paired with a guided reading of [RAGFlow](https://github.com/infiniflow/ragflow)'s industrial-grade source. The canonical text is in `README.md`; this file is an English summary so non-Chinese readers can follow the progression.
 
 This repository is a hands-on, engineering-focused RAG (Retrieval-Augmented Generation) tutorial. Every chapter contains:
 
@@ -22,22 +22,24 @@ python s01_what_is_rag/code.py
 
 Requires Python 3.10+ and at least 8 GB RAM (16 GB recommended for BGE embeddings). GPU optional.
 
+The LLM endpoint defaults to OpenAI-compatible protocol (`LLM_BASE_URL` + `LLM_MODEL`); point it at any OpenAI-compatible service (OpenAI, DeepSeek, Zhipu, MiniMax, etc.).
+
 ## Chapter index
 
 1. [s01](./s01_what_is_rag/) — **What is RAG?** Naive RAG vs. long-context LLMs; minimal end-to-end demo.
-2. [s02](./s02_document_loading/) — **Document loading.** PDF / DOCX / OCR parsing; metadata preservation.
+2. [s02](./s02_doc_loading/) — **Document loading.** PDF / DOCX parsing; metadata preservation.
 3. [s03](./s03_chunking/) — **Text chunking.** Fixed-size vs. structure-aware splitting.
-4. [s04](./s04_embedding/) — **Embedding.** BGE / M3E model selection; batching and normalization.
-5. [s05](./s05_vector_index/) — **Vector index.** Chroma / in-memory HNSW; distance metrics.
-6. [s06](./s06_hybrid_retrieval/) — **Hybrid retrieval.** BM25 + dense vectors; reciprocal rank fusion.
-7. [s07](./s07_reranking/) — **Reranking.** Cross-encoder precision; Top-K trade-offs.
-8. [s08](./s08_prompt_and_generation/) — **Prompt & generation.** Citation tracing; hallucination control.
-9. [s09](./s09_agent_and_tools/) — **Agent & tools.** Function calling; multi-turn retrieval.
-10. [s10](./s10_graphrag/) — **GraphRAG.** Entity-relation extraction; graph merging.
-11. [s11](./s11_multimodal/) — **Multimodal.** Image-text interleaving; table understanding.
-12. [s12](./s12_deployment/) — **Deployment.** FastAPI + Docker; offline evaluation.
+4. [s04](./s04_embedding/) — **Embedding.** BGE local; OpenAI / Ollama switches.
+5. [s05](./s05_vector_index/) — **Vector index.** Chroma persistent; metadata filtering.
+6. [s06](./s06_retrieval/) — **Hybrid retrieval.** BM25 + dense vectors; weighted fusion.
+7. [s07](./s07_rerank/) — **Reranking.** BGE cross-encoder precision.
+8. [s08](./s08_prompt_generate/) — **Prompt & generation.** Citation tracing; hallucination control.
+9. [s09](./s09_agent_tools/) — **Agent & tools.** ReAct loop; retrieve / finish tools.
+10. [s10](./s10_graphrag/) — **GraphRAG.** LLM-based entity-relation extraction; 1-hop query.
+11. [s11](./s11_multimodal/) — **Multimodal.** pdfplumber table extraction; pytesseract OCR.
+12. [s12](./s12_deployment/) — **Deployment.** FastAPI + docker compose.
 
-> Chapter folders are populated sequentially by Tasks 1–12.
+All 12 chapters are in place.
 
 ## Project structure
 
@@ -45,6 +47,7 @@ Requires Python 3.10+ and at least 8 GB RAM (16 GB recommended for BGE embedding
 learn-ragflow/
 ├── README.md                    # Chinese canonical readme
 ├── README.en.md                 # This file (English summary)
+├── LICENSE                      # MIT
 ├── .env.example                 # Env template (LLM / Embedding / Reranker)
 ├── requirements.txt             # Aggregated deps across all chapters
 ├── samples/
@@ -52,18 +55,41 @@ learn-ragflow/
 │   ├── server_whitepaper.pdf
 │   └── disclosure.docx
 ├── ragflow_notes/               # RAGFlow source excerpts, cited per chapter
-│   └── README.md
-├── s01_what_is_rag/             # Placeholders — filled by Tasks 1–12
+│   ├── README.md
+│   ├── deepdoc_pdf_parsing.md
+│   ├── deepdoc_chunking.md
+│   ├── embedding_routing.md
+│   ├── vector_indexing.md
+│   ├── hybrid_retrieval.md
+│   ├── rerank.md
+│   ├── prompt_templates.md
+│   ├── agent_tools.md
+│   ├── graph_extraction.md
+│   ├── multimodal_parsing.md
+│   └── deployment.md
+├── s01_what_is_rag/             # Chapter 1
+├── s02_doc_loading/             # Chapter 2
 ├── ...
-└── s12_deployment/
+├── s12_deployment/              # Chapter 12
+└── docs/                        # Design docs (not part of the tutorial runtime)
 ```
+
+## Where to go next
+
+After working through all 12 chapters, the natural next steps are:
+
+- **Swap embedding**: change `EMBED_PROVIDER` in `.env` from `local` to `openai` or `ollama` and observe retrieval quality changes.
+- **Swap chunker**: s03's `chunk_by_paragraph` is paragraph-based; try sentence + sliding-window or Markdown-heading-based splitting.
+- **Tune retrieval weights**: s06's `alpha` controls vector vs. BM25 weighting; build a 5-10 question eval set to pick the best value.
+- **Go to production**: s12 ships FastAPI + docker compose. Add Prometheus monitoring, Sentry error tracking, and an independent model server (vLLM / TGI) for scale.
+- **Read RAGFlow source**: each chapter's `ragflow_notes/<topic>.md` excerpted 5-10 key lines from RAGFlow; start from s01's `rag/nlp/search.py` and read through s12's `docker/docker-compose.yml` to see how an industrial RAG system grows out of a 30-line MVP.
 
 ## Acknowledgements
 
-- [**RAGFlow**](https://github.com/infiniflow/ragflow) — primary industrial reference; each chapter's section 5 cites excerpts in `ragflow_notes/`.
+- [**RAGFlow**](https://github.com/infiniflow/ragflow) — primary industrial reference; each chapter's section 5 cites excerpts in `ragflow_notes/`. RAGFlow excerpts are pinned to commit `828c5789f` (2026-07-01); RAGFlow evolves, so excerpts may go stale.
 - [**learn-claude-code**](https://github.com/shareAI-lab/learn-claude-code) — inspiration for the "minimal runnable MVP per chapter" format.
 - [**BGE models**](https://github.com/FlagOpen/FlagEmbedding) (BAAI) — default embedding and reranker.
 
 ## License
 
-TBD (to be decided by the user; MIT or CC-BY-SA 4.0 suggested).
+MIT — see [LICENSE](./LICENSE).
