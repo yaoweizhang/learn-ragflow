@@ -49,7 +49,7 @@
 - 主题: `fix(agent/tools): GoogleScholar empty json output and ignored top_n (#16419)`
 - 仓库: https://github.com/infiniflow/ragflow
 
-> 上一版 pin：**TBD**（Task 2 完成后填入）。
+> 上一版 pin：暂无（首版 pin 于此）。
 
 抄录前请：
 
@@ -85,4 +85,4 @@ ragflow_notes/
 ├── ...
 ```
 
-具体子目录由各章节 Task 创建。Task 0 仅创建本 README。
+具体子目录由各章节 Task 创建。Task 0 创建本 README + 占位结构；s01-s12 期间按需填充。
