@@ -1,5 +1,11 @@
 # s07 重排序 — BGE-reranker 精排
 
+## Units
+
+| Unit | 标题 | 入口 |
+| --- | --- | --- |
+| 01 | Cross-encoder 精排 (BGE-reranker 重打分, BEFORE/AFTER 对比) | [`units/01_cross_encoder_rerank/code.py`](units/01_cross_encoder_rerank/code.py) |
+
 ## 问题
 
 召回了 10 个 chunk，前 3 个可能不是最好的。s06 的混合召回是**双塔**
