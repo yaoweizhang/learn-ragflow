@@ -1,3 +1,21 @@
+# s02 文档加载 — 章节导航
+
+| Unit | 主题 | 它解决什么 | 对照 RAGFlow |
+|---|---|---|---|
+| [01_basic_load](./units/01_basic_load/README.md) | 最小可跑加载 (PDF + DOCX) | "统一 schema 是什么样" | `deepdoc/parser/{pdf,docx}_parser.py` |
+| [02_failure_modes](./units/02_failure_modes/README.md) | 真实样本上的失败模式 | "为什么 unit 01 在 prod 不够" | `deepdoc/parser/utils.py` VisionParser |
+
+跑：
+
+```bash
+python s02_doc_loading/units/01_basic_load/code.py
+python s02_doc_loading/units/02_failure_modes/code.py
+# 旧路径仍可用:
+python s02_doc_loading/code.py
+```
+
+---
+
 # s02 — 文档加载 (PDF + DOCX)
 
 ## 问题
