@@ -1,5 +1,12 @@
 # s09 Agent 与工具 — 让模型自己决定要不要查文档
 
+## Units
+
+| Unit | 标题 | 入口 |
+| --- | --- | --- |
+| 01 | 工具调用（单步）：把 retrieve / finish 写进 prompt，让 LLM 自己挑工具 | [`units/01_tool_call/code.py`](units/01_tool_call/code.py) |
+| 02 | ReAct 循环：Thought → Action → Observation 多步循环 + JSON 失败反馈 + max_steps 兜底（章节核心） | [`units/02_react_loop/code.py`](units/02_react_loop/code.py) |
+
 ## 问题
 
 s08 把"先检索 → 塞 context → 调 LLM → 拿答案"做成了一条硬管线。
