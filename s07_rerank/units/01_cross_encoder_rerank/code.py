@@ -139,7 +139,10 @@ def main() -> None:
     else:
         col = chromadb.PersistentClient(path=str(DB_DIR)).get_collection(COLLECTION_NAME)
 
-    query = input("问: ").strip() or "内存"
+    try:
+        query = input("问: ").strip() or "内存"
+    except EOFError:
+        query = "内存"
     print(f"query={query!r}, alpha=0.5 (BM25 + dense 等权融合)")
 
     # 拉 s05 的 dense 向量到内存,inline 一份 dense_score_fn(不绑死 chroma)。
