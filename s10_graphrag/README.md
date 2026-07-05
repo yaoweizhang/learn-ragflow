@@ -1,5 +1,12 @@
 # s10 GraphRAG — 关系型问题的最小图查询
 
+## Units
+
+| Unit | 标题 | 入口 |
+| --- | --- | --- |
+| 01 | LLM 抽实体关系三元组 + 持久化 JSONL（自带容错解析：`<think>` strip / ` ```json ` fence strip / dict·list fallback） | [`units/01_extract/code.py`](units/01_extract/code.py) |
+| 02 | 1 跳图查询（纯内存，O(1) `dict.get`，无 LLM；章节核心） | [`units/02_query/code.py`](units/02_query/code.py) |
+
 ## 问题
 
 s06–s09 都把"找相关段落"当终点——但有一类问题，**段落相关性不够**：

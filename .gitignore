@@ -13,6 +13,7 @@ samples/_derived/
 **/cache/
 **/*.bin
 **/*.gguf
+**/_graph.jsonl
 
 # OS
 .DS_Store
