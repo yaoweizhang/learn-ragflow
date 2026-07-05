@@ -21,7 +21,22 @@ These apply to every task below. Carried verbatim from the brainstorm session:
    - 它做对了什么 / 它做错了什么 (2 bullets each, the "失败" sets up the next unit or chapter)
    - 对照 ragflow 怎么做的 (link to `ragflow_notes/<topic>.md`, cite 1-2 lines of source)
    - 思考题 (1 question with hints, answer file untouched)
-5. **Chapter-root `code.py` becomes a聚合 entry:** imports the unit's main function and re-runs it. Old `python sXX/code.py` invocation still works. **Aggregate file must not duplicate logic** — if unit was 1 unit, the chapter-root code.py is just `from units.01_xxx.code import main; if __name__ == "__main__": main()`.
+5. **Chapter-root `code.py` becomes a聚合 entry** that delegates execution to the unit's `code.py` via `importlib.util.spec_from_file_location` (Python identifiers cannot start with a digit, so `from units.01_basic_load.code import main` is a `SyntaxError`; use the importlib pattern below). Old `python sXX/code.py` invocation still works. **Aggregate file must not duplicate logic.** Standard聚合 template:
+
+```python
+#!/usr/bin/env python3
+"""<CHAPTER> — 聚合入口。实际逻辑在 units/<UNIT>/code.py。"""
+import importlib.util, sys
+from pathlib import Path
+_UNIT = Path(__file__).resolve().parent / "units" / "<NN>_<name>" / "code.py"
+_spec = importlib.util.spec_from_file_location("<chapter>_unit<NN>", _UNIT)
+_mod = importlib.util.module_from_spec(_spec); sys.modules[_spec.name] = _mod
+_spec.loader.exec_module(_mod); main = _mod.main
+if __name__ == "__main__":
+    main()
+```
+
+When unit 02 of a chapter needs to import from unit 01, it uses the same importlib pattern (paths are different: `parents[1] / "01_<name>" / "code.py"`).
 6. **Chapter-root `README.md` gets a new top section** listing the units (table) + the chapter's `ragflow_notes/` paths. Old sections preserved.
 7. **Naming convention for unit directory:** `01_<verb_or_topic_lowercase_snake>` — examples from s01: `01_naive_keyword`, `02_vector_basics`, `03_augmented_llm`; planned for s02: `01_basic_load`, `02_failure_modes`.
 8. **Decomposition preference: by depth, not by format.** Don't split "PDF vs DOCX"; split "minimal vs failure modes".
@@ -372,18 +387,17 @@ python s02_doc_loading/units/02_failure_modes/code.py
 
 - [ ] **Step 5: Rewrite chapter-root `code.py` as聚合 entry**
 
-Write `s02_doc_loading/code.py`:
+Write `s02_doc_loading/code.py` (use the importlib pattern from Global Constraint 5; plain `from units.01_xxx.code import main` is a `SyntaxError` because Python identifiers cannot start with a digit):
 
 ```python
 #!/usr/bin/env python3
-"""
-s02 文档加载 — 聚合入口。实际逻辑在 units/01_basic_load/code.py。
-本文件保留旧 `python s02_doc_loading/code.py` 启动方式。
-
-运行: python s02_doc_loading/code.py
-"""
-from units.01_basic_load.code import main
-
+"""s02 文档加载 — 聚合入口。实际逻辑在 units/01_basic_load/code.py。"""
+import importlib.util, sys
+from pathlib import Path
+_UNIT = Path(__file__).resolve().parent / "units" / "01_basic_load" / "code.py"
+_spec = importlib.util.spec_from_file_location("s02_unit01_basic_load", _UNIT)
+_mod = importlib.util.module_from_spec(_spec); sys.modules[_spec.name] = _mod
+_spec.loader.exec_module(_mod); main = _mod.main
 if __name__ == "__main__":
     main()
 ```
