@@ -14,13 +14,6 @@ from pathlib import Path
 WORKDIR = Path(__file__).resolve().parents[3]
 
 
-def ocr_image(image_path: Path, lang: str = "chi_sim+eng") -> str:
-    """Pillow 打开图片，pytesseract 调系统 tesseract 二进制做 OCR。"""
-    import pytesseract
-    from PIL import Image
-    return pytesseract.image_to_string(Image.open(image_path), lang=lang)
-
-
 def main() -> None:
     # 默认无图：演示 tesseract 不可用 / 输入缺失时的优雅跳过路径
     img_path = input("可选: 输入图片路径跑 OCR (回车跳过): ").strip()
@@ -28,7 +21,9 @@ def main() -> None:
         print("OCR skipped: 未提供图片路径")
         return
     try:
-        text = ocr_image(Path(img_path))
+        import pytesseract
+        from PIL import Image
+        text = pytesseract.image_to_string(Image.open(Path(img_path)), lang="chi_sim+eng")
     except ImportError:
         print("OCR skipped: pytesseract 未安装，请 `pip install pytesseract Pillow`")
         return
