@@ -33,13 +33,13 @@ python s07_rerank/code.py
 预期（实测，top_k=3 over 10 candidates from s06）：
 
 ```
-[server_whitepaper.pdf#2]   rerank=0.954 vec=0.905 | 2 内存 ...
-[disclosure.docx#None]      rerank=0.913 vec=0.575 | 7. 存货
-[server_whitepaper.pdf#24] rerank=0.644 vec=0.976 | 图12 内存标识 ...
+[server_whitepaper.pdf#1]   rerank=0.954 vec=0.905 | ... 内存、10 个 PCIe 4.0 扩展槽位 ...
+[disclosure.docx#None]      rerank=0.913 vec=0.575 | 7. 存货 ...
+[server_whitepaper.pdf#2]   rerank=0.644 vec=0.976 | 内存 32 × DDR4 3200 ECC RDIMM ...
 ```
 
 注意 rerank 分数和原 vec 分数**不同步**——s06 把 vec=#1 的混合表
-chunk（`#24 图12 内存标识`，vec=0.976）排到第一，但 cross-encoder
+chunk（`#2 内存 32 × DDR4 3200 ECC RDIMM`，vec=0.976）排到第一，但 cross-encoder
 觉得它只有 0.644（因为正文是配置表，`内存`只是表里一行），而纯
 "2 内存"章节虽然 vec 只有 0.905，rerank 却给到 0.954。这就是
 cross-encoder 比 bi-encoder 准的地方：它能看到具体词而不是被一

@@ -74,3 +74,108 @@ def rerank_with_knn(self, sres, query, knn_scores, tkweight=0.3, vtweight=0.7, .
   这种"DB fusion + app rerank + rank_fea"的级联，比一个全局 alpha
   灵活得多，但代价是工程复杂度——本次 MVP 的 `alpha=0.5` 就是把这三层
   压扁成一个旋钮的简化版。
+
+## 第三层信号：PageRank + tag boost `_rank_feature_scores`
+
+`Dealer.rerank_with_knn` 的最终公式是 `sim = tkweight*tksim + vtweight*vtsim + rank_fea`，
+rank_fea 来自 [`_rank_feature_scores`](https://github.com/infiniflow/ragflow/blob/828c5789/rag/nlp/search.py#L330-L361)：
+
+```python
+def _rank_feature_scores(self, query_rfea, search_res):
+    rank_fea = []
+    pageranks = []
+    for chunk_id in search_res.ids:
+        pageranks.append(search_res.field[chunk_id].get(PAGERANK_FLD, 0))
+    pageranks = np.array(pageranks, dtype=float)
+
+    if not query_rfea:
+        return np.array([0 for _ in range(len(search_res.ids))]) + pageranks
+
+    q_denor = np.sqrt(np.sum([s * s for t, s in query_rfea.items() if t != PAGERANK_FLD]))
+    if q_denor == 0:
+        return np.array([0 for _ in range(len(search_res.ids))]) + pageranks
+
+    for i in search_res.ids:
+        nor, denor = 0, 0
+        if not search_res.field[i].get(TAG_FLD):
+            rank_fea.append(0)
+            continue
+        tag_feas = parse_tag_features(search_res.field[i].get(TAG_FLD), allow_json_string=True,
+                                      allow_python_literal=True)
+        if not tag_feas:
+            rank_fea.append(0)
+            continue
+        for t, sc in tag_feas.items():
+            if t in query_rfea:
+                nor += query_rfea[t] * sc
+            denor += sc * sc
+        if denor == 0:
+            rank_fea.append(0)
+        else:
+            rank_fea.append(nor / np.sqrt(denor) / q_denor)
+
+    return np.array(rank_fea) * 10.0 + pageranks
+```
+
+**两层叠加**：
+- **PageRank（`PAGERANK_FLD`）**：建索引时图遍历出来的文档权威度，每条 chunk 自动继承——
+  不用手工设定。权威文档的 chunk 天然排前。
+- **Tag cosine（`TAG_FLD`）**：用户给 chunk 打标签（向量 / 权重字典），`TAG_FLD` 存；
+  查询时如果 query 也带 `query_rfea`（同款 tag 字典），按 cosine 相似度算 boost；
+  没有 tag 的 chunk 直接退化成纯 PageRank 加权。
+
+`rank_feature=rank_fea` 直接加进 `sim`（见上面 `rerank_with_knn` 第 46 行）。
+MVP 完全没这一层——所有 chunk 一视同仁，权威文档没被抬高。
+
+## 分页与候选窗口对齐 `_rerank_window`
+
+[search.py:525-547](https://github.com/infiniflow/ragflow/blob/828c5789/rag/nlp/search.py#L525-L547)
+解决"分页和块拉取不对齐"这个真实的生产 bug：
+
+```python
+def _rerank_window(page_size: int, top: int = 0) -> int:
+    """Candidate-window size shared by retrieval's block fetch and slice.
+
+    retrieval reuses this value BOTH as the backend block size and as
+    the modulus for extracting a single page from a (re)ranked block::
+
+        req["page"] = global_offset // window   # which block to fetch
+        begin       = global_offset %  window   # where the page starts
+
+    For those two to agree the window MUST be an exact multiple of
+    page_size; otherwise blocks and pages drift apart and deep
+    pagination silently drops results and returns short pages.
+
+    The window targets a provider-friendly pool of ~64 candidates, bounded
+    by top when given (i.e. when an external reranker is active), and is
+    always rounded UP to a whole number of pages to preserve the invariant.
+    """
+    if page_size <= 1:
+        return min(30, top) if top > 0 else 30
+    window = math.ceil(64 / page_size) * page_size
+    ...
+```
+
+调用点（[search.py:576-590](https://github.com/infiniflow/ragflow/blob/828c5789/rag/nlp/search.py#L576-L590)）：
+
+```python
+RERANK_LIMIT = self._rerank_window(page_size, top if rerank_mdl else 0)
+...
+"page": global_offset // RERANK_LIMIT + 1,
+"size": RERANK_LIMIT,
+...
+begin = global_offset % RERANK_LIMIT
+```
+
+**为什么有这个**：后端（ES / Infinity）只给"整个 block"打分；前端要"第 page_size 条"。
+如果用 `global_offset // page_size` 算 block 索引、用 `(global_offset % page_size)` 切 block 内部，
+page_size 不是 block 大小因子时，跨块的 1-page 切片会和原文位置错位——
+深分页要么漏结果要么返回短页。
+
+**RAGFlow 的做法**：拉块时**强制把窗口调大到 page_size 的整数倍**（向上取整到 ~64 候选），
+后端一次返回 `RERANK_LIMIT` 大小的 block，前端在内存里切片：
+`begin = global_offset % RERANK_LIMIT`、`end = begin + page_size`。
+一个窗口公式同时控制两个偏移量，永远对齐。
+
+MVP 是"固定 topk=10"——根本没有分页概念。生产里如果一页 5 条、第 100 页，
+没对齐就会出问题。MVP 不做分页不是因为概念难，是因为我们的 topk=10 默认就是"一屏看完"。

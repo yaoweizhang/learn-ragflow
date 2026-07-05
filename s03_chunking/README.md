@@ -22,11 +22,19 @@ python s03_chunking/code.py
 ```
 
 ## 跑起来
-输入 870 段 → 输出 901 块,首 3 个 chunk:
+输入 31 段（4 页 PDF + 27 段 DOCX）→ 输出 34 块,首 3 个 chunk:
 ```
-server_whitepaper.pdf#1#p0 | UNIS Server R3630 G5 浪潮服务器技术白皮书 ...
-server_whitepaper.pdf#2#p1 | i 目  录 1 服务器...
-server_whitepaper.pdf#2#p2 | 3 直观、易用的管理系统 ...
+server_whitepaper.pdf#1#p0 | 紫光恒越 R3630 G5 双路机架式服
+务器
+产品白皮书  ·  v1.0  ·  仅用于 RAG 教程测试
+一、产品概述
+紫光恒越 R3630 G5 是面向 ...
+server_whitepaper.pdf#1#p1 | 二、关键特性
+计算密度：单台 2U 机箱内集成两颗处理器、32 条内存 DIMM 与 10 个 PCIe 4.0 槽位 ...
+server_whitepaper.pdf#2#p2 | 三、整机规格
+组件 规格 说明
+处理器 2 × 第三代 Intel Xeon 可
+扩展处理器 ...
 ```
 所有 chunk ≤ 500 字符,无非空块。
 

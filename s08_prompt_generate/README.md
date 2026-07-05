@@ -35,9 +35,9 @@ python s08_prompt_generate/code.py
 ```
 A: R3630 G5 配备 **32 个 DIMM 内存插槽** [2]。
 引用: [
-  {'index': 1, 'source': 'server_whitepaper.pdf', 'page': 15},
-  {'index': 2, 'source': 'server_whitepaper.pdf', 'page': 4},
-  {'index': 3, 'source': 'server_whitepaper.pdf', 'page': 14}
+  {'index': 1, 'source': 'server_whitepaper.pdf', 'page': 1},
+  {'index': 2, 'source': 'server_whitepaper.pdf', 'page': 2},
+  {'index': 3, 'source': 'server_whitepaper.pdf', 'page': 4}
 ]
 ```
 

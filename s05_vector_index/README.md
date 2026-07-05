@@ -28,7 +28,7 @@ python s05_vector_index/code.py
 ## 跑起来
 首次跑会:
 1. 删旧 `_chroma/`(确保干净);
-2. 加载 2 份样本 → 901 个 chunk → 901 条 512 维向量;
+2. 加载 2 份样本 → 34 个 chunk → 34 条 512 维向量;
 3. 写入 `s05_vector_index/_chroma/chroma.sqlite3` + 一个 HNSW 索引目录;
 4. 提示 `问: ` → 输入中文问句(已加 .gitignore:`**/_chroma/`,不入库)。
 

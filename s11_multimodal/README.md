@@ -41,18 +41,17 @@ pip install pdfplumber pytesseract Pillow
 python s11_multimodal/code.py
 ```
 
-实测（`samples/server_whitepaper.pdf`，`pdfplumber` 0.11.9）：
+实测（`samples/server_whitepaper.pdf`，`pdfplumber` 0.10+）：
 
 ```
-PDF 表格数: 38
---- page 7 ---
-['', '机型', '', '', 'SFF', '', '', 'LFF', '']
---- page 10 ---
-['', '序号', '', '', '含义', '']
+PDF 表格数: 1
+--- page 2 ---
+['', '组件', '规格', '说明'], ['处理器', '2 × 第三代 Intel Xeon 可扩展处理器', '最高 40 核 / 80 线程 ...'], ...
 ```
 
-（项目笔记说 25 张，`pdfplumber.extract_tables()` 比预期更激进，把很多
-小区域也当表格；不影响下游使用——下游会按"行数 × 列数"过滤太碎的。）
+样本 PDF 只在 page 2 有 1 张 13×3 的规格表（组件 / 规格 / 说明）；
+短文本块或扫描 PDF `pdfplumber.extract_tables()` 会返回空列表，
+跟"识别失败"是不同语义——调用前判 `None` / `len() == 0` 区分这两种。
 
 OCR 部分（可选）：脚本最后会问"输入图片路径跑 OCR"，直接回车跳过；
 想跑需要先装系统 tesseract 二进制（见下方"troubleshooting"）。
