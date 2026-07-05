@@ -1,5 +1,12 @@
 # s11 多模态 — 表格抽取 (pdfplumber) + OCR (tesseract)
 
+## Units
+
+| Unit | 主题 | 文件 |
+|------|------|------|
+| 01 | 表格抽取 (pdfplumber) | [`units/01_table_extract/code.py`](units/01_table_extract/code.py) |
+| 02 | OCR (pytesseract) | [`units/02_ocr/code.py`](units/02_ocr/code.py) |
+
 ## 问题
 
 s02 的 `pypdf` 把表格拍扁成一段连续文字、丢掉了行列；扫描件 / 图片型 PDF
