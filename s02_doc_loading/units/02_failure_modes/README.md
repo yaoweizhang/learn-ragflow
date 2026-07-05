@@ -24,8 +24,8 @@ python s02_doc_loading/units/02_failure_modes/code.py
   page= 2 len=1024 | 产品型号 产品白皮书 文档版本 ...
   ...
 
-[DOCX] paragraphs(非空)=27, tables=3, 表格内总字符=1456
-  → unit 01 的 load_docx 只读 paragraphs，丢失 1456 字符（3 张表）
+[DOCX] paragraphs(非空)=27, tables=3, 表格内总字符=572
+  → unit 01 的 load_docx 只读 paragraphs，丢失 572 字符（3 张表）
 ```
 
 ## 它做对了什么
