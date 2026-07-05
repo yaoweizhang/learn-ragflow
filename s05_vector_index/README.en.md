@@ -8,7 +8,7 @@ with `metadata={"hnsw:space": "cosine"}` so HNSW ranks by cosine distance;
 `search(col, query_vec, k=5) -> list[dict]` calls `col.query(...)` and
 converts the raw cosine distance back to a similarity score with
 `score = 1 - distance`, returning a uniform `{text, source, page, score}`
-shape. End-to-end: 2 sample docs (PDF + docx) → 901 chunks → 901 512-dim
+shape. End-to-end: 2 sample docs (PDF + docx) → 34 chunks → 34 512-dim
 BGE vectors → index → interactive query (`应收账款` returns 3 disclosure
 hits with scores 0.950 / 0.926 / 0.850). RAGFlow's `vector_indexing.md`
 explains why production picks Elasticsearch or Infinity over Chroma:

@@ -47,7 +47,7 @@ Elasticsearch 的事,见 `../ragflow_notes/vector_indexing.md` 第二节
 ### 3. 元数据 schema 约束
 
 加进去的 `metadatas=[{"source": ..., "page": ...}]` 字段在 Chroma 里
-是**强类型 + 全 string** —— 我们 `code.py` 第 35 行把 `page` 转成
+是**强类型 + 全 string** —— 我们 `code.py` 第 33 行把 `page` 转成
 `str(c.get("page", ""))` 后再塞,因为 Chroma 1.5 拒绝 int+string 混
 合,0.5.x 拒绝 None(直接抛 `Cannot convert None to MetadataValue`)。
 如果忘了这步,`col.add` 会当场 segfault(在 Windows + chroma-hnswlib
