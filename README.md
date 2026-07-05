@@ -36,12 +36,14 @@ git clone <repo-url>
 cd learn-ragflow
 pip install -r requirements.txt
 cp .env.example .env       # 编辑 .env，填入 LLM_API_KEY
+# 可选：如果 huggingface.co 拉不到 BGE 模型 / 系统 libstdc++ 太老
+source env.sh
 python s01_what_is_rag/code.py
 ```
 
 环境要求：Python 3.10+，8GB+ 内存（跑 BGE embedding 推荐 16GB）。GPU 可选。
 
-LLM 端点默认配置 OpenAI 兼容协议（`LLM_BASE_URL` + `LLM_MODEL`），用户可指向任意 OpenAI 兼容服务（OpenAI / DeepSeek / 智谱 / MiniMax 等）。
+LLM 端点默认配置 OpenAI 兼容协议（`LLM_BASE_URL` + `LLM_MODEL`），用户可指向任意 OpenAI 兼容服务（OpenAI / DeepSeek / 智谱 / MiniMax 等）。`LLM_MODEL` 填你所用服务实际支持的 chat 模型名即可。
 
 ## 目录结构
 

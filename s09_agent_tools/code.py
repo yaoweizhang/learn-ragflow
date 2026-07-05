@@ -61,14 +61,29 @@ def run_agent(question: str, max_steps: int = 5) -> str:
     for _ in range(max_steps):
         text = _llm(messages)
         messages.append({"role": "assistant", "content": text})
-        m = re.search(r"Action:\s*(\w+)\s*\nActionInput:\s*(.+)", text, re.DOTALL)
+        # 兼容多种写法：ActionInput 在新行 / 与 Action 同行 / 带 markdown ```json 围栏
+        m = re.search(
+            r"Action:\s*(\w+)\b\s*ActionInput:\s*(.+)",
+            text, re.DOTALL,
+        )
         if not m:
             return text
         action, raw = m.group(1), m.group(2).strip()
+        # 剥掉 markdown 围栏（有些 LLM 喜欢把 JSON 包在 ```json ... ``` 里）
+        raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.DOTALL).strip()
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            # JSON 解析失败：把原文当 Observation 反馈回去，让模型下一轮自己修正
+            messages.append({"role": "user", "content": (
+                f"Observation: 上一次 ActionInput 不是合法 JSON，原文已回显: {raw[:200]}\n"
+                "请严格按规范输出 JSON。"
+            )})
+            continue
         if action == "finish":
-            return json.loads(raw)["answer"]
+            return payload.get("answer", text)
         if action == "retrieve":
-            q = json.loads(raw)["query"]
+            q = payload.get("query", "")
             obs = _retrieve(q)
         else:
             obs = f"Unknown action: {action}"

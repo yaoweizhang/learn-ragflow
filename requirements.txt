@@ -4,7 +4,9 @@ openpyxl>=3.1
 chromadb>=0.5
 chroma-hnswlib==0.7.3
 sentence-transformers>=3.0
-FlagEmbedding>=1.2
+# FlagEmbedding 1.4 用了 transformers 5.x 移除的 tokenizer API；锁 <5.0
+transformers>=4.50,<5.0
+FlagEmbedding>=1.2,<1.5
 openai>=1.50
 python-dotenv>=1.0
 tiktoken>=0.7
