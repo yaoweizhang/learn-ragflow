@@ -215,6 +215,36 @@ learn-ragflow/
 - 每章 30-60 分钟：跑 `code.py` + 改 `code.py` 看变化 + 读对应 `ragflow_notes/<topic>.md`。
 - 重点是**每一环的设计取舍**，适合要自研 / 选型的人。
 
+## 每章结构
+
+每章 (`sXX_topic/`) 内部统一形状：
+
+```
+sXX_topic/
+├── README.md              # 章节入口：units 导航表 + 本章对照 ragflow_notes
+├── README.en.md
+├── thinking_answers.md
+├── code.py                # 聚合入口：importlib 加载 units/NN/code.py（保留旧启动方式）
+└── units/
+    ├── 01_xxx/code.py     # unit 1（必有）
+    ├── 01_xxx/README.md   # 4 段式：这是什么/跑起来/对照 ragflow/思考题
+    └── 02_xxx/...         # unit 2（按需；≤ 2 unit/章）
+```
+
+每个 unit 独立可跑：
+
+```bash
+python sXX_topic/units/01_xxx/code.py
+```
+
+旧入口仍可用：
+
+```bash
+python sXX_topic/code.py   # 等价于跑 unit 01（importlib 委托）
+```
+
+> Python 模块标识符不能以数字开头，所以 chapter-root `code.py` 用 `importlib.util.spec_from_file_location` 加载 units/ 里的文件，**不**用 `from units.NN_xxx.code import main`（那是 `SyntaxError`）。
+
 ## 下一步
 
 跑完 12 章后，可以从以下方向继续：
