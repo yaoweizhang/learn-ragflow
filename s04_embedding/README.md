@@ -1,5 +1,12 @@
 # s04 文本嵌入 (Embedding)
 
+## Units
+
+| # | Unit | Goal | Entry |
+|---|------|------|-------|
+| 01 | [local_bge](units/01_local_bge/README.md) | 本地 `BAAI/bge-small-zh-v1.5`，512 维归一化向量，免 key | `python units/01_local_bge/code.py` |
+| 02 | [provider_routing](units/02_provider_routing/README.md) | `EMBED_PROVIDER` env 在 local / openai / ollama 之间分发 | `python units/02_provider_routing/code.py` |
+
 ## 问题
 关键词匹配"苹果"≠"iPhone"，需要语义。Embedding 把句子变成向量，让"苹
 果 / iPhone / 手机 / fruit"在 512 维空间里距离近。
