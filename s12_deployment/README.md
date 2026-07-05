@@ -1,5 +1,11 @@
 # s12 部署 — Docker Compose 把 MVP 包成服务
 
+## Units
+
+| Unit | 主题 | 文件 |
+|------|------|------|
+| 01 | fastapi_docker (FastAPI 包装 + docker compose 一键起) | [`units/01_fastapi_docker/code.py`](units/01_fastapi_docker/code.py) |
+
 ## 问题
 
 s08 的 `answer()` 只能在命令行跑 `python s08_prompt_generate/code.py`,
