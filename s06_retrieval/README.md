@@ -1,5 +1,12 @@
 # s06 检索 — 向量 + BM25 + 混合
 
+## Units
+
+| Unit | 标题 | 入口 |
+| --- | --- | --- |
+| 01 | BM25 词法召回 (hand-written BM25 + 中英分词) | [`units/01_bm25/code.py`](units/01_bm25/code.py) |
+| 02 | 混合召回 fusion (BM25 + dense cosine, α-weighted) | [`units/02_hybrid_fusion/code.py`](units/02_hybrid_fusion/code.py) |
+
 ## 问题
 
 纯向量召回：把查询 embedding 和 chunk embedding 比余弦。问题——同义词/改写
