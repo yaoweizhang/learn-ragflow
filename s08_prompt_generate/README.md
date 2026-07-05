@@ -1,5 +1,11 @@
 # s08 Prompt 与生成 — 让 LLM 引用 + 拒答
 
+## Units
+
+| Unit | 标题 | 入口 |
+| --- | --- | --- |
+| 01 | Prompt 模板 + LLM 引用生成（拼 `<context>`、调 LLM、解析 `[i]` 角标、无 key 时降级） | [`units/01_prompt_template/code.py`](units/01_prompt_template/code.py) |
+
 ## 问题
 
 s07 已经把最相关的 3 条 chunk 送进 LLM，但 LLM 默认是"自由发挥"——
