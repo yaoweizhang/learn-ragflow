@@ -1,5 +1,12 @@
 # s05 向量索引 (Vector Indexing)
 
+## Units
+
+| Unit | 标题 | 入口 |
+| --- | --- | --- |
+| 01 | Chroma 持久化索引构建 (PersistentClient + cosine) | [`units/01_chroma_build/code.py`](units/01_chroma_build/code.py) |
+| 02 | Chroma 检索 (cosine distance → similarity top-k) | [`units/02_chroma_query/code.py`](units/02_chroma_query/code.py) |
+
 ## 问题
 s04 已经把 chunk 变成 512 维向量了,但这些向量还"飘"在内存里 —— 程序
 一关,几万条 embedding 就丢了;重新跑又要喂一遍 BGE 算几秒到几分钟。
