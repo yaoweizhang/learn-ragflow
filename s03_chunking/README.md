@@ -1,7 +1,27 @@
+# s03 文本分块 — 章节导航
+
+| Unit | 主题 | 它解决什么 | 对照 RAGFlow |
+|---|---|---|---|
+| [01_basic_chunk](./units/01_basic_chunk/README.md) | 500 字符 cap + 句界切 | "最小可跑 chunker 长什么样" | `naive_merge` (token-aware 子块) |
+| [02_chunk_failures](./units/02_chunk_failures/README.md) | 真实样本上的 3 类失败模式 | "为什么 unit 01 在 prod 不够" | `_concat_downward` + `hierarchical_merge` + `attach_media_context` |
+
+跑：
+
+```bash
+python s03_chunking/units/01_basic_chunk/code.py
+python s03_chunking/units/02_chunk_failures/code.py
+# 旧路径仍可用:
+python s03_chunking/code.py
+```
+
+---
+
 # s03 文本分块
 
 ## 问题
+
 固定 500 字符切有两个典型失败案例:
+
 1. **句子被切断**。"今天我们学习 RAG。它包括检索、生成两部分。" →
    500 字符 cap 直接砍到中间,得到 "今天我们学习 RAG。它包括检索、生
    成两部",Embedding 把残句算成完整语义。
@@ -10,6 +30,7 @@
    到一半字段。
 
 ## 最小解法
+
 `code.py` 实现 `chunk_by_paragraph(docs, max_chars=500)`:
 - 短段落(< 500 字符)直接整体保留为 1 个 chunk;
 - 长段落先按中英句界 `(.。!?！？)` 切成句子,再贪心装桶,保证每 chunk
@@ -22,7 +43,9 @@ python s03_chunking/code.py
 ```
 
 ## 跑起来
+
 输入 31 段（4 页 PDF + 27 段 DOCX）→ 输出 34 块,首 3 个 chunk:
+
 ```
 server_whitepaper.pdf#1#p0 | 紫光恒越 R3630 G5 双路机架式服
 务器
@@ -36,9 +59,11 @@ server_whitepaper.pdf#2#p2 | 三、整机规格
 处理器 2 × 第三代 Intel Xeon 可
 扩展处理器 ...
 ```
+
 所有 chunk ≤ 500 字符,无非空块。
 
 ## 真实世界的问题
+
 1. **表格整体性丢失**。我们用 `pypdf.extract_text()` 抽出的表格没有格线
    信息,所有列挤在一行里,切完后 LLM 不知道哪两列是同一行。
 2. **父子块概念缺失**。我们的 chunk 是 500 字封顶的扁平列表;但 RAG
@@ -48,11 +73,13 @@ server_whitepaper.pdf#2#p2 | 三、整机规格
    后,检索召回的是指代词本身,而不是表 3 的实际内容。
 
 ## RAGFlow 怎么做的
+
 详见 `../ragflow_notes/deepdoc_chunking.md`。一句话总结: **版面识别出父
 块 (parent),按 token-aware + 句界切出子块 (child),召回时返回父块文
 本给 LLM**。这样细粒度召回和完整语义单位两不误。
 
 ## 思考题
+
 **如果一段就是 800 字但语义完整,是该切还是不该切?**
 
 答: 固定字符切分解决不了这个问题。切,句子被拦腰截断;不切,单 chunk
