@@ -17,12 +17,9 @@ ENV:
 """
 import os
 import sys
-from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
-
-WORKDIR = Path(__file__).resolve().parents[3]
 
 DEMOS = [
     "什么是 RAG?",
@@ -89,7 +86,7 @@ def main() -> None:
     print(f"provider: {provider}, dim: {len(vecs[0])}, count: {len(vecs)}")
 
     if not _openai_available():
-        print(f"[openai] skipped, set LLM_API_KEY (and LLM_BASE_URL) to enable")
+        print("[openai] skipped, set LLM_API_KEY (and LLM_BASE_URL) to enable")
     else:
         provider2, vecs2 = route([DEMOS[0]])
         print(f"[openai] ok: provider={provider2}, dim={len(vecs2[0])}")
