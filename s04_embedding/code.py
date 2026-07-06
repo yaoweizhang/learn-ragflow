@@ -10,6 +10,7 @@ _mod = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = _mod
 _spec.loader.exec_module(_mod)
 main = _mod.main
+embed = _mod.embed_local  # 供 s12_deployment/app.py 复用 (Phase C3' fix)
 
 if __name__ == "__main__":
     main()
