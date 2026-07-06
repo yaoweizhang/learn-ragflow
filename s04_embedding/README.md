@@ -1,7 +1,7 @@
 # s04 文本嵌入 (Embedding) — 章节总览
 
 > **章节定位**：RAG 流水线的"文本 → 向量"翻译层——把 s03 切好的 chunk 投影到语义空间，让 s05 的向量库和 s06 的召回能找到"意思相近"的段落。  
-> **章节结构**借鉴 [all-in-rag 第三章 向量嵌入](https://github.com/datawhalechina/all-in-rag/blob/main/docs/chapter3/06_vector_embedding.md) 的"概念 → 选型 → 怎么做 → 对照 RAGFlow"叙述弧，只取对**单 backend + 多后端路由**这一节有用的部分，不引入 MTEB 榜单全表 / 自监督训练细节（那些是综述性质、留到延伸阅读）。
+> **章节定位**：本章节围绕 *单 backend + 多后端路由* 这一层给出概念 / 选型 / MVP / 工业对照的完整弧线,**不引入 MTEB 榜单全表 / 自监督训练细节**(那些是综述性质、留到延伸阅读)。
 
 ---
 

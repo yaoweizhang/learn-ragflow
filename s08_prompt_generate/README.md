@@ -1,7 +1,7 @@
 # s08 Prompt 与生成 — 章节总览
 
 > **章节定位**: RAG 在线链路的"最后一公里"——把 s07 精排后的 top-3 hits 拼成一段 `<context>...</context>`,配一条规则化 prompt 调 LLM,生成**带 `[i]` 角标引用 + 拒答兜底**的答案。**没有 prompt 工程的 RAG,前面所有召回/精排的工作都会被 LLM 的"自由发挥"稀释掉——幻觉、不可信、不可验证是默认结果**。
-> **章节结构** 借鉴 [all-in-rag 第五章 §一 格式化生成](https://github.com/datawhalechina/all-in-rag/blob/main/docs/chapter5/16_formatted_generation.md) 的"为什么需要结构化输出 / OutputParser / LlamaIndex / 不依赖框架 / Function Calling"叙述弧。**scope mismatch 注意**:all-in-rag 这一节聚焦 JSON / XML 结构化输出 + Function Calling,而 s08 的核心是 **prompt 模板 + 角标引用解析**——同样的"prompt 工程是 LLM 的关键控制面"主题,但载体不同。本章只借用其**"prompt 模板可以引导结构化输出"**这层洞察,具体内容用本仓库的 prompt + citation 实践替换。
+> **章节定位**:本章节围绕 *prompt 模板 + 角标引用解析* 这一层给出概念 / 问题 / MVP / 工业对照的完整弧线。**scope 注意**:行业里常见的 prompt 工程内容(JSON / XML 结构化输出、Function Calling)在 s08 里只是 *副产品* —— s08 的核心是用 prompt 引导模型做带 `[i]` 角标的引用,输出载体不是结构化数据,而是带 `citations` 列表的自然语言回答。
 
 ---
 

@@ -1,7 +1,7 @@
 # s03 文本分块 — 章节总览
 
 > **章节定位**：RAG 离线流水线的第二步——把 s02 吐出的"页 / 段"切成语义完整、长度可控、可被 embedding 索引的 `list[{text, chunk_id, page, source}]`。  
-> **章节结构**借鉴 [all-in-rag 第二章 文本分块](https://github.com/datawhalechina/all-in-rag/blob/main/docs/chapter2/05_text_chunking.md) 的"是什么 / 为什么 / 怎么做 / 对照 RAGFlow"叙述弧，但只取对我们这个 toy splitter 有用的部分——不展开 LangChain `RecursiveCharacterTextSplitter` 的所有配置项，也不引入 SemanticChunker / Unstructured by_title（那些是工具选择，不是本章 MVP）。
+> **章节定位**：本章节围绕 *toy splitter* 这一层给出概念 / 问题 / MVP / 工业对照的完整弧线,**不展开 LangChain `RecursiveCharacterTextSplitter` 的所有配置项**,也不引入 SemanticChunker / Unstructured by_title(那些是工具选择,不是本章 MVP)。
 
 ---
 

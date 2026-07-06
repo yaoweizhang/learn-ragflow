@@ -1,7 +1,7 @@
 # s06 检索 (Retrieval) — 章节总览
 
 > **章节定位**: RAG 在线链路的"召回入口"——把用户 query 投影到 s04/s05 已建好的 embedding 空间,先做 **dense 近邻**,再做 **BM25 字面打分**,最后按 `α` 加权融合成 top-k。  
-> **章节结构** 借鉴 [all-in-rag 第四章 混合检索](https://github.com/datawhalechina/all-in-rag/blob/main/docs/chapter4/11_hybrid_search.md) 的"稀疏 vs 稠密 → 混合动机 → 加权融合 / RRF → 代码实战"叙述弧,只取对**BM25 词法 + dense cosine + α-weighted fusion** 这一节有用的部分,不引入 Milvus 的 `AnnSearchRequest + RRFRanker` 全流程(那是另一种库 + 另一种融合策略,留作扩展)。
+> **章节定位**:本章节围绕 *BM25 词法 + dense cosine + α-weighted fusion* 这一层给出概念 / 问题 / MVP / 工业对照的完整弧线 —— 不引入 Milvus 的 `AnnSearchRequest + RRFRanker` 全流程(那是另一种库 + 另一种融合策略,留作扩展)。
 
 ---
 

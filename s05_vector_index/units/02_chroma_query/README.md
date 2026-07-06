@@ -25,9 +25,9 @@ python s05_vector_index/units/02_chroma_query/code.py    # 再查
 
 ```
 top-3 hits (query='应收账款'):
-  [disclosure.docx#None] score=0.950 | 1. 应收账款
-  [disclosure.docx#None] score=0.926 | 3. 应收账款
-  [disclosure.docx#None] score=0.850 | 24. 应收账款
+  [disclosure.docx#None] score=0.499 | 报告期内，公司实现营业收入人民币 28.74 亿元...
+  [disclosure.docx#None] score=0.487 | 第二节 主要财务数据
+  [disclosure.docx#None] score=0.449 | 第四节 分季度财务数据
 ```
 
 分数严格递减，3 条都来自 `disclosure.docx`，`page=None` 是 docx 加载器没编页号的契约（`s02_doc_loading/code.py:29` 故意设的），不是 bug。

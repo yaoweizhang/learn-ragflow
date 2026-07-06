@@ -1,7 +1,7 @@
 # s02 文档加载 — 章节总览
 
 > **章节定位**：RAG 离线流水线的第一步——把 PDF / DOCX 这些**非结构化文档**读成结构化段落。  
-> **章节结构**借鉴 [all-in-rag 第二章 数据加载](https://github.com/datawhalechina/all-in-rag/blob/main/docs/chapter2/04_data_load.md) 的"是什么 / 为什么 / 怎么做 / 对照 RAGFlow + 思考题"叙述弧，但只取对**单文件加载**这一节有用的部分，不引入 Unstructured / 多分块策略（那些留到 s03 / s11）。
+> **章节定位**：本章节围绕 *单文件加载* 这一层给出概念 / 问题 / MVP / 工业对照的完整弧线,**不引入 Unstructured / 多分块策略**(那些留到 s03 / s11)。
 
 ---
 

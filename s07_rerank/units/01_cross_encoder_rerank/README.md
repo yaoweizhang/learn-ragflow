@@ -21,7 +21,7 @@ python s07_rerank/units/01_cross_encoder_rerank/code.py
 输出示例（首次跑会下载 BAAI/bge-reranker-base ~1GB）：
 
 ```
-loaded 28 chunks from samples/
+loaded 34 chunks from samples/
 query='内存', alpha=0.5 (BM25 + dense 等权融合)
 
 --- BEFORE rerank (s06 混合召回 top-3) ---

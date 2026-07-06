@@ -1,7 +1,7 @@
 # s05 向量索引 (Vector Indexing) — 章节总览
 
 > **章节定位**: RAG 离线流水线的"向量承载层" —— 把 s04 输出的 512 维稠密向量绑回 chunk 文本 + 来源元数据,落盘成可重复查询的索引;在线时由 s06+ 把用户 query 投影到同空间做 top-k 召回。  
-> **章节结构** 借鉴 [all-in-rag 第三章 向量数据库](https://github.com/datawhalechina/all-in-rag/blob/main/docs/chapter3/08_vector_db.md) 的"是什么 / 为什么 / 怎么做 / 对照 RAGFlow"叙述弧,只取对**单 backend + HNSW + 元数据过滤**这一节有用的部分 —— 不引入 Pinecone / Milvus 全表对比(那些是综述性质、留到延伸阅读),也不展开 IVF / LSH / PQ 等其他 ANN 算法(本教程只跑 HNSW)。
+> **章节定位**:本章节围绕 *单 backend + HNSW + 元数据过滤* 这一层给出概念 / 问题 / MVP / 工业对照的完整弧线 —— 不引入 Pinecone / Milvus 全表对比(那些是综述性质、留到延伸阅读),也不展开 IVF / LSH / PQ 等其他 ANN 算法(本教程只跑 HNSW)。
 
 ---
 
