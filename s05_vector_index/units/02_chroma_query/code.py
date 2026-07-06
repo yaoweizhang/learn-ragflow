@@ -83,7 +83,10 @@ def main() -> None:
         print(f"未发现持久化索引 {DB_DIR}。请先跑:")
         print("  python s05_vector_index/units/01_chroma_build/code.py")
         sys.exit(1)
-    query = input("问: ").strip()
+    try:
+        query = input("问: ").strip() or "R3630G5"
+    except EOFError:
+        query = "R3630G5"
     if not query:
         print("空 query,退出。")
         return
