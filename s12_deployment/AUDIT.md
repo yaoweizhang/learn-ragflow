@@ -36,7 +36,7 @@ README §3.3 lists 8 components (4 functions + 2 globals in `app.py` + 1 `main()
 
 - `from s04_embedding.code import embed` → **does not exist**; actual name in s04 unit 01 is `embed_local` (BGE local); s04 unit 02 has `route` / `embed_openai` / `embed_ollama` (provider-routing dispatcher)
 - `from s06_retrieval.code import hybrid_search` → **does not exist**; actual name in s06 unit 02 is `hybrid_topk` (not `hybrid_search`); the `hybrid_topk` signature is `hybrid_topk(docs, query, query_vec, dense_score_fn, k, alpha)`, takes pre-fetched docs, NOT a chroma collection — `app.py`'s call site `hybrid_search(col, req.question, qv, k=10)` does not match
-- `from s07_rerank.code import rerank` → ✓ exists
+- `from s07_rerank.code import rerank` → **does not exist**; s07 chapter root is also an importlib aggregator; the actual `rerank` function lives at `s07_rerank/units/01_cross_encoder_rerank/code.py` (verified by Criterion 4 self-correction)
 - `from s08_prompt_generate.code import answer` → **does not exist**; actual name in s08 unit 01 is `answer` but lives at `units/01_prompt_template/code.py`, not at chapter root
 
 **This is a pre-existing defect from commit `36ceb69` (original s12 chapter introduction)**. Upstream chapter API surface has shifted (e.g. s06 renamed/removed `hybrid_search`; s04 added provider routing, removed direct `embed` re-export). `app.py` was authored against the old API and has not been updated to match the current chapter structure.
