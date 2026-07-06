@@ -16,7 +16,6 @@ ENV:
 运行: python s04_embedding/units/02_provider_routing/code.py
 """
 import os
-import sys
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
