@@ -18,3 +18,10 @@ samples/_derived/
 # OS
 .DS_Store
 Thumbs.db
+
+# OpenAI lib retry-off patch (verification-only helper, not tutorial content)
+_openai_retry_off.py
+
+# Superpowers plugin scratch (local planning artifacts — not part of the tutorial)
+.superpowers/
+docs/superpowers/
