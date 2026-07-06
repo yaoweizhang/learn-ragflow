@@ -188,7 +188,10 @@ def single_shot(question: str) -> dict:
 
 # ---------- 入口 ----------
 def main() -> None:
-    question = input("问: ").strip() or "R3630 G5 的内存插槽数量"
+    try:
+        question = input("问: ").strip() or "R3630 G5 的内存插槽数量"
+    except EOFError:
+        question = "R3630 G5 的内存插槽数量"  # 同 s07/s08/s10/s11:管道/EOF 时回落到默认问题
     print(f"\n[Q] {question}")
 
     if not os.environ.get("LLM_API_KEY"):
