@@ -22,7 +22,6 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 WORKDIR = Path(__file__).resolve().parents[3]
-SAMPLES = WORKDIR / "samples"
 DB_DIR = WORKDIR / "s05_vector_index" / "_chroma"
 COLLECTION_NAME = "docs"
 
@@ -169,7 +168,10 @@ def main() -> None:
     else:
         col = chromadb.PersistentClient(path=str(DB_DIR)).get_collection(COLLECTION_NAME)
 
-    question = input("问: ").strip() or "内存"
+    try:
+        question = input("问: ").strip() or "内存"
+    except EOFError:
+        question = "内存"
     raw = col.get(include=["embeddings", "metadatas", "documents"])
     vec_by_id = {cid: emb for cid, emb in zip(raw["ids"], raw["embeddings"])}
     qv = _embed([question])[0]
