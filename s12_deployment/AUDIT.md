@@ -120,10 +120,8 @@ Imports in `code.py` (aggregator) + `units/01_fastapi_docker/code.py` are all ac
 | `from s08_prompt_generate.code import answer` | ✗ `answer` not at chapter root (only `main` re-exported); lives at `s08_prompt_generate/units/01_prompt_template/code.py` |
 | `from s04_embedding.code import embed` | ✗ `embed` not at chapter root; only `main` re-exported; s04 unit 01 has `embed_local`; s04 unit 02 has `route` / `embed_openai` / `embed_ollama` |
 | `from s06_retrieval.code import hybrid_search` | ✗ `hybrid_search` not at chapter root; only `main` re-exported; s06 unit 02 has `hybrid_topk` (different signature: takes pre-fetched docs, not a chroma collection) |
-| `from s07_rerank.code import rerank` | ✓ `rerank` exists at chapter root via re-export... wait, no — s07 chapter root is also importlib aggregator that only re-exports `main`. **This import is also broken.** (Re-verify: `from s07_rerank.code import rerank` raises `ImportError`.) |
+| `from s07_rerank.code import rerank` | ✗ `rerank` not at chapter root; only `main` re-exported; the actual `rerank` function lives at `s07_rerank/units/01_cross_encoder_rerank/code.py` |
 | `import chromadb` | ✓ used in `chromadb.PersistentClient(path=str(db_path))` |
-
-**Correction to my Criterion 1 table**: `rerank` is also NOT at s07 chapter root. Re-verified via `python -c "from s07_rerank.code import rerank"` → `ImportError: cannot import name 'rerank' from 's07_rerank.code'`. So **all 4 import statements in `app.py` are broken** (3 names that don't exist + 1 wrong-path call site).
 
 `COL = None` module-level global + `_get_col()` lazy-load pattern is intentional (avoids re-init on every request, defers chroma import error to first request). Aggregator `code.py` delegates cleanly to unit 01's `main()`. No dead branches / unused variables.
 
