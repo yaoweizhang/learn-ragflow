@@ -1,7 +1,7 @@
 # s09 Agent — Code Audit
 
 Date: 2026-07-06
-Commit: (to be filled after commit)
+Commit: 0fd0e11c3a49514a61b8a357e8ba87d17ed13747
 
 **小修 applied (1 file, +3 lines):** `units/02_react_loop/code.py` `main()` 加 `try/except EOFError` 包裹 `input("问: ")`，与 s08 unit 01 同款 — 防止 `python ... < /dev/null` / pipeline 跑测试时撞 EOFError。Unit 01 同款问题未修（diff budget 已用 3/5，剩 2 行留给更关键问题；unit 01 是单步铺垫，EOF 行为可接受）。
 
@@ -62,9 +62,9 @@ No dead code, no orphan imports. The chapter-root `code.py` properly delegates t
 
 ## Summary
 
-No small fixes applied (0 lines changed). No big fixes reported. All 4 criteria are 对齐 — code matches README claims, README covers the code, sample outputs match the actual print paths, no dead code or orphan imports.
+1 small fix applied (1 file, +3 lines net): `units/02_react_loop/code.py` `main()` got a `try/except EOFError` guard around `input("问: ")` (same pattern as s08 unit 01). No big fixes reported.
 
-The s09 implementation is already well-aligned with the rewritten README; the original README was content-heavy but the code was clean. No code changes needed for this audit.
+3 of 4 audit criteria are 对齐 (criterion 1, 2, 4). Criterion 3 also 对齐 (sample outputs match live trace paths). The unit 01 EOFError case is documented as a known limitation in the top-of-file note; not fixed because budget exhausted at +3/5 (remaining 2 lines reserved for higher-priority issues, none arose).
 
 ## Big fixes needing user sign-off
 
