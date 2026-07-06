@@ -19,7 +19,6 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 WORKDIR = Path(__file__).resolve().parents[3]
-SAMPLES = WORKDIR / "samples"
 DB_DIR = WORKDIR / "s05_vector_index" / "_chroma"
 COLLECTION_NAME = "docs"
 
