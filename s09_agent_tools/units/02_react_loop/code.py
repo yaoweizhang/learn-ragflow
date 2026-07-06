@@ -79,7 +79,10 @@ def run_agent(question: str, max_steps: int = 5) -> dict:
 
 # ---------- 入口 ----------
 def main() -> None:
-    question = input("问: ").strip() or "R3630 G5 的内存插槽数量"
+    try:
+        question = input("问: ").strip() or "R3630 G5 的内存插槽数量"
+    except EOFError:
+        question = "R3630 G5 的内存插槽数量"
     print(f"[Q] {question}\n")
 
     if not os.environ.get("LLM_API_KEY"):
