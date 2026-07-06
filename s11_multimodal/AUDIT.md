@@ -146,6 +146,6 @@ exit=0
 
 3. **Aggregator `code.py` delegates to unit 01 only** — unit 02 has no aggregator entry; users must run `units/02_ocr/code.py` directly. README navigation table (§章节导航) explicitly lists both unit paths. Old path (`python s11_multimodal/code.py`) still works for unit 01 backwards compatibility. Not a defect — design choice for this chapter.
 
-4. **README §3.4 sample output uses older pdfplumber version's plain row formatting** — current live run includes `\n` line wraps inside cells ('处理器' has `\n扩展处理器`, TDP cell has `\n270W`). README sample uses cleaner format (no `\n`). Both shapes are valid pdfplumber output depending on version (0.10+ may wrap long cells). Documented in Criterion 3 — not a divergence, same data, different presentation.
+4. **README §1.2 schema example uses cleaner row formatting; §3.4 sample output matches live run** — §1.2 (line 62) shows the underlying `list[{"page": i, "rows": [...]}]` schema with clean cells (no `\n`); §3.4 (line 152) shows the **actual live run output** with `\n` line wraps inside cells ('处理器' has `\n扩展处理器`, TDP cell has `\n270W`) — these match the live verification (Criterion 3). The `\n` is pdfplumber 0.10+'s internal newline token in long cells. Not a divergence.
 
 5. **Phase A import-order fix is intact and re-verified** — `units/02_ocr/code.py` line 24-25 has both imports inside `try:` block. Not re-fixed in Phase C2 Task 2 (per brief instructions).
