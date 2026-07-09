@@ -25,6 +25,7 @@ git clone <repo-url>
 cd learn-ragflow
 pip install -r requirements.txt
 cp .env.example .env       # then edit .env and set LLM_API_KEY / LLM_BASE_URL / LLM_MODEL
+python s00_concepts/units/01_what_is_rag/code.py        # Chapter 0, unit 1 — what is RAG (start here for the mental model)
 python s01_what_is_rag/units/01_naive_keyword/code.py
 ```
 
@@ -93,6 +94,17 @@ The tutorial has two tracks — pick by your time budget:
 
 The tutorial is split into **5 parts and 12 chapters**, each chapter shipping a self-contained runnable `sXX_topic/code.py`.
 
+### Part 0 — Concept primer
+
+**Chapter 0 — What is RAG / Why RAG / How RAG evolved** &nbsp;[chapter details](./s00_concepts/)
+
+- Concept map: RAG = retrieve + augment + generate (parametric vs. non-parametric knowledge)
+- Selection comparison: vs. long-context / vs. fine-tune (token cost + knowledge freshness + controllability)
+- Evolution arc: Naive RAG → Advanced RAG → Modular RAG, and which of the 12 chapters map to each stage
+- 3 concept-level mini demos (no LLM key, 3 minutes total)
+
+Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line will make sense.
+
 ### Part 1 — RAG fundamentals
 
 **Chapter 1 — What is RAG** &nbsp;[chapter details](./s01_what_is_rag/)
@@ -100,7 +112,6 @@ The tutorial is split into **5 parts and 12 chapters**, each chapter shipping a 
 - 3 units progressing from naive substring matching → bag-of-words vectors → retrieve + LLM end-to-end
 - Three failure modes of LLMs: training cutoff, private data, hallucination
 - RAG workflow: retrieve → augment → generate
-- *(further reading)* [RAG primer](./s00_concepts/) (parametric vs. non-parametric knowledge; naive / advanced / modular RAG)
 
 ### Part 2 — Data and indexing
 
@@ -177,11 +188,10 @@ The tutorial is split into **5 parts and 12 chapters**, each chapter shipping a 
 - docker-compose (api + chroma persistent volume)
 - 503 fallback: clear error when index is missing, not a raw exception
 
-### Further reading (project-level, not part of the tutorial runtime)
+### Further reading (project-level reference, not part of the tutorial runtime — referenced from s01-s12)
 
-- [RAG primer](./s00_concepts/) — what RAG is, tradeoffs vs. long context, technical evolution
-- [`docs/` directory guide](./s00_concepts/README.md) — how to use `s00_concepts/` and the boundary with `sXX_topic/`
 - [RAGFlow source-reading index](./docs/reference/ragflow-notes/README.md) — production-code excerpts (read when you want to go deep)
+- [`docs/` directory guide](./docs/) — navigation for `docs/reference/ragflow-notes/` and other reference material
 
 ## Chapter index
 
