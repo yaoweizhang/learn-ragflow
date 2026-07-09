@@ -53,7 +53,10 @@ def main() -> None:
     print(f"图节点数: {n_nodes}, 边数: {n_edges}")
 
     while True:
-        entity = input("查哪个实体 (回车退出): ").strip()
+        try:
+            entity = input("查哪个实体 (回车退出): ").strip()
+        except EOFError:
+            break
         if not entity:
             break
         neighbors = query_graph(graph, entity)

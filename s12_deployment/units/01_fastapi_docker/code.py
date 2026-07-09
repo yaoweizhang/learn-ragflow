@@ -29,6 +29,13 @@ def main() -> None:
         print("❌ 索引不存在,请先跑 s05 (python s05_vector_index/code.py)")
         return
     # 3. 一键 build + up — cwd 用 s12_deployment 让 compose 找到同名 yml
+    #    若本机没装 docker (例如 CI / 学生笔记本) 则优雅降级,把"该敲的命令"打印出来
+    import shutil
+    if shutil.which("docker") is None:
+        print("⚠️  docker 未安装,跳过实际 build/up 步骤。")
+        print("   本机手动执行即可:")
+        print(f"     cd {S12_DIR} && docker compose up --build")
+        return
     subprocess.run(["docker", "compose", "up", "--build"], cwd=S12_DIR, check=True)
 
 
