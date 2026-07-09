@@ -54,7 +54,7 @@ learn-ragflow/
 │   ├── server_whitepaper.pdf
 │   └── disclosure.docx
 ├── docs/                        # Design docs (not part of the tutorial runtime)
-│   ├── 00-intro/                # RAG primer + docs/ usage
+│   ├── s00_concepts/           # RAG primer + docs/ usage
 │   └── reference/
 │       └── ragflow-notes/       # RAGFlow source excerpts (one per chapter)
 ├── s01_what_is_rag/             # Chapter 1
