@@ -140,7 +140,7 @@ exit=0
 
 ## Concerns
 
-1. **all-in-rag reference URL is dead** — `chapter5/15_multimodal.md` does not exist upstream (returns HTTP 404). Applied C1 + C2 Task 1's loose-borrow fallback: 4-段式 structural DNA from `s00_concepts/` + s10 chapter pattern + s11 project-specific content (pdfplumber + pytesseract, 2-unit progression 表格 → OCR, 启发式画线 + 平铺 OCR + 优雅跳过, `samples/server_whitepaper.pdf` reference, link to `ragflow_notes/multimodal_parsing.md`). No fabricated content.
+1. **all-in-rag reference URL is dead** — `chapter5/15_multimodal.md` does not exist upstream (returns HTTP 404). Applied C1 + C2 Task 1's loose-borrow fallback: 4-段式 structural DNA from `docs/00_introduction/01_what_is_rag.md` + s10 chapter pattern + s11 project-specific content (pdfplumber + pytesseract, 2-unit progression 表格 → OCR, 启发式画线 + 平铺 OCR + 优雅跳过, `samples/server_whitepaper.pdf` reference, link to `ragflow_notes/multimodal_parsing.md`). No fabricated content.
 
 2. **Unit 02 EOFError under `< /dev/null`** — same pattern as s09 unit 01 / s10 unit 02 (interactive primary mode). README §3.4 Troubleshooting documents this. Not blocking.
 

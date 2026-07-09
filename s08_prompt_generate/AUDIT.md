@@ -190,7 +190,7 @@ Net: -1 deletion (SAMPLES) + 3 additions (try/except) = +2 lines. Plus 1 deletio
 
 ### `s08_prompt_generate/README.md`
 
-Rewrite (existing 95 lines → new 290 lines), 4-段式 arc adopted from `s00_concepts/` and s07. Project-specific content preserved: `<context>` 定界符 pattern, `[i] (source#page) text` rendering, MiniMax-M3 over minimaxi.com example (kept as historical "with API" example in §3.7), refusal-flow example (in §3.7), existing units nav table (chapter nav block). 3 failure-mode categories added per Phase B spec §二: prompt injection / token overflow / citation misalignment. §三 MVP includes a 4-row function table covering PROMPT / _format_context / answer / main. §四 RAGFlow 对照 links `ragflow_notes/prompt_templates.md` and mentions 3-prompt split: sufficiency_check + multi_queries_gen + citation_prompt.
+Rewrite (existing 95 lines → new 290 lines), 4-段式 arc adopted from `docs/00_introduction/01_what_is_rag.md` and s07. Project-specific content preserved: `<context>` 定界符 pattern, `[i] (source#page) text` rendering, MiniMax-M3 over minimaxi.com example (kept as historical "with API" example in §3.7), refusal-flow example (in §3.7), existing units nav table (chapter nav block). 3 failure-mode categories added per Phase B spec §二: prompt injection / token overflow / citation misalignment. §三 MVP includes a 4-row function table covering PROMPT / _format_context / answer / main. §四 RAGFlow 对照 links `ragflow_notes/prompt_templates.md` and mentions 3-prompt split: sufficiency_check + multi_queries_gen + citation_prompt.
 
 ### `s08_prompt_generate/code.py`
 

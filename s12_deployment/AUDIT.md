@@ -155,7 +155,7 @@ exit=1
 
 ## Concerns
 
-1. **No all-in-rag reference for s12 deployment** — `chapter7/24_deployment.md` (or similar) does not exist upstream. Applied Phase C decision "A: Adapt the template" + C1/C2/C3 Task 1 loose-borrow fallback: 4-段式 structural DNA from `s00_concepts/` + s10 / s11 chapter pattern + s12 project-specific content (FastAPI wrapper + Dockerfile + compose + 1-unit progression, .env/索引 gating, lazy-load Chroma, link to `ragflow_notes/deployment.md`). No fabricated content.
+1. **No all-in-rag reference for s12 deployment** — `chapter7/24_deployment.md` (or similar) does not exist upstream. Applied Phase C decision "A: Adapt the template" + C1/C2/C3 Task 1 loose-borrow fallback: 4-段式 structural DNA from `docs/00_introduction/01_what_is_rag.md` + s10 / s11 chapter pattern + s12 project-specific content (FastAPI wrapper + Dockerfile + compose + 1-unit progression, .env/索引 gating, lazy-load Chroma, link to `ragflow_notes/deployment.md`). No fabricated content.
 
 2. **Dockerfile + docker-compose.yml are explicitly out of audit scope** — brief specifies "config, not Python". They are referenced by README (§1.3 layer structure + §1.4 service declaration + §3.4 troubleshooting) but not audited. If a future task adds Python health-check / metrics code, it would re-enter scope.
 
