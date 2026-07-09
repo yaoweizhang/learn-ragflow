@@ -37,7 +37,7 @@ LLM_API_KEY=sk-xxx python s01_what_is_rag/units/03_augmented_llm/code.py
 
 ## 与 RAG 综述的对接
 
-如果你对 RAG 的整体地图还不熟，先看 [`../docs/00-intro/01_what_is_rag.md`](../docs/00-intro/01_what_is_rag.md) —— 它先讲 RAG 是什么、为什么、和长上下文/微调的取舍，再串到 12 章大纲。
+如果你对 RAG 的整体地图还不熟，先看 [`../s00_concepts/`](../s00_concepts/) —— 它先讲 RAG 是什么、为什么、和长上下文/微调的取舍，再串到 12 章大纲。
 
 ## 三个 unit 的递进关系
 

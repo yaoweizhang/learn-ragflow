@@ -16,7 +16,7 @@ git clone <repo-url>
 cd learn-ragflow
 pip install -r requirements.txt
 cp .env.example .env       # then edit .env and set LLM_API_KEY
-python s01_what_is_rag/code.py
+python s01_what_is_rag/units/01_naive_keyword/code.py
 ```
 
 Requires Python 3.10+ and at least 8 GB RAM (16 GB recommended for BGE embeddings). GPU optional.
@@ -61,7 +61,6 @@ learn-ragflow/
 ├── s02_doc_loading/             # Chapter 2
 ├── ...
 ├── s12_deployment/              # Chapter 12
-└── samples/                     # Shared samples
 ```
 
 ## Where to go next

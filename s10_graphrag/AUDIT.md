@@ -58,7 +58,7 @@ none
 
 ## Notes
 
-- Reference URL `https://raw.githubusercontent.com/datawhalechina/all-in-rag/main/docs/chapter4/13_graph_rag.md` returned **404** (verified — file is 0 bytes / `404: Not Found`). Applied C1's loose-borrow fallback: 4-段式 DNA from `docs/00_introduction/01_what_is_rag.md` + s09 chapter pattern + project-specific content (hand-rolled LLM-based entity extraction).
+- Reference URL `https://raw.githubusercontent.com/datawhalechina/all-in-rag/main/docs/chapter4/13_graph_rag.md` returned **404** (verified — file is 0 bytes / `404: Not Found`). Applied C1's loose-borrow fallback: 4-段式 DNA from `s00_concepts/` + s09 chapter pattern + project-specific content (hand-rolled LLM-based entity extraction).
 - Forbidden content self-check (`git grep -nE '\[\^[0-9]|RAG 已死|参考文献'`) returned empty — clean.
 - `ragflow_notes/graph_extraction.md` exists and is linked from README §4.1.
 - README size: 270 lines (target 200-350).
