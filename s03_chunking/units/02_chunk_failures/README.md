@@ -71,7 +71,7 @@ BEFORE (过短的 header-only chunks,语义为零):
 
 ## 对照 ragflow 怎么做的
 
-`ragflow_notes/deepdoc_chunking.md` 描述了 4 层流水线，每一层修一类失败：
+`docs/reference/ragflow-notes/deepdoc_chunking.md` 描述了 4 层流水线，每一层修一类失败：
 
 | 失败 | ragflow 修法 | 文件:行 |
 |---|---|---|
@@ -80,7 +80,7 @@ BEFORE (过短的 header-only chunks,语义为零):
 | 父子块缺失 | `hierarchical_merge` 按 `BULLET_PATTERN`（"一、" → "1." → "1.1"）建层级树 | `nlp/__init__.py:1066` |
 | 字符 cap 超 BGE 限额 | `naive_merge` 用 tiktoken 算 128 token cap，对齐 BGE | `nlp/__init__.py:1155` |
 
-参考：[`ragflow_notes/deepdoc_chunking.md`](../../../../ragflow_notes/deepdoc_chunking.md)
+参考：[`docs/reference/ragflow-notes/deepdoc_chunking.md`](../../../../docs/reference/ragflow-notes/deepdoc_chunking.md)
 
 ## 思考题
 

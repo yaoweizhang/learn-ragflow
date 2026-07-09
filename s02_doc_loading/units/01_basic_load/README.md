@@ -38,11 +38,11 @@ DOCX 第 1 段前 100 字: 青蓝科技股份有限公司 ...
 
 RAGFlow 的 `deepdoc/parser/` 是按文件类型 dispatcher：
 
-- `deepdoc/parser/pdf_parser.py` 用 `pdfplumber` + 自训练 XGBoost 模型（30 特征，详见 `ragflow_notes/deepdoc_chunking.md`）做版面分析，能识别多栏 / 表格 / 图；
+- `deepdoc/parser/pdf_parser.py` 用 `pdfplumber` + 自训练 XGBoost 模型（30 特征，详见 `docs/reference/ragflow-notes/deepdoc_chunking.md`）做版面分析，能识别多栏 / 表格 / 图；
 - `deepdoc/parser/docx_parser.py` 同时处理 `paragraphs` 和 `tables`；
 - `deepdoc/parser/utils.py` 里有 VisionParser 兜底扫描件。
 
-参考：[`ragflow_notes/deepdoc_chunking.md`](../../../../ragflow_notes/deepdoc_chunking.md)
+参考：[`docs/reference/ragflow-notes/deepdoc_chunking.md`](../../../../docs/reference/ragflow-notes/deepdoc_chunking.md)
 
 ## 思考题
 

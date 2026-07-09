@@ -67,9 +67,9 @@ A: 我不知道。资料中未提及公司 CEO 的姓名，仅披露了最终控
 
 ragflow 把"问答 prompt"拆成 40+ 个独立 `.md` 模板（`rag/prompts/` 包），核心三个：`sufficiency_check`（判够不够）、`multi_queries_gen`（不够就改写 query 再搜）、`citation_prompt` / `citation_plus`（双 pass 补引用）——MVP 的 `PROMPT` 一段话干的活，ragflow 拆成 3-4 次 LLM 调用。可观测、可分支、可替换，但**贵**（2-3x token）。
 
-另外，ragflow 用 `<|COMPLETE|>` 作为"生成结束"哨兵（见 `ragflow_notes/graph_extraction.md` 里的 `DEFAULT_COMPLETION_DELIMITER`）——LLM 生成到 `<|COMPLETE|>` 就停，避开"模型继续编后续内容"的幻觉。本 MVP 没这个哨兵，靠 `max_tokens` 兜底，模型在 token 边界可能给出半句话。生产上应该让 prompt 末尾显式 `<|COMPLETE|>` 哨兵 + 解析器按这个切。
+另外，ragflow 用 `<|COMPLETE|>` 作为"生成结束"哨兵（见 `docs/reference/ragflow-notes/graph_extraction.md` 里的 `DEFAULT_COMPLETION_DELIMITER`）——LLM 生成到 `<|COMPLETE|>` 就停，避开"模型继续编后续内容"的幻觉。本 MVP 没这个哨兵，靠 `max_tokens` 兜底，模型在 token 边界可能给出半句话。生产上应该让 prompt 末尾显式 `<|COMPLETE|>` 哨兵 + 解析器按这个切。
 
-参考：[`ragflow_notes/prompt_templates.md`](../../../../ragflow_notes/prompt_templates.md)、[`ragflow_notes/graph_extraction.md`](../../../../ragflow_notes/graph_extraction.md)
+参考：[`docs/reference/ragflow-notes/prompt_templates.md`](../../../../docs/reference/ragflow-notes/prompt_templates.md)、[`docs/reference/ragflow-notes/graph_extraction.md`](../../../../docs/reference/ragflow-notes/graph_extraction.md)
 
 ## 思考题
 

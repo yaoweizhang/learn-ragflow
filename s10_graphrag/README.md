@@ -108,7 +108,7 @@ query_graph(graph, "不存在的实体")
 
 1. **"X 和 Y 之间什么关系"答不上**——向量检索给你"包含 X 的段"和"包含 Y 的段"，但**不会告诉你 X 和 Y 之间那条边**。如果 X 和 Y 之间的"版权所有 / 投资 / 合作"关系只在第 3 段被一笔带过，top-k 不一定命中那一段；但**图谱里这条边是显式存在的**，`query_graph(graph, X)` 直接拿到。**生产解法**：双路召回——向量 + 图同时跑，命中任一即返回。RAGFlow `KGSearch` 走的就是这条路（见 §四）。
 2. **"提到 Z 的所有产品"召回不全**——向量检索靠相似度，可能漏掉"和 Z 距离远但关系明确"的段落；图谱里 Z 是节点，所有"rel: 提及 / 包含 Z"的边都是显式的，`query_graph(graph, Z)` 一次拿到全集。**生产解法**：实体名 → 邻接边列表 一步搞定，O(1) `dict.get` 比向量召回更准更便宜。
-3. **宏观问题"文档集主要在讲什么"答不好**——这是 GraphRAG 的进阶用法：把图做 hierarchical Leiden 社区检测，每个社区生成一段 `community_report` summary，存为 `knowledge_graph_kwd="community_report"` 的块，用来回答"文档集宏观主题是什么"这种需要跨实体聚合的问题。**MVP 不做社区检测**，留作 RAGFlow 对照项（见 `ragflow_notes/graph_extraction.md`）。**生产解法**：hierarchical Leiden + LLM summary 喂宏观问题。
+3. **宏观问题"文档集主要在讲什么"答不好**——这是 GraphRAG 的进阶用法：把图做 hierarchical Leiden 社区检测，每个社区生成一段 `community_report` summary，存为 `knowledge_graph_kwd="community_report"` 的块，用来回答"文档集宏观主题是什么"这种需要跨实体聚合的问题。**MVP 不做社区检测**，留作 RAGFlow 对照项（见 `docs/reference/ragflow-notes/graph_extraction.md`）。**生产解法**：hierarchical Leiden + LLM summary 喂宏观问题。
 
 ### 2.2 为什么必须在 GraphRAG 上显式投入
 
@@ -125,10 +125,10 @@ query_graph(graph, "不存在的实体")
 
 ### 3.1 章节导航
 
-| Unit | 主题 | 它解决什么 | 对照 RAGFlow |
-|---|---|---|---|
-| [01_extract](./units/01_extract/README.md) | LLM 抽 (head, rel, tail) 三元组 + JSON 容错解析 + JSONL 持久化 | "LLM 能不能稳定吐 JSON 数组" | `rag/graphrag/general/extractor.py` 的 `Extractor.__call__`（并发 + merge + 缓存） |
-| [02_query](./units/02_query/README.md) | 1 跳图查询（`dict.get` + sorted） | "不调 LLM 的纯内存图查询长什么样" | `rag/graphrag/search.py` 的 `KGSearch`（向量召回实体 → 多跳扩展） |
+| Unit | 主题 | 它解决什么 |
+|---|---|---|
+| [01_extract](./units/01_extract/README.md) | LLM 抽 (head, rel, tail) 三元组 + JSON 容错解析 + JSONL 持久化 | "LLM 能不能稳定吐 JSON 数组" |
+| [02_query](./units/02_query/README.md) | 1 跳图查询（`dict.get` + sorted） | "不调 LLM 的纯内存图查询长什么样" |
 
 ### 3.2 跑起来
 
@@ -173,9 +173,9 @@ s10 的代码拆得很细，每个函数都对应一种"实体抽取 / 图构建
 
 为什么 schema 用 `(head, rel, tail)` 三元组 + `dict[head] → set[(rel, tail)]`、而不是别的？几个常见取舍的折中：
 
-- **三元组 vs N 元组**——MVP 走 3 元组，够演示"实体 + 关系"的核心点；N 元组（带时间 / 强度 / 来源）能携带更多信息但 prompt 复杂度翻倍。**生产里 RAGFlow 用 4 元组**（head / tail / rel / description + strength），见 `ragflow_notes/graph_extraction.md`。
+- **三元组 vs N 元组**——MVP 走 3 元组，够演示"实体 + 关系"的核心点；N 元组（带时间 / 强度 / 来源）能携带更多信息但 prompt 复杂度翻倍。**生产里 RAGFlow 用 4 元组**（head / tail / rel / description + strength），见 `docs/reference/ragflow-notes/graph_extraction.md`。
 - **`dict[head]` vs `dict[(head, tail)]`**——MVP 走 `dict[head] → set[(rel, tail)]`，**从 head 出发查 1 跳邻居是 O(1) `dict.get`**；从 tail 反查会变成 O(N) 遍历（"被 X 投资的所有公司"要扫所有 edges）。**生产里要建双向索引**（同时存 `dict[tail] → set[(rel, head)]`），RAGFlow 的 `n_hop_with_weight` 字段就是预先展开的双向邻接表。
-- **JSON vs 结构化分隔符**——MVP 走裸 JSON（`response_format={"type": "json_object"}` + `<think>` 剥除）；RAGFlow 走**三段式分隔符**（`{tuple_delimiter}` + `{record_delimiter}` + `{completion_delimiter}`，默认 `<SEP>` / `##` / `<|COMPLETE|>`），见 `ragflow_notes/graph_extraction.md` §1。**分隔符格式正确率 >90%**（实测 Claude / GPT-4），裸 JSON 在中文 / MiniMax-M3 / qwen 这一档模型上格式正确率 <30%——MVP 走裸 JSON 是为了让 prompt 足够简单、能跑通核心点；生产请切分隔符。
+- **JSON vs 结构化分隔符**——MVP 走裸 JSON（`response_format={"type": "json_object"}` + `<think>` 剥除）；RAGFlow 走**三段式分隔符**（`{tuple_delimiter}` + `{record_delimiter}` + `{completion_delimiter}`，默认 `<SEP>` / `##` / `<|COMPLETE|>`），见 `docs/reference/ragflow-notes/graph_extraction.md` §1。**分隔符格式正确率 >90%**（实测 Claude / GPT-4），裸 JSON 在中文 / MiniMax-M3 / qwen 这一档模型上格式正确率 <30%——MVP 走裸 JSON 是为了让 prompt 足够简单、能跑通核心点；生产请切分隔符。
 - **`set` vs `list` 存邻接边**——MVP 用 `set`，**同一 `(rel, tail)` 多次出现自动去重**；`list` 简单但会在"同段重复抽到同一三元组"时污染边集合。代价是 `set` 不保证顺序，unit 02 用 `sorted(graph.get(entity, set()))` 显式排。
 - **`build_graph` 单层 vs 多层**——MVP 走单层 dict（节点名即 key）；RAGFlow 把同一实体名跨段出现时**合并 description**（`<SEP>` 拼接，超过 12 段送 LLM 摘要压缩），并按 `entity_type` 分桶做 entity resolution。**MVP 完全不做合并**——`紫光恒越` 和 `紫光恒越技术有限公司` 是两个节点，召回时只能命中其中一个。
 
@@ -214,31 +214,21 @@ unit 02 跑起来：
   (无结果——'不存在的实体xyz' 不在图中或没有出边)
 ```
 
-不同次跑节点数 / 边数会小幅抖动（LLM 在 `temperature=0` 下对长 prompt 仍有少量随机性；chunk 0/1/2 是封面 + 目录，信息密度低，模型决定抽不抽也有差异）——**这是 LLM 抽取的固有现象，不是 bug**。生产里要做的是把 `temperature=0` + 多次 retry + LLM cache 叠起来（`set_llm_cache` / `get_llm_cache`，见 `ragflow_notes/graph_extraction.md` §2），让重复跑可复现。
+不同次跑节点数 / 边数会小幅抖动（LLM 在 `temperature=0` 下对长 prompt 仍有少量随机性；chunk 0/1/2 是封面 + 目录，信息密度低，模型决定抽不抽也有差异）——**这是 LLM 抽取的固有现象，不是 bug**。生产里要做的是把 `temperature=0` + 多次 retry + LLM cache 叠起来（`set_llm_cache` / `get_llm_cache`，见 `docs/reference/ragflow-notes/graph_extraction.md` §2），让重复跑可复现。
 
 **Troubleshooting**：
 
 - `KeyError: 'LLM_API_KEY'`：unit 01 必填 key，`.env` 加 `LLM_API_KEY=sk-...`；unit 02 不依赖 key 但需要先跑过 unit 01。
-- `_llm_json` 返回 `[]` / 图节点数抖动大：LLM 没 honor `response_format=json_object`，把 `<think>...</think>` 推理块或 ```` ```json ```` fence 当 JSON 解析失败。MVP 已做 `re.sub` 剥除，但仍可能因模型输出版本不同失败——切到结构化分隔符（`<SEP>` 三段式）能从源头解决，参考 `ragflow_notes/graph_extraction.md`。
+- `_llm_json` 返回 `[]` / 图节点数抖动大：LLM 没 honor `response_format=json_object`，把 `<think>...</think>` 推理块或 ```` ```json ```` fence 当 JSON 解析失败。MVP 已做 `re.sub` 剥除，但仍可能因模型输出版本不同失败——切到结构化分隔符（`<SEP>` 三段式）能从源头解决，参考 `docs/reference/ragflow-notes/graph_extraction.md`。
 - `pypdf / docx` 解析空：PDF 是扫描件（无文本层），需要 OCR；DOCX 是图片型。s11 专门讲多模态。
 - `UnicodeEncodeError: 'gbk' codec can't encode character`：Windows 控制台编码问题，跑前 `set PYTHONIOENCODING=utf-8`（s05-s09 同问题）。
-- "紫光恒越" 和 "紫光恒越技术有限公司" 召回不全：MVP 不做 entity resolution，两个名字是两个节点。生产里走 `entity_resolution.py` 两阶段管线（粗筛 + LLM 精审），详见 `ragflow_notes/graph_extraction.md` §4。
+- "紫光恒越" 和 "紫光恒越技术有限公司" 召回不全：MVP 不做 entity resolution，两个名字是两个节点。生产里走 `entity_resolution.py` 两阶段管线（粗筛 + LLM 精审），详见 `docs/reference/ragflow-notes/graph_extraction.md` §4。
 
 ---
 
-## 四、对照 RAGFlow + 思考题
+## 四、选型与思考题
 
-### 4.1 ragflow 怎么做的
-
-RAGFlow 的 GraphRAG 模块在 `rag/graphrag/` 下分两条产品线——**general**（完整 GraphRAG，对标微软 GraphRAG：`graph_prompt.py` + `extractor.py` + `leiden.py` + `search.py`）和 **light**（轻量版，仅 LLM 抽实体 + 简单检索）。MVP 走的是 light 路线的极简版。**3 个最关键的设计决策**：
-
-- **三段式分隔符 prompt（`general/graph_prompt.py`）**——RAGFlow 的 `GRAPH_EXTRACTION_PROMPT` 直接抄自微软 GraphRAG，用 `{tuple_delimiter}` + `{record_delimiter}` + `{completion_delimiter}` 三段式（默认 `<SEP>` / `##` / `<|COMPLETE|>`），逼 LLM 输出**结构化 token 序列**而不是裸 JSON，再由 `utils.handle_single_entity_extraction` 解析回 Python dict。**实测格式正确率：Claude / GPT-4 上 90%+**，中文 / MiniMax-M3 / qwen 这一档模型也明显高于裸 JSON（实测 qwen2.5、deepseek、MiniMax-M3 走分隔符比走 JSON 高 2-3 倍）。**MVP 走裸 JSON** 是为了让 prompt 足够简单能跑通核心点；**生产请切分隔符**。
-- **并发抽取 + merge + 缓存（`general/extractor.py`）**——`Extractor.__call__`（131-268 行）拿到 chunks 后用 `asyncio.Semaphore(MAX_CONCURRENT_PROCESS_AND_EXTRACT_CHUNK=10)` 并发抽每段；同一实体名跨段出现的，type 取 Counter 最大值、description 用 `<SEP>` 拼接再决定是否送 LLM 摘要；多次 retry + `set_llm_cache` / `get_llm_cache` 避免重跑同一 chunk。**几千段文档的抽取成本从分钟级降到可控**。MVP 完全没做并发 / merge / 缓存——unit 01 跑 8 个 chunk 串行抽，第二次跑会重新调 LLM。
-- **知识图谱当 chunk 存倒排索引 + hierarchical Leiden 社区检测**——RAGFlow 把 entity / relation / `community_report` 当 chunk 写进 Elasticsearch/Infinity（`knowledge_graph_kwd` 区分），跟文本块共存于同一倒排索引。查询时既可以走"向量召回实体 → 读 `n_hop_with_weight` 字段扩展多跳"（`rag/graphrag/search.py` 的 `KGSearch`），也可以先跑 hierarchical Leiden 社区检测（`graspologic.partition.hierarchical_leiden`，`max_cluster_size=12`）、给每个社区生成一段 summary 用来答"文档集主要在讲什么"这种宏观问题。**MVP 不做社区检测**，只跑 1 跳 `dict.get`。
-
-完整摘录与 4 条"为什么这样"的分析见 [`ragflow_notes/graph_extraction.md`](../ragflow_notes/graph_extraction.md)。**一句话对比**：RAGFlow 把"图查询"做成**结构化分隔符 prompt + 并发抽取 + Leiden 社区检测 + 倒排索引**——格式正确率高、抽取成本可控、能答宏观问题；**本章 MVP 走"裸 JSON prompt + 串行抽取 + dict 内存图 + 1 跳 query"**，**接口形状留好了**，生产按需切。
-
-### 4.2 主流 GraphRAG 范式速览
+### 4.1 主流 GraphRAG 范式速览
 
 下面这张表把 GraphRAG 系统的实现路径按"prompt 形式 / 抽取并发度 / 图存储 / 查询路径 / 社区检测"列出来：
 
@@ -251,7 +241,7 @@ RAGFlow 的 GraphRAG 模块在 `rag/graphrag/` 下分两条产品线——**gene
 
 我们的 toy `extract_triples` + `query_graph` 在范式复杂度上只占第一行——**手写 JSON + 内存 dict**；RAGFlow 走完整 general 路径，**多一道抽象就多一道观测点 + 一个失败模式**。教学 demo 选 MVP 因为它跑通快、依赖少、依赖全在 prompt 里可见；**生产请按"格式正确率 / 抽取成本 / 是否答宏观问题"做 tier 选型**（MVP → 切分隔符 → RAGFlow general → Neo4j）。
 
-### 4.3 选型速记
+### 4.2 选型速记
 
 - **教学 / 快速原型 / 离线可复现** → 本章 MVP（手写 JSON prompt + 内存 dict + 1 跳 query），无并发、无 merge、无社区检测，代码 ≤ 150 行；
 - **生产单租户 / 几万 chunks** → 切 LightRAG / RAGFlow light（`<SEP>` 三段式 + 倒排索引），格式正确率 + 抽取并发度上来了，代码 +200 行换 +300% 鲁棒性；
@@ -259,7 +249,7 @@ RAGFlow 的 GraphRAG 模块在 `rag/graphrag/` 下分两条产品线——**gene
 - **图遍历密集 / 大规模实体** → Neo4j / TigerGraph 工业图数据库，Cypher / Gremlin 比 `dict.get` 表达力强，运维成本 10x 但可观测性 +10x；
 - **要先看清每个边界再选** → 用本章 unit 01 把"手写 JSON"和"切分隔符"各跑一次，对比格式正确率——这是最简单的"抽取 prompt A/B"实验。
 
-### 4.4 思考题
+### 4.3 思考题
 
 1. **如果两段文字里同一实体名字不同（"产品 A" vs "A 型"）怎么办？**  
    答：这是 **entity resolution / entity linking** 问题——图谱质量的天花板就卡在这里。如果不做，"紫光恒越"和"紫光恒越技术有限公司"是图里两个不同节点，所有下游查询（PageRank、社区检测、邻居扩展）都会被撕碎。生产解法 3 种：① 规则归一化（去后缀 / 全角半角 / 别名词典）；② Embedding 余弦相似度 + LLM 判断（RAGFlow `entity_resolution.py` 的两阶段管线）；③ 让 LLM 在抽取阶段直接出 canonical name。生产推荐 ① + ② 组合，详见 [`thinking_answers.md`](./thinking_answers.md)。

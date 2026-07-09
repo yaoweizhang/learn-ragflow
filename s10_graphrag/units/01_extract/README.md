@@ -47,13 +47,13 @@ chunks: 8
 
 ## 对照 ragflow 怎么做的
 
-`ragflow_notes/graph_extraction.md` 给出了 RAGFlow 两条路径的对照:
+`docs/reference/ragflow-notes/graph_extraction.md` 给出了 RAGFlow 两条路径的对照:
 
 - **general 路径**:抄微软 GraphRAG 三段式 prompt(`entity_types` 白名单 + `<SEP>` / `<record_delimiter>` / `<completion_delimiter>` 三类分隔符 + few-shot),输出**结构化 token 流**而不是裸 JSON,正确率 30% → 90%+。我们这里走的是裸 JSON,模型偶尔不 honor `response_format=json_object`;
 - **light 路径**:HKUDS LightRAG 风格,同样用 `<|>` / `##` / `<|COMPLETE|>` 三类分隔符,但 prompt 短得多(1/2 长度),对中文 / qwen / MiniMax-M3 这档模型友好。生产里**建议切到 light prompt** + `entity_types` 白名单,正确率能上 80%+;
 - **entity_resolution.py 两阶段管线**(`rag/graphrag/entity_resolution.py:81-150`):**字符串相似度粗筛**(中文 2-gram、英文 editdistance)→ **LLM batch 精审**(每 100 个一批、并发上限 5、timeout 280s、checkpoint 持久化)。粗筛按 `entity_type` 分桶——不同类型的实体根本不进同一候选集。这是 MVP 完全缺失的环节。
 
-参考:[`ragflow_notes/graph_extraction.md`](../../../../ragflow_notes/graph_extraction.md)
+参考:[`docs/reference/ragflow-notes/graph_extraction.md`](../../../../docs/reference/ragflow-notes/graph_extraction.md)
 
 ## 思考题
 

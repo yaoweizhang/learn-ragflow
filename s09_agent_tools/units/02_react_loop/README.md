@@ -69,7 +69,7 @@ RAGFlow 的 agent 不是字符串解析循环，是**可插拔 DAG + 结构化 t
 - 死循环的三道防线：① `LLMBundle(..., max_rounds=5)`（LLM 调用次数硬上限）；② `is_canceled()` 检查（写 Redis 的 `cancel` 标记，前端可主动中断）；③ `Categorize` 组件的 `_extend_path` 让一条路走不通时跳到另一条；
 - planner 是 `Categorize` + `Switch`（多路分发）+ `Iteration` / `Loop`（带状态的任务队列）；组件之间通过 `{component_id@output_var}` 这样的 DSL 变量引用解耦，`Canvas.get_variable_value` 在执行时按需解析——本质是把 MVP 写死的 Python 控制流全部**数据化**了，可以 UI 编辑、可以保存、可以版本控制。
 
-参考：[`ragflow_notes/agent_tools.md`](../../../../ragflow_notes/agent_tools.md)
+参考：[`docs/reference/ragflow-notes/agent_tools.md`](../../../../docs/reference/ragflow-notes/agent_tools.md)
 
 ## 思考题
 

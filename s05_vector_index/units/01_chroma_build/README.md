@@ -41,10 +41,10 @@ indexed 34 chunks into _chroma/ (collection=docs, dim=512)
 
 ## 对照 ragflow 怎么做的
 
-RAGFlow 直接弃用 Chroma，选了 `Elasticsearch` 或 `Infinity` 这两个**"BM25 + 向量二合一"**的引擎：原生支持 `dense_vector` 字段、跨节点分片副本、可水平扩到亿级，**多租户硬隔离**靠 `ragflow_<tenant_id>_<kb_id>` 索引命名规则。Chroma 在 RAGFlow 眼里只是"开发态玩具"，详细对照见 `ragflow_notes/vector_indexing.md`，里面 ES `create_idx` 的 `mapping.json` 模板把 `settings + mappings`（分片数、副本数、`dense_vector` 字段类型、HNSW 参数）一份文件管全集群。
+RAGFlow 直接弃用 Chroma，选了 `Elasticsearch` 或 `Infinity` 这两个**"BM25 + 向量二合一"**的引擎：原生支持 `dense_vector` 字段、跨节点分片副本、可水平扩到亿级，**多租户硬隔离**靠 `ragflow_<tenant_id>_<kb_id>` 索引命名规则。Chroma 在 RAGFlow 眼里只是"开发态玩具"，详细对照见 `docs/reference/ragflow-notes/vector_indexing.md`，里面 ES `create_idx` 的 `mapping.json` 模板把 `settings + mappings`（分片数、副本数、`dense_vector` 字段类型、HNSW 参数）一份文件管全集群。
 
-参考：[`ragflow_notes/vector_indexing.md`](../../../../ragflow_notes/vector_indexing.md)  
-另见 [`ragflow_notes/embedding_routing.md`](../../../../ragflow_notes/embedding_routing.md)（多 provider 路由的设计取舍，间接影响"换模型 → 重建 collection"的痛感）
+参考：[`docs/reference/ragflow-notes/vector_indexing.md`](../../../../docs/reference/ragflow-notes/vector_indexing.md)  
+另见 [`docs/reference/ragflow-notes/embedding_routing.md`](../../../../docs/reference/ragflow-notes/embedding_routing.md)（多 provider 路由的设计取舍，间接影响"换模型 → 重建 collection"的痛感）
 
 ## 思考题
 

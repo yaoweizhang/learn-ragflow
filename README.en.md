@@ -5,7 +5,6 @@
 This repository is a hands-on, engineering-focused RAG (Retrieval-Augmented Generation) tutorial. Every chapter contains:
 
 - A **self-written MVP** (30–80 lines of Python, single file, minimal dependencies)
-- A **RAGFlow reference reading** (key source snippets excerpted into `ragflow_notes/`)
 - **Reproducible experiments** that run on two shared sample files: `samples/server_whitepaper.pdf` and `samples/disclosure.docx`
 
 **Target reader:** comfortable calling LLM APIs in Python; wants to understand the full RAG pipeline from an engineering angle rather than from pure theory. No prior RAGFlow exposure required.
@@ -54,24 +53,15 @@ learn-ragflow/
 │   ├── README.md
 │   ├── server_whitepaper.pdf
 │   └── disclosure.docx
-├── ragflow_notes/               # RAGFlow source excerpts, cited per chapter
-│   ├── README.md
-│   ├── deepdoc_pdf_parsing.md
-│   ├── deepdoc_chunking.md
-│   ├── embedding_routing.md
-│   ├── vector_indexing.md
-│   ├── hybrid_retrieval.md
-│   ├── rerank.md
-│   ├── prompt_templates.md
-│   ├── agent_tools.md
-│   ├── graph_extraction.md
-│   ├── multimodal_parsing.md
-│   └── deployment.md
+├── docs/                        # Design docs (not part of the tutorial runtime)
+│   ├── 00-intro/                # RAG primer + docs/ usage
+│   └── reference/
+│       └── ragflow-notes/       # RAGFlow source excerpts (one per chapter)
 ├── s01_what_is_rag/             # Chapter 1
 ├── s02_doc_loading/             # Chapter 2
 ├── ...
 ├── s12_deployment/              # Chapter 12
-└── docs/                        # Design docs (not part of the tutorial runtime)
+└── samples/                     # Shared samples
 ```
 
 ## Where to go next
@@ -82,11 +72,11 @@ After working through all 12 chapters, the natural next steps are:
 - **Swap chunker**: s03's `chunk_by_paragraph` is paragraph-based; try sentence + sliding-window or Markdown-heading-based splitting.
 - **Tune retrieval weights**: s06's `alpha` controls vector vs. BM25 weighting; build a 5-10 question eval set to pick the best value.
 - **Go to production**: s12 ships FastAPI + docker compose. Add Prometheus monitoring, Sentry error tracking, and an independent model server (vLLM / TGI) for scale.
-- **Read RAGFlow source**: each chapter's `ragflow_notes/<topic>.md` excerpted 5-10 key lines from RAGFlow; start from s01's `rag/nlp/search.py` and read through s12's `docker/docker-compose.yml` to see how an industrial RAG system grows out of a 30-line MVP.
+- **Read RAGFlow source (optional)**: see [`docs/reference/ragflow-notes/`](./docs/reference/ragflow-notes/) for chapter-aligned source excerpts; not on the default reading path.
 
 ## Acknowledgements
 
-- [**RAGFlow**](https://github.com/infiniflow/ragflow) — primary industrial reference; each chapter's section 5 cites excerpts in `ragflow_notes/`. RAGFlow excerpts are pinned to commit `828c5789f` (2026-07-01); RAGFlow evolves, so excerpts may go stale.
+- [**RAGFlow**](https://github.com/infiniflow/ragflow) — primary industrial reference; see [`docs/reference/ragflow-notes/`](./docs/reference/ragflow-notes/) for chapter-aligned source excerpts. RAGFlow evolves, so excerpts may go stale.
 - [**learn-claude-code**](https://github.com/shareAI-lab/learn-claude-code) — inspiration for the "minimal runnable MVP per chapter" format.
 - [**BGE models**](https://github.com/FlagOpen/FlagEmbedding) (BAAI) — default embedding and reranker.
 

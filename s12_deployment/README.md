@@ -126,7 +126,7 @@ services:
 这也是为什么本章只拆 **1 个 unit** 而不是 2-3 个——
 
 - 整章就 4 个文件 + 1 个启动器，组合只有一种（"FastAPI + Dockerfile + compose + 启动器"），没有"由浅入深"的多档梯度。`docker compose up --build` 是终点，没有中间状态可设——你不会"先只跑 FastAPI 不跑 Docker"，也不会"先跑 compose 不跑 FastAPI"——它们是绑定的。
-- 对照 s09 (Agent) 的 2 unit（"先 LLM 工具调用骨架、后 REPL 交互"）、s10 的 2 unit（"先 LLM 抽三元组、后 1 跳 query"）、s11 的 2 unit（"先表格、后 OCR"）——它们都有"无 LLM 走通 / 有 LLM 走通"或"纯文本 / 多模态"的天然分层。s12 没有这种分层，因为**部署的"深"是工程问题（多容器 / 监控 / 鉴权）而不是代码问题**——后者用 1 个 unit 教完前者 80%，剩下 20%（生产化）留到 §四 对照 RAGFlow 时讲。
+- 对照 s09 (Agent) 的 2 unit（"先 LLM 工具调用骨架、后 REPL 交互"）、s10 的 2 unit（"先 LLM 抽三元组、后 1 跳 query"）、s11 的 2 unit（"先表格、后 OCR"）——它们都有"无 LLM 走通 / 有 LLM 走通"或"纯文本 / 多模态"的天然分层。s12 没有这种分层，因为**部署的"深"是工程问题（多容器 / 监控 / 鉴权）而不是代码问题**——后者用 1 个 unit 教完前者 80%，剩下 20%（生产化：多容器拆分 + 健康检查 + 鉴权网关）按需切。
 
 > 💡 "1 unit" 不是偷懒——它是诚实的工程表达。教学 demo 选 1 unit 是因为没有可拆的多档梯度；生产化（拆 10+ 容器）才需要分阶段讲，对应的是 §四 而不是 unit 拆分。
 
@@ -136,9 +136,9 @@ services:
 
 ### 3.1 章节导航
 
-| Unit | 主题 | 它解决什么 | 对照 RAGFlow |
-|---|---|---|---|
-| [01_fastapi_docker](./units/01_fastapi_docker/README.md) | FastAPI 包装 + Dockerfile + docker-compose + 启动器 | "本机命令行 RAG" → "curl 调得通的 HTTP 服务" | `ragflow-cpu` 容器 + `docker-compose-base.yml` 10+ 服务编排 |
+| Unit | 主题 | 它解决什么 |
+|---|---|---|
+| [01_fastapi_docker](./units/01_fastapi_docker/README.md) | FastAPI 包装 + Dockerfile + docker-compose + 启动器 | "本机命令行 RAG" → "curl 调得通的 HTTP 服务" |
 
 ### 3.2 跑起来
 
@@ -200,40 +200,17 @@ s12 的代码拆得很细，每个函数 / 配置文件都对应一种"上线动
 
 加一种部署能力（health check / 模型独立 / 鉴权 / 监控）只要三步：
 
-1. 在 `app.py` 加 `@app.get("/healthz") def healthz(): return {"ok": True}` + 在 `docker-compose.yml` 加 `healthcheck: test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]` + `depends_on: condition: service_healthy`——让 compose 知道服务"真起来了"而不是"进程在跑"（参考 `ragflow_notes/deployment.md` §"为什么这样写"）；
-2. 把 `app.py` 里 `from sentence_transformers import ...` / bge-reranker 这种重依赖拆出来独立成模型服务（`tei-cpu` / `tei-gpu` / `vllm`），FastAPI 进程发 HTTP 调模型——**API 进程无状态、模型单独调度、改模型不用重 build API 镜像**（参考 `ragflow_notes/deployment.md` 服务清单的 `tei-cpu` / `tei-gpu` 行）；
+1. 在 `app.py` 加 `@app.get("/healthz") def healthz(): return {"ok": True}` + 在 `docker-compose.yml` 加 `healthcheck: test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]` + `depends_on: condition: service_healthy`——让 compose 知道服务"真起来了"而不是"进程在跑"（参考 `docs/reference/ragflow-notes/deployment.md` §"为什么这样写"）；
+2. 把 `app.py` 里 `from sentence_transformers import ...` / bge-reranker 这种重依赖拆出来独立成模型服务（`tei-cpu` / `tei-gpu` / `vllm`），FastAPI 进程发 HTTP 调模型——**API 进程无状态、模型单独调度、改模型不用重 build API 镜像**（参考 `docs/reference/ragflow-notes/deployment.md` 服务清单的 `tei-cpu` / `tei-gpu` 行）；
 3. 在 compose 前套 nginx / APISIX 网关做鉴权（API key / JWT）和限流（rate limit），env_file 里的 `LLM_API_KEY` 改成从 Vault / KMS 拉（runtime secret），不在镜像层固化——参考 RAGFlow `docker-compose-base.yml` 的 `nginx` 服务（顶层 compose 集成）。
 
 不要在 `app.py` 里写 `if auth_mode == "api_key": ... elif auth_mode == "jwt": ...` 之类分发——它会污染单一职责。`app.py` 只懂"接 `POST /qa`、调 s08、返结果"，鉴权放网关层。本章 MVP 只跑单容器无鉴权，但**接口形状留好了**——加 `/healthz` 端点不需要改业务代码、套网关不需要改 FastAPI 内部。
 
 ---
 
-## 四、对照生产部署实践 + 思考题
+## 四、选型与思考题
 
-### 4.1 对照生产部署实践
-
-把 s12 的"1 容器 FastAPI"和工业级 RAG 部署对比，能直接看到 **MVP vs 生产的最小可用集差什么**。这张表是 RAGFlow 工业实践 + MVP 现状的并排：
-
-| 维度 | MVP（s12） | 生产最小集（RAGFlow / 通用 SaaS） | 差距 |
-|---|---|---|---|
-| **服务数量** | 1 个 FastAPI 容器 | 10+ 容器（ES / MySQL / MinIO / Redis / sandbox / 主 API / OCR / 监控） | 多租户 / 队列 / 对象存储 / 沙箱执行 |
-| **存储** | samples 目录 + _chroma 文件挂载 | S3 / MinIO + ES 倒排索引 | 大文件 / 备份 / 水平扩展 |
-| **状态** | 进程内存 + 本地文件 | MySQL（关系）+ Redis（队列/缓存）+ MinIO（对象）| 用户/租户/任务状态独立扩缩容 |
-| **API 鉴权** | 无 | API key / JWT / OAuth2 | 谁都能调 = LLM token 钱随便烧 |
-| **监控** | 容器 stdout | Prometheus + Grafana + Loki | 看不了 P99 延迟 / 错误率 / token 消耗 |
-| **健康检查** | 无 | `/healthz` 端点 + `depends_on: service_healthy` | 容器起 ≠ 服务好（import 阶段崩了 compose 还认为 OK） |
-| **模型部署** | 进程内 `import sentence-transformers` | `tei-cpu` / `tei-gpu` / `vLLM` 独立服务 | API 进程被 500ms 推理卡住，水平扩展时显存占满 |
-| **冷启动** | hnswlib 首次 query 3-5s | 索引预热 sidecar + 缓存层 | 第一个用户等到天荒地老 |
-| **API 协议** | HTTP REST（FastAPI） | HTTP REST + gRPC + WebSocket（流式） | 流式输出 / 高并发 RPC |
-| **部署** | docker compose 单机 | K8s + Helm + ArgoCD | 滚动升级 / 灰度发布 / 自动恢复 |
-
-**RAGFlow 的 10+ 容器拆法**（详见 [`ragflow_notes/deployment.md`](../ragflow_notes/deployment.md)）：ES / Infinity（向量 + 全文检索）、MySQL / OceanBase（关系数据）、MinIO（对象存储）、Redis / NATS（队列 + 缓存）、`sandbox-executor-manager`（Agent 沙箱）、`tei-cpu` / `tei-gpu`（独立 Embedding 服务）、`deepdoc`（视觉 OCR HTTP 服务）、`ragflow-cpu` / `ragflow-gpu`（主 RAG API）、`kibana`（可视化）——按 `depends_on: condition: service_healthy` 串起启动顺序，靠 `profiles` 互斥选 CPU / GPU 后端。**MVP 反过来：只跑 1 个容器**，ES 换 Chroma、MySQL 换进程内存、MinIO 换 samples 目录挂载、`tei-*` 换直接 `import sentence-transformers`、sandbox 干脆没有（s09 Agent 没做工具调用）。**代价**见 §2.1 4 类典型失败（依赖要对方装 / 无 HTTP 端点 / 重启丢索引 / 冷启动慢 + 无观测），**收益是 5 分钟跑起来**。
-
-**镜像分层 trade-off**：RAGFlow 的 `ragflow-cpu` 镜像把"Python 基础层 / 系统依赖层 / pip 包层 / 模型权重层 / 业务代码层"分开——改业务代码不动模型（模型走 volume / S3 挂载）、改 requirements 不动基础层；**我们 MVP 的 `python:3.11-slim` + `pip install -r requirements.txt` + `COPY .. /app` 把 BGE (~100MB) + reranker (~1GB) + chromadb ONNX 依赖全烧进第 4 层**，`docker images` 看一下可能 2GB+，**改一行代码 `docker compose build` 就会触发完整重 build**——这是 demo 的代价，生产化必做的"模型层分离"是 §3.5 第 2 步。
-
-> 💡 **一句话对比**：RAGFlow 把"部署"做成**多容器编排 + 独立模型服务 + 健康检查链 + 监控可观测 + 鉴权网关**——能扛生产负载、能多租户、能水平扩展；**本章 MVP 走"1 容器 FastAPI + Dockerfile + compose + 启动器"**——能跑通核心流程、能让 `curl` 调通、能让别人不用装 Python 就能用，**接口形状留好了**，生产按需切。
-
-### 4.2 主流部署范式速览
+### 4.1 主流部署范式速览
 
 下面这张表把 RAG 系统的部署路径按"服务数量 / 存储 / 模型部署 / 监控 / 适用场景"列出来：
 
@@ -247,7 +224,7 @@ s12 的代码拆得很细，每个函数 / 配置文件都对应一种"上线动
 
 我们的 toy `app.py` + `Dockerfile` + `docker-compose.yml` 在范式复杂度上只占第一行——**单容器 FastAPI**；RAGFlow 走完整工业路径，**多一道抽象就多一道观测点 + 一个失败模式**。教学 demo 选 MVP 因为它跑通快、依赖少、依赖全在 `docker compose up --build` 这一行命令里可见；**生产请按"用户量 / 数据量 / 是否多租户 / 是否要可观测"做 tier 选型**（MVP → compose + 网关 → RAGFlow compose → K8s）。
 
-### 4.3 选型速记
+### 4.2 选型速记
 
 - **教学 / 快速原型 / demo / 单人用** → 本章 MVP（1 容器 FastAPI + compose），5 分钟跑起来，curl 调得通，改代码重 build 慢但可接受；
 - **小团队 / 内网 demo / 早期产品** → 加 `/healthz` + nginx 网关（鉴权 + 限流）+ Prometheus 指标，3 个服务，代码 +50 行换 +200% 可用性；
@@ -256,7 +233,7 @@ s12 的代码拆得很细，每个函数 / 配置文件都对应一种"上线动
 - **Serverless / 不想运维** → 托管向量库（Pinecone / Weaviate Cloud）+ 云函数（AWS Lambda / Vercel）+ 托管 Embedding API，**0 运维**，但**单次调用成本 3-5x 自建**、数据合规要额外评估；
 - **要先看清每个边界再选** → 用本章 unit 01 把"1 容器"和"compose + 网关"各跑一次，对比"5 分钟跑起来"和"3 个服务 + 50 行配置"——这是最简单的"部署方案 A/B"实验。
 
-### 4.4 思考题
+### 4.3 思考题
 
 1. **生产环境你还会加哪些服务？**  
    答：见 [`thinking_answers.md`](./thinking_answers.md)。简版：① 监控（Prometheus + Grafana + Loki）；② 错误追踪（Sentry / 自建 Trace）；③ 独立模型服务（vLLM / TEI / TGI）；④ 对象存储（S3 / MinIO）。这四类是"能上线"和"能跑"的最小 gap；再往上加 API 网关 / 任务队列 / 配置中心 / 密钥管理才是"能卖钱"。

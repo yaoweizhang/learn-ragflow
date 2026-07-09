@@ -52,14 +52,14 @@ python s10_graphrag/units/02_query/code.py
 
 ## 对照 ragflow 怎么做的
 
-`ragflow_notes/graph_extraction.md` 描述的 RAGFlow KGSearch 主路径:
+`docs/reference/ragflow-notes/graph_extraction.md` 描述的 RAGFlow KGSearch 主路径:
 
 - **召回不靠 dict.get**:走"LLM 改写 query → 向量召回实体 → 读 `n_hop_with_weight` 字段扩展多跳"(`rag/graphrag/search.py` 的 `KGSearch` 类)。即使用户 query 是 `海光` 这种别名,向量检索能命中"海光 CPU"和"海光信息技术";
 - **多跳由存储层支持**:`n_hop_with_weight` 字段在写入时算好 1-2 跳邻接表,查询时只读不计算,所以"2 跳邻居"和"1 跳邻居"同 latency;
 - **community_report 答宏观问题**:hierarchical Leiden 社区检测后,每社区一段 summary,用来答"文档集主要在讲什么"——unit 02 的 1 跳查询根本答不了这种问题,因为它必须**跨实体聚合**才能看出主题;
 - **entity_resolution.py 2 阶段管线**:见 unit 01 README 的对照部分。RAGFlow 把别名归一做到写入前,所以查询阶段不用再处理"这个名字到底是不是同一个东西"。
 
-参考:[`ragflow_notes/graph_extraction.md`](../../../../ragflow_notes/graph_extraction.md)
+参考:[`docs/reference/ragflow-notes/graph_extraction.md`](../../../../docs/reference/ragflow-notes/graph_extraction.md)
 
 ## 思考题
 

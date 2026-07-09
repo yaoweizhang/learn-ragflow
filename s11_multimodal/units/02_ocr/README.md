@@ -91,7 +91,7 @@ RAGFlow 的 OCR 在 `deepdoc/parser/utils.py` 的 `VisionParser` 类里：
 vs MVP：`ocr_image` 输出平铺字符串，**没有 bbox、没有版面、没有表格结构**——
 MVP 是"能 OCR"，RAGFlow 是"OCR 后能定位回原图 / 原 cell"。
 
-参考：[`ragflow_notes/multimodal_parsing.md`](../../../../ragflow_notes/multimodal_parsing.md)
+参考：[`docs/reference/ragflow-notes/multimodal_parsing.md`](../../../../docs/reference/ragflow-notes/multimodal_parsing.md)
 
 ## 思考题
 

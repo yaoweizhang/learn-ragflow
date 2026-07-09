@@ -99,7 +99,7 @@ ActionInput: {"query": "R3630 G5 内存插槽数量"}
    - ② prompt 软约束——在 `TOOLS_DESC` 里写"每个问题**最多调用一次 retrieve**,再调用一次还没有答案就用已有 observation 给出 finish,否则答'我不知道'并 finish";对主流模型(GPT-4o / Claude / Qwen-Max)效果不错,缺点是 prompt 越长越稀释;
    - ③ 重复 action 检测——运行时加"前两步 `Action / ActionInput` 对是不是一模一样"的检查,命中强制 `finish`(`observation = "我重复了同一次检索,无法获取更多新信息"`),硬约束、不依赖模型听话。**MVP 只做 ①**,② ③ 留作生产加固项。详见 `thinking_answers.md` 思考题 1。
 
-2. **LLM 输出的 `Action: retrieve` 漏 `ActionInput` / JSON 解析失败**——模型可能吐 `Action: retrieve` 但漏 ActionInput,或者多写一段解释把 JSON 冲断。MVP 的 regex `r"Action:\s*(\w+)\b\s*ActionInput:\s*(.+)"` 是脆弱的——**生产里用 OpenAI / Anthropic 的 `tool_calls` 字段让 API 帮你解析**,模型不再"打字"给你,而是结构化返回参数(`tool_calls[0].function.name + arguments`)。RAGFlow 的 `LLMToolPluginCallSession` 走的就是这条路(见 `ragflow_notes/agent_tools.md`)。
+2. **LLM 输出的 `Action: retrieve` 漏 `ActionInput` / JSON 解析失败**——模型可能吐 `Action: retrieve` 但漏 ActionInput,或者多写一段解释把 JSON 冲断。MVP 的 regex `r"Action:\s*(\w+)\b\s*ActionInput:\s*(.+)"` 是脆弱的——**生产里用 OpenAI / Anthropic 的 `tool_calls` 字段让 API 帮你解析**,模型不再"打字"给你,而是结构化返回参数(`tool_calls[0].function.name + arguments`)。RAGFlow 的 `LLMToolPluginCallSession` 走的就是这条路(见 `docs/reference/ragflow-notes/agent_tools.md`)。
 
 3. **工具爆炸 / 选错工具**——工具一多 system prompt 装不下,模型选择准确率暴跌(每多 1 个工具 LLM 选择难度指数级上升)。**生产治理 3 招**:
    - ① **按"用户意图"分组路由**——先分类器决定走哪组工具(检索组 / 计算组 / 查询组 ...),不把所有工具一次塞给 LLM;
@@ -121,10 +121,10 @@ ActionInput: {"query": "R3630 G5 内存插槽数量"}
 
 ### 3.1 章节导航
 
-| Unit | 主题 | 它解决什么 | 对照 RAGFlow |
-|---|---|---|---|
-| [01_tool_call](./units/01_tool_call/README.md) | 单步工具调用(`TOOLS_DESC` prompt + `_llm` + `_retrieve` + `single_shot`) | "LLM 能不能自己挑 retrieve / finish" | `agent/component/agent_with_tools.py` 的 `bind_tools` + `LLMToolPluginCallSession` |
-| [02_react_loop](./units/02_react_loop/README.md) | ReAct 循环(Thought/Action/Observation + JSON 失败反馈 + `max_steps` 兜底) | "LLM 怎么多步推理 + 怎么不死循环" | `agent/canvas.py` 的 `Canvas.run` 异步生成器 + `is_canceled()` 主动取消 |
+| Unit | 主题 | 它解决什么 |
+|---|---|---|
+| [01_tool_call](./units/01_tool_call/README.md) | 单步工具调用(`TOOLS_DESC` prompt + `_llm` + `_retrieve` + `single_shot`) | "LLM 能不能自己挑 retrieve / finish" |
+| [02_react_loop](./units/02_react_loop/README.md) | ReAct 循环(Thought/Action/Observation + JSON 失败反馈 + `max_steps` 兜底) | "LLM 怎么多步推理 + 怎么不死循环" |
 
 ### 3.2 跑起来
 
@@ -246,19 +246,9 @@ Obs:     R3630 G5 配备 32 个 DIMM 内存插槽。
 
 ---
 
-## 四、对照 RAGFlow + 思考题
+## 四、选型与思考题
 
-### 4.1 ragflow 怎么做的
-
-RAGFlow 把 agent 做成**可插拔的 DAG**——`agent/canvas.py` 的 `Canvas.run` 是一个**异步生成器**,按 `path` 数组顺序跑组件,不是循环解析 LLM 的字符串输出;用 OpenAI 兼容的 `tool_calls` 字段让模型直接返回结构化调用(`agent/component/agent_with_tools.py`)。**3 个最关键的设计决策**:
-
-- **DAG 执行引擎(`Canvas.run`)**——`Canvas` 继承自 `Graph`,`self.path` 是这次执行的节点顺序列表,`Canvas.run` 是个**异步生成器**,按 `path` 顺序依次 yield `workflow_started` / `node_started` / `message` / `node_finished` / `workflow_finished` 事件——前端用这个流做实时 UI 更新,不是循环 `for step in range(max_steps)`。**MVP 没有这个 DAG 层**,只跑 1 条 `LLM → tool → LLM → ... → finish` 链;但**接口形状相似**——`run_agent` 返回的 `trace` 列表就是 MVP 版的"DAG 执行历史"。
-- **`bind_tools` + `LLMToolPluginCallSession`**——RAGFlow 用 `self.chat_mdl.bind_tools(self.toolcall_session, self.tool_meta)` 把工具列表喂给 LLM 客户端,LLM 返回的 `tool_calls` 字段被 `LLMToolPluginCallSession.tool_call` 解析成 `name + arguments`、在 `self.tools` 字典里查实例、调 `tool_obj.invoke(**arguments)`——**整套过程是结构化的**,不是从 LLM 的自由文本里 regex 抠 `Action: ...` 行。MVP 的正则解析是脆弱的(模型可能吐 `Action: retrieve` 但漏 `ActionInput`、或者多写一段解释把 JSON 冲断),生产上必须切到 `tool_calls` 字段。
-- **死循环防护**——`max_rounds=5`(默认,同 MVP)+ `is_canceled()` 主动取消 + `Categorize` 组件做"这条路走不通跳走"。**MVP 只有 `max_steps=5` 一道线**,`is_canceled()` 留给前端 UI 取消按钮触发的信号(`Cancel` token pattern),`Categorize` 留作生产加固项。详见 `ragflow_notes/agent_tools.md`。
-
-完整摘录与 3 条"为什么这样"的分析见 [`ragflow_notes/agent_tools.md`](../ragflow_notes/agent_tools.md)。**一句话对比**:RAGFlow 把"agent 决策"做成**可插拔 DAG + 结构化 tool_calls**——Canvas 按 path 跑组件、LLM 走 OpenAI `tool_calls` 字段、死循环靠 `max_rounds=5` + `is_canceled()` + `Categorize` 三层防护;**可观测、可分支、可取消,但实现复杂度高**。本章 MVP 走"prompt 内嵌 + 正则解析 + `max_steps` 一道线",**接口形状留好了**,生产按需切。
-
-### 4.2 主流 agent 范式速览
+### 4.1 主流 agent 范式速览
 
 下面这张表把 RAG 系统的 agent 范式按"工具描述形式 / 解析方式 / 死循环防护 / 工具数量"列出来:
 
@@ -272,7 +262,7 @@ RAGFlow 把 agent 做成**可插拔的 DAG**——`agent/canvas.py` 的 `Canvas.
 
 我们的 toy `run_agent` 在范式复杂度上只占第一行——**手写 ReAct**;RAGFlow 走完整 DAG,**多一道抽象就多一道观测点 + 一个失败模式**。教学 demo 选 MVP 因为它跑通快、依赖少、依赖全在 prompt 里可见;**生产请按"可观测性 vs 复杂度"做 tier 选型**(MVP → `tool_calls` → RAGFlow DAG → 多层 agent)。
 
-### 4.3 选型速记
+### 4.2 选型速记
 
 - **教学 / 快速原型 / 离线可复现** → 本章 MVP (手写 ReAct + prompt 内嵌 + graceful skip),无 API key 也能跑 trace 形状,代码 ≤ 200 行;
 - **生产单 agent(无嵌套)** → 切 OpenAI / Anthropic `tool_calls` 字段,正则解析归零,工具数可以涨到 10-15 个,代码 +50 行换 +300% 鲁棒性;
@@ -280,7 +270,7 @@ RAGFlow 把 agent 做成**可插拔的 DAG**——`agent/canvas.py` 的 `Canvas.
 - **已有 LangChain / LlamaIndex 栈** → 复用框架的 `AgentExecutor` / `ReActAgent`,不重写 prompt 解析、不自己接 LLM 客户端;
 - **要先看清每个边界再选** → 用本章 unit 02 把"手写 ReAct"和"加重复 action 检测"各跑一次,对比"模型一路 retrieve 不 finish"的稳定性——这是最简单的"agent A/B"实验。
 
-### 4.4 思考题
+### 4.3 思考题
 
 1. **如果模型一直选 retrieve 不 finish 怎么办?**  
    答:三种解法,按代价从低到高:① `max_steps` 上限(硬天花板,治不住"本来能答对但停不下来");② 在 system prompt 强调"必须 finish"(软约束,对主流模型效果不错,但 prompt 越长越稀释);③ 检测重复 `Action / ActionInput`,命中强制 finish(硬约束,不依赖模型听话)。生产推荐 ① + ② + ③ 都做。详见 [`thinking_answers.md`](./thinking_answers.md)。

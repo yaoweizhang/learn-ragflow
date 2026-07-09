@@ -63,10 +63,10 @@ BM25 处理"原词命中"，Embedding 处理"意思命中"——s06 会把两条
 
 ### 3.1 章节导航
 
-| Unit | 主题 | 它解决什么 | 对照 RAGFlow |
-|---|---|---|---|
-| [01_local_bge](./units/01_local_bge/README.md) | 最小可跑 Embedding（BGE 本地） | "免 key 的中文向量长什么样" | `BuiltinEmbed.MAX_TOKENS` 字典 |
-| [02_provider_routing](./units/02_provider_routing/README.md) | `EMBED_PROVIDER` env 三后端分发 | "切 OpenAI / Ollama 改哪几行" | `EmbeddingModel` 注册表 |
+| Unit | 主题 | 它解决什么 |
+|---|---|---|
+| [01_local_bge](./units/01_local_bge/README.md) | 最小可跑 Embedding（BGE 本地） | "免 key 的中文向量长什么样" |
+| [02_provider_routing](./units/02_provider_routing/README.md) | `EMBED_PROVIDER` env 三后端分发 | "切 OpenAI / Ollama 改哪几行" |
 
 ### 3.2 跑起来
 
@@ -178,15 +178,9 @@ provider: local, dim: 512, count: 3
 
 ---
 
-## 四、对照 RAGFlow + 思考题
+## 四、选型与思考题
 
-### 4.1 ragflow 怎么做的
-
-RAGFlow 在 `rag/llm/embedding_model.py` 把每个 Embedding provider（OpenAI / Tongyi / BaiduYiyan / Voyage / SiliconFlow / HuggingFace / Ollama …）写成继承 `Base` 的类、用 `_FACTORY_NAME` 类变量挂"对外名"；`rag/llm/__init__.py:163-192` 在 import 时用 `inspect.getmembers` 自动把所有 provider 类塞进 `EmbeddingModel` 字典，**dispatch 端零 `if/elif`**。完整摘录与 3 条"为什么这样写"的分析见 [`ragflow_notes/embedding_routing.md`](../ragflow_notes/embedding_routing.md)。
-
-一句话对比：RAGFlow 把 Embedding 后端做成"声明式注册 + 字典分发"——新增 provider 写一个类 + 标 `_FACTORY_NAME = "Xxx"`，import 时自动入字典；本章 `embed()` 字典分发（`{"local": ..., "openai": ..., "ollama": ...}`）是同思路的最小版，区别只在 RAGFlow 扩展到 30+ 家 provider 并加了统一 `EmbeddingError` 异常层做 retry / 降级。
-
-### 4.2 主流 Embedding 工具速览
+### 4.1 主流 Embedding 工具速览
 
 下面这张表把社区常用的几类 Embedding 方案按"维度 / 是否需 key / 是否本地 / 典型尺寸"列出来，方便选型时快速对照：
 
@@ -201,7 +195,7 @@ RAGFlow 在 `rag/llm/embedding_model.py` 把每个 Embedding provider（OpenAI /
 
 我们的 toy 方案（BGE-small-zh-v1.5）在"维度 / 是否本地 / 是否需 key"上只占第一行——能跑但不抗多语言。RAGFlow 在生产里会选 BGE-m3 / text-embedding-3-large 之一作为 1024 / 3072 维的 default，**rerank 友好的 1024 维变体**在 MTEB 检索任务上常常不输 3072 维而省一半存储。
 
-### 4.3 选型速记
+### 4.2 选型速记
 
 - **要快、只要中文、零成本起步** → `bge-small-zh-v1.5`（本教程 demo）；
 - **要多语言、混合检索** → `bge-m3`，1024 维有 rerank-friendly 变体；
@@ -209,7 +203,7 @@ RAGFlow 在 `rag/llm/embedding_model.py` 把每个 Embedding provider（OpenAI /
 - **要 rerank 配套** → 选 RAGFlow 用的 1024 维 BGE-m3 或 1024 维 Cohere multilingual，和 s07 的 BGE-reranker-large 维度对齐；
 - **要先看清每个后端边界条件再选** → 用本章 `unit 02` 把 openai / ollama 都跑一遍，看清楚"什么 env 缺了就 graceful skip"。
 
-### 4.4 思考题
+### 4.3 思考题
 
 **为什么 BGE 输出的向量需要 `normalize_embeddings=True`？如果忘了归一化会怎样？**
 

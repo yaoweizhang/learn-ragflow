@@ -50,9 +50,9 @@ cosine(a, b) = dot(a, b) / (norm(a) * norm(b))
 ## 对照 ragflow 怎么做的
 
 RAGFlow 的向量检索走：
-- `Embedding Model → Dense Vector Index` (`ragflow_notes/embedding_routing.md`)
+- `Embedding Model → Dense Vector Index` (`docs/reference/ragflow-notes/embedding_routing.md`)
 - `Dealer.search` 里 `FusionExpr("weighted_sum", ..., {"weights": "0.05,0.95"})` 把 BM25 和向量加权融合
-- （详见 [`ragflow_notes/hybrid_retrieval.md`](../../../../ragflow_notes/hybrid_retrieval.md)）
+- （详见 [`docs/reference/ragflow-notes/hybrid_retrieval.md`](../../../../docs/reference/ragflow-notes/hybrid_retrieval.md)）
 
 本单元对应的是 **Dense Vector** 部分（不带 BM25 fusion，不带 rerank）。完整的"双塔"在 s06。
 

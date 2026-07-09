@@ -44,7 +44,7 @@ python s01_what_is_rag/units/01_naive_keyword/code.py
 
 ## 对照 ragflow 怎么做的
 
-RAGFlow 在 `rag/nlp/search.py:Dealer.search` 阶段就已经不是朴素子串，而是 **DB 内部 `FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})`**——把 BM25 和向量分加权融合，再走应用层 `rerank_with_knn` 叠加 PageRank tag。详见 [`ragflow_notes/hybrid_retrieval.md`](../../../../ragflow_notes/hybrid_retrieval.md)。
+RAGFlow 在 `rag/nlp/search.py:Dealer.search` 阶段就已经不是朴素子串，而是 **DB 内部 `FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})`**——把 BM25 和向量分加权融合，再走应用层 `rerank_with_knn` 叠加 PageRank tag。详见 [`docs/reference/ragflow-notes/hybrid_retrieval.md`](../../../../docs/reference/ragflow-notes/hybrid_retrieval.md)。
 
 教程 s06 会从这 30 行的 naive 一步步演进到这一层。
 

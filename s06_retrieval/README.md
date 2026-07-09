@@ -92,10 +92,10 @@ s06 的 MVP 是这张表的第三行——**两通道 + 加权融合**,α 是唯
 
 ### 3.1 章节导航
 
-| Unit | 主题 | 它解决什么 | 对照 RAGFlow |
-|---|---|---|---|
-| [01_bm25](./units/01_bm25/README.md) | BM25 词法召回 (hand-written + 中英分词) | "纯字面命中长什么样、它漏什么" | ES / Infinity 内置 Lucene BM25 |
-| [02_hybrid_fusion](./units/02_hybrid_fusion/README.md) | dense cosine + BM25 α-weighted fusion | "两路互补、为什么 α 写成参数" | `FusionExpr("weighted_sum", ...)` + `rerank_with_knn` |
+| Unit | 主题 | 它解决什么 |
+|---|---|---|
+| [01_bm25](./units/01_bm25/README.md) | BM25 词法召回 (hand-written + 中英分词) | "纯字面命中长什么样、它漏什么" |
+| [02_hybrid_fusion](./units/02_hybrid_fusion/README.md) | dense cosine + BM25 α-weighted fusion | "两路互补、为什么 α 写成参数" |
 
 ### 3.2 跑起来
 
@@ -214,15 +214,9 @@ hybrid top-3 (with both sub-scores visible):
 
 ---
 
-## 四、对照 RAGFlow + 思考题
+## 四、选型与思考题
 
-### 4.1 ragflow 怎么做的
-
-RAGFlow 在 `Dealer.search` 阶段把全文召回 (BM25) 和向量召回 (dense) **用同一个 DB query 一起发**,在 ES / Infinity 侧用 `FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})` 融合,再按 API 入参 `vector_similarity_weight` 互补地算全文权重(`rag/nlp/search.py:189-196`);然后 `rerank_with_knn` 用 `tkweight * tksim + vtweight * vtsim + rank_fea` 再做一次线性加权叠 `rank_feature`(`rag/nlp/search.py:443-472`)。**两层都是线性加权**,只是权重不同。完整摘录与 4 条"为什么这样写"的分析见 [`ragflow_notes/hybrid_retrieval.md`](../ragflow_notes/hybrid_retrieval.md)。
-
-一句话对比:RAGFlow 把"BM25 + 向量 + PageRank + tag boost"四源**全部压扁成线性加权**,但做成了**三级流水线**——DB 侧 fusion (粗召回,偏向量) → app 侧 rerank_with_knn (精排,偏向量 + 全文兜底) → `rank_feature` (PageRank + tag cosine,权威文档 + 标签加权)。α 在 API 入参里**不是常数**,而是 `vector_similarity_weight`,由调用方按 query 类型传不同值。本章的 `α=0.95` 默认值就是把这三层压扁成一个旋钮的简化版——`α=0.5` 太"中庸"、在我们的术语密集 demo 上不如 0.95 跑出来得分清晰。
-
-### 4.2 主流融合策略速览
+### 4.1 主流融合策略速览
 
 下面这张表把社区常用的几类 fusion 策略按"信号维度 / 融合方式 / 是否需要训练 / 适用场景"列出来:
 
@@ -237,7 +231,7 @@ RAGFlow 在 `Dealer.search` 阶段把全文召回 (BM25) 和向量召回 (dense)
 
 我们的 toy `hybrid_topk` 在信号维度上只占第一行——**两通道 + 加权**;RAGFlow 把它扩到三通道并加了 PageRank / tag boost,s07 会叠 cross-encoder rerank 做精排。
 
-### 4.3 选型速记
+### 4.2 选型速记
 
 - **教学 / 快速原型 / 权重可解释** → `weighted_sum` (本教程);α 直接调,看得见每个 hit 的子分贡献;
 - **不依赖分数量纲 / 多通道** → RRF (`Σ 1/(rank_i + 60)`),Milvus `RRFRanker` 原生支持;
@@ -245,7 +239,7 @@ RAGFlow 在 `Dealer.search` 阶段把全文召回 (BM25) 和向量召回 (dense)
 - **追求 top-1 精度** → 加 cross-encoder rerank (s07),把 `hybrid_topk` 的 top-20 喂给 `[CLS]` 模型重打分;
 - **要先看清每个边界再选** → 用本章 unit 02 把 query `"应收账款 计提"` 和 `"内存"` 各跑一次,看清楚"BM25 / dense 谁拉上去的、α 在什么范围最稳",再决定要不要换 fusion。
 
-### 4.4 思考题
+### 4.3 思考题
 
 **`alpha=0.95` 和 `alpha=0.5` 在 query `"内存"` 上有什么差别?能不能用同一份 docs 跑两组对比,看 top-5 命中集合是不是变了?**
 

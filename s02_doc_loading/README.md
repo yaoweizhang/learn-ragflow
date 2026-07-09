@@ -63,10 +63,10 @@ ETL 处理的是数据库表 / 日志，文档加载处理的是 PDF / DOCX。**
 
 ### 3.1 章节导航
 
-| Unit | 主题 | 它解决什么 | 对照 RAGFlow |
-|---|---|---|---|
-| [01_basic_load](./units/01_basic_load/README.md) | 最小可跑加载 (PDF + DOCX) | "统一 schema 是什么样" | `deepdoc/parser/{pdf,docx}_parser.py` |
-| [02_failure_modes](./units/02_failure_modes/README.md) | 真实样本上的失败模式 | "为什么 unit 01 在 prod 不够" | `deepdoc/parser/utils.py` VisionParser |
+| Unit | 主题 | 它解决什么 |
+|---|---|---|
+| [01_basic_load](./units/01_basic_load/README.md) | 最小可跑加载 (PDF + DOCX) | "统一 schema 是什么样" |
+| [02_failure_modes](./units/02_failure_modes/README.md) | 真实样本上的失败模式 | "为什么 unit 01 在 prod 不够" |
 
 ### 3.2 跑起来
 
@@ -170,15 +170,9 @@ DOCX 第 1 段前 100 字: 青蓝科技股份有限公司 ...
 
 ---
 
-## 四、对照 RAGFlow + 思考题
+## 四、选型与思考题
 
-### 4.1 ragflow 怎么做的
-
-RAGFlow 在 `deepdoc/parser/pdf_parser.py` 里维护了一组 PDF 解析器：`PlainParser`（纯文本 fallback）、`VisionParser`（视觉 LLM + OCR）、`TxtParser` 等。完整摘录与 3 条 "为什么这样写" 的分析见 [`ragflow_notes/deepdoc_pdf_parsing.md`](../ragflow_notes/deepdoc_pdf_parsing.md)；表格识别 / OCR fallback 的对应实现细节见 [`ragflow_notes/multimodal_parsing.md`](../ragflow_notes/multimodal_parsing.md)。
-
-一句话对比：RAGFlow 把"读 PDF"拆成"先把页面栅格化成高分辨率图像 → 视觉模型识别版面/表格/文字 → 按坐标回填段落"三步走，跟 `code.py` 的一行 `extract_text()` 是两个量级——它专为扫描件、复杂表格、多栏版面设计。本章只要懂"它存在、它为什么贵"，s11 会真上手调它。
-
-### 4.2 主流加载工具速览
+### 4.1 主流加载工具速览
 
 下面这张表把社区常用的几类加载器按"格式覆盖 / 是否带版面识别 / 是否本地 / 是否需要 GPU"列出来，方便选型时快速对照：
 
@@ -193,14 +187,14 @@ RAGFlow 在 `deepdoc/parser/pdf_parser.py` 里维护了一组 PDF 解析器：`P
 
 我们的 toy 方案（`pypdf` + `python-docx`）在格式覆盖上只占第一行 / 第二行——能跑，但不抗复杂版面。要往生产走，至少要在 `Unstructured` 这一行附近才有底。
 
-### 4.3 选型速记
+### 4.2 选型速记
 
 - **要快、只处理文本型 PDF** → `pypdf` / `PyMuPDF`；
 - **要多格式、结构化标签** → `Unstructured`（local）或 `LlamaParse`（API）；
 - **要 GPU 加速的版面识别** → `MinerU` / `Marker`；
 - **要先看清错误再选工具** → 用本章 `unit 02` 的真实样本把损失量化，再决定要不要换。
 
-### 4.4 思考题
+### 4.3 思考题
 
 **怎么检测某页是扫描件？给一个简单的启发式。**
 

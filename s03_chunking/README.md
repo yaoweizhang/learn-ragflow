@@ -60,10 +60,10 @@ embedding 模型的 `max_seq_len` 通常是 512 token（BGE 系列）或 8192 to
 
 ### 3.1 章节导航
 
-| Unit | 主题 | 它解决什么 | 对照 RAGFlow |
-|---|---|---|---|
-| [01_basic_chunk](./units/01_basic_chunk/README.md) | 500 字符 cap + 句界切 | "最小可跑 chunker 长什么样" | `naive_merge` (token-aware 子块) |
-| [02_chunk_failures](./units/02_chunk_failures/README.md) | 真实样本上的 3 类失败模式 | "为什么 unit 01 在 prod 不够" | `_concat_downward` + `hierarchical_merge` + `attach_media_context` |
+| Unit | 主题 | 它解决什么 |
+|---|---|---|
+| [01_basic_chunk](./units/01_basic_chunk/README.md) | 500 字符 cap + 句界切 | "最小可跑 chunker 长什么样" |
+| [02_chunk_failures](./units/02_chunk_failures/README.md) | 真实样本上的 3 类失败模式 | "为什么 unit 01 在 prod 不够" |
 
 ### 3.2 跑起来
 
@@ -189,15 +189,9 @@ BEFORE (过短的 header-only chunks):
 
 ---
 
-## 四、对照 RAGFlow + 思考题
+## 四、选型与思考题
 
-### 4.1 ragflow 怎么做的
-
-RAGFlow 把分块做成 **4 层流水线**——视觉识别 → 父块（XGBoost 30 特征）→ token 子块（tiktoken 128）→ 层级合并 + 媒体上下文回填。完整摘录与 4 个 snippet 见 [`ragflow_notes/deepdoc_chunking.md`](../ragflow_notes/deepdoc_chunking.md)。
-
-一句话对比：RAGFlow 用 **layout-aware + regex-driven 的混合策略**——`_concat_downward`（`pdf_parser.py:1052`）用 XGBoost 30 维特征决定"视觉相邻的 text-box 该不该合"，`naive_merge`（`nlp/__init__.py:1155`）按 tiktoken 128 token 而不是字符切子块，`hierarchical_merge`（`nlp/__init__.py:1066`）按 `BULLET_PATTERN` 建父子树，`attach_media_context`（`nlp/__init__.py:497`）给表格回填上下文。本章的 `chunk_by_paragraph` 是"纯文本 + 句界正则"——比 RAGFlow 简单两个数量级，能跑但抗不住表格 / 多栏 / 跨页。
-
-### 4.2 主流分块工具速览
+### 4.1 主流分块工具速览
 
 下面这张表把社区常用的几类 chunker 按"边界检测 / 单位 / 是否版面感知 / 部署"列出来：
 
@@ -212,7 +206,7 @@ RAGFlow 把分块做成 **4 层流水线**——视觉识别 → 父块（XGBoos
 
 我们的 toy `chunk_by_paragraph` 在边界检测上跟 LangChain 第二行同量级（句界 / 递归），在版面感知上是空白——这是为什么 unit 02 必须显式暴露"表格切碎""父子块缺失"两类失败。
 
-### 4.3 选型速记
+### 4.2 选型速记
 
 - **教学 / 快速原型** → `chunk_by_paragraph` (本教程) 或 `RecursiveCharacterTextSplitter`；
 - **Markdown / 技术文档** → `MarkdownHeaderTextSplitter`（保留章节元数据）；
@@ -221,7 +215,7 @@ RAGFlow 把分块做成 **4 层流水线**——视觉识别 → 父块（XGBoos
 - **复杂 PDF / 表格 / 多栏** → RAGFlow DeepDoc（4 层流水线，本地 + XGBoost 模型）；
 - **要先看清错误再选工具** → 用本章 `unit 02` 的真实样本把损失量化，再决定要不要换。
 
-### 4.4 思考题
+### 4.3 思考题
 
 **如果一段就是 800 字但语义完整（比如一段财务披露），是该切还是不该切？**
 

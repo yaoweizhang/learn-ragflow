@@ -50,8 +50,8 @@ top-3 hits (query='应收账款'):
 
 RAGFlow 在这一层把全文召回（BM25）和向量召回（dense）**用同一个 DB query 一起发**，在 ES / Infinity 侧用 `FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})` 融合，再按 API 入参 `vector_similarity_weight` 互补地算全文权重（`search.py:582-637`）；最后 `rerank_with_knn` 用 `tkweight=0.3 / vtweight=0.7` 再做一次线性加权叠 `rank_feature`。**本单元就是 RAGFlow 链路里"dense-only + DB 内部 fusion 前"那个最朴素的切片**——只走了 `MatchDenseExpr` 这一路，没 BM25 兜底也没 PageRank / tag boost。粗召回偏向量（`0.05, 0.95`），精排也偏向量（`0.3, 0.7`），但全文信号从不缺席。
 
-参考：[`ragflow_notes/hybrid_retrieval.md`](../../../../ragflow_notes/hybrid_retrieval.md)  
-另见 [`ragflow_notes/vector_indexing.md`](../../../../ragflow_notes/vector_indexing.md)（"为什么 Chroma 没进选型"——分片 / 副本 / 多租户 / BM25 都没原生）
+参考：[`docs/reference/ragflow-notes/hybrid_retrieval.md`](../../../../docs/reference/ragflow-notes/hybrid_retrieval.md)  
+另见 [`docs/reference/ragflow-notes/vector_indexing.md`](../../../../docs/reference/ragflow-notes/vector_indexing.md)（"为什么 Chroma 没进选型"——分片 / 副本 / 多租户 / BM25 都没原生）
 
 ## 思考题
 

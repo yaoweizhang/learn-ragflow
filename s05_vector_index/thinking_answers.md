@@ -41,7 +41,7 @@ hits = col.query(
 
 支持的 operator 有 `$eq / $ne / $gt / $gte / $lt / $lte / $in / $nin` 数值
 比较,以及 `$and / $or` 复合;但**不支持 BM25 全文匹配**(那是
-Elasticsearch 的事,见 `../ragflow_notes/vector_indexing.md` 第二节
+Elasticsearch 的事,见 `../docs/reference/ragflow-notes/vector_indexing.md` 第二节
 "为什么不用 Chroma")。
 
 ### 3. 元数据 schema 约束

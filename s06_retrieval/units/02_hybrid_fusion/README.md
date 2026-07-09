@@ -53,7 +53,7 @@ hybrid top-3 (with both sub-scores visible):
 
 RAGFlow 的 `Dealer.search` 在 ES / Infinity 内部用 `FusionExpr("weighted_sum", {"weights": "0.05,0.95"})` 做粗召回（`ragflow/rag/nlp/search.py:189-196`），dense=0.95 / keyword=0.05 跟本单元 `alpha=0.95` 权重大小关系一致；之后 `Dealer.rerank_with_knn`（`search.py:443-472`）再用 `tkweight * tksim + vtweight * vtsim + rank_fea` 做精排。**两阶段都是线性加权**：DB 内 fusion 粗排 + 应用侧 rerank 精排，链路简单、可解释、能叠加第三层信号。RAGFlow 的 alpha 不是常数 —— `vector_similarity_weight` 是检索接口的入参，事实型查询可调低、概念型查询可调高。本单元把 alpha 写成 `hybrid_topk` 的参数就是给这条路径留入口。
 
-参考：[`ragflow_notes/hybrid_retrieval.md`](../../../../ragflow_notes/hybrid_retrieval.md)
+参考：[`docs/reference/ragflow-notes/hybrid_retrieval.md`](../../../../docs/reference/ragflow-notes/hybrid_retrieval.md)
 
 ## 思考题
 

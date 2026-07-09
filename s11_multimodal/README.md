@@ -109,10 +109,10 @@ unit 02 的 OCR 基础数据长这样——`str`（平铺）：
 
 ### 3.1 章节导航
 
-| Unit | 主题 | 它解决什么 | 对照 RAGFlow |
-|---|---|---|---|
-| [01_table_extract](./units/01_table_extract/README.md) | `pdfplumber.extract_tables()` + 空表过滤 + 行级 chunk 友好输出 | "表格被 `pypdf` 拍扁" → "按行列原样抽" | `deepdoc/parser/pdf_parser.py` 的 `_table_transformer_job`（L409–L527，视觉 TSR + per-cell OCR + 坐标回写） |
-| [02_ocr](./units/02_ocr/README.md) | `pytesseract.image_to_string(..., lang="chi_sim+eng")` + 三类异常优雅跳过 | "扫描件返回空字符串" → "图片里的字转成字符串" | `deepdoc/parser/pdf_parser.py` 的 `_is_garbled_text` 触发 OCR fallback（L1549–L1575）+ per-box OCR（L778–L790） |
+| Unit | 主题 | 它解决什么 |
+|---|---|---|
+| [01_table_extract](./units/01_table_extract/README.md) | `pdfplumber.extract_tables()` + 空表过滤 + 行级 chunk 友好输出 | "表格被 `pypdf` 拍扁" → "按行列原样抽" |
+| [02_ocr](./units/02_ocr/README.md) | `pytesseract.image_to_string(..., lang="chi_sim+eng")` + 三类异常优雅跳过 | "扫描件返回空字符串" → "图片里的字转成字符串" |
 
 ### 3.2 跑起来
 
@@ -181,7 +181,7 @@ OCR skipped: 未提供图片路径
 
 加一种多模态策略（视觉 OCR / TableStructureRecognizer / bbox 回写）只要三步：
 
-1. 在 `extract_tables` 之后加 `_table_transformer_job`：先用 `LayoutRecognizer` 圈出 `type=="table"` 的 bbox，再把表格 crop 当图喂给 `TableStructureRecognizer` 识别 cell 边框，最后对旋转后的表格图重 OCR、把 OCR bbox 跟 cell 坐标对齐——把 `{"page", "rows"}` 升级为带 `x0/y0/x1/y1` + `x0_rotated/...` + `label` 的结构化输出（参考 `ragflow_notes/multimodal_parsing.md` §3）；
+1. 在 `extract_tables` 之后加 `_table_transformer_job`：先用 `LayoutRecognizer` 圈出 `type=="table"` 的 bbox，再把表格 crop 当图喂给 `TableStructureRecognizer` 识别 cell 边框，最后对旋转后的表格图重 OCR、把 OCR bbox 跟 cell 坐标对齐——把 `{"page", "rows"}` 升级为带 `x0/y0/x1/y1` + `x0_rotated/...` + `label` 的结构化输出（参考 `docs/reference/ragflow-notes/multimodal_parsing.md` §3）；
 2. 在 `main()`（unit 02）之前加 `_is_garbled_text` 检测：抽每页前 200 字符算乱码率，超阈值（`threshold=0.3`）就清空文本层走 OCR——避免"纯文本 PDF 被强制跑 5–10 倍时间"的反模式；
 3. 把 OCR 输出从 `image_to_string` 改成 `image_to_data` 拿 word-level bbox，落到 chunk metadata 的 `page` + `page_bbox` 字段——前端"点击答案 → 跳回 PDF + 高亮"才有坐标可用（详见 [thinking_answers.md](./thinking_answers.md)）。
 
@@ -189,19 +189,9 @@ OCR skipped: 未提供图片路径
 
 ---
 
-## 四、对照 RAGFlow + 思考题
+## 四、选型与思考题
 
-### 4.1 ragflow 怎么做的
-
-RAGFlow 的多模态模块在 `deepdoc/parser/` 下走"**视觉后端可插拔 + 乱码检测触发 OCR + 表格结构化识别**"三条核心策略。MVP 走的是"启发式画线 + 平铺 OCR"——**3 个最关键的设计决策**：
-
-- **视觉后端可插拔（`deepdoc/vision/__init__.py`）**——RAGFlow 在 `pdf_parser.py` L42 一次性 import 5 个视觉模块（`OCR, AscendLayoutRecognizer, LayoutRecognizer, Recognizer, TableStructureRecognizer`），用户按"文档复杂度 + 模型可用性 + 速度需求"挑后端：自家 DeepDoc ONNX OCR（CPU 可跑、体积小）→ PaddleOCR（中文精度高）→ mineru（数学公式 / 多栏学术 PDF）→ docling_parser / opendataloader_parser（云端重型）。`deepdoc/parser/` 目录至少挂了 8 个 parser 后端（`pdf_parser.py`, `paddleocr_parser.py`, `mineru_parser.py`, `docling_parser.py`, `opendataloader_parser.py`, `tcadp_parser.py`, `figure_parser.py`）。**MVP 只绑 pytesseract**——简单够用，但服务器部署 / Docker 镜像要单独装 `tesseract-ocr` + `tesseract-ocr-chi-sim`，CI 容易漏。
-- **乱码检测触发 OCR（`pdf_parser.py` L1549–L1575）**——RAGFlow 在每页文本层抽完后调 `_is_garbled_text(sample_text, threshold=0.3)` 判乱码率，超阈值就 `self.page_chars[pi] = []` 清空走 OCR；同时还有 `_is_garbled_by_font_encoding` 处理 subset 字体把 CJK 映射成 ASCII 的"看起来是 ASCII 但其实有毒"的特殊场景。**关键工程考量**：纯文本 PDF 不会无脑触发 OCR——无脑触发会让一份纯文本 PDF 跑 5–10 倍时间。MVP 不做乱码检测——假设 PDF 干净，扫到乱码样本会"静默失败"。
-- **表格结构化识别 + per-cell OCR（`pdf_parser.py` L409–L527, L778–L790）**——RAGFlow 把表格的"行 / 列 / 跨格"和"单元格里的小字"分开识别：① `LayoutRecognizer` 圈 `type=="table"` bbox（L437–L479）；② `_table_transformer_job` 把每张表 crop 成图喂 `TableStructureRecognizer` 识别 cell 边框；③ **对旋转后的表格图重 OCR**，OCR bbox 跟 cell 坐标对齐（`_ocr_rotated_tables`，L488–L490 + L558–L701）；④ 落到 `self.tb_cpns` 时带 `pn / layoutno / table_index` + 原始 / 旋转后坐标 + `label`（`"table row"` / `"table column"` / `"table spanning cell"` / `"table header"`），**坐标回写到 ES chunk metadata，前端能"点答案跳回原表单元格"**。MVP 的 `extract_tables` 只返 `{"page", "rows"}`——没有坐标、没有合并格标注、没有 header 标注——够 chunking，不够"点击答案 → 高亮回原表"。
-
-完整摘录与 3 条"为什么这样"的分析见 [`ragflow_notes/multimodal_parsing.md`](../ragflow_notes/multimodal_parsing.md)。**一句话对比**：RAGFlow 把"多模态"做成**视觉后端可插拔 + 乱码检测触发 OCR + 视觉模型表格结构识别 + 坐标回写**——能处理扫描件 / 无线表 / 跨页表 / 旋转表 / 合并格；**本章 MVP 走"启发式画线 + 平铺 OCR + 优雅跳过"**，**接口形状留好了**，生产按需切。
-
-### 4.2 主流多模态范式速览
+### 4.1 主流多模态范式速览
 
 下面这张表把多模态 RAG 系统的实现路径按"表格策略 / OCR 引擎 / 坐标回写 / 视觉后端 / 适用场景"列出来：
 
@@ -214,7 +204,7 @@ RAGFlow 的多模态模块在 `deepdoc/parser/` 下走"**视觉后端可插拔 +
 
 我们的 toy `extract_tables` + `ocr_image` 在范式复杂度上只占第一行——**启发式画线 + 平铺 OCR**；RAGFlow 走完整 light 路径，**多一道抽象就多一道观测点 + 一个失败模式**。教学 demo 选 MVP 因为它跑通快、依赖少、依赖全在 `pdfplumber` / `pytesseract` 里可见；**生产请按"PDF 复杂度 + 是否答带坐标问题 + 速度需求"做 tier 选型**（MVP → 加乱码检测 → RAGFlow light → 视觉 LLM）。
 
-### 4.3 选型速记
+### 4.2 选型速记
 
 - **教学 / 快速原型 / 干净 PDF** → 本章 MVP（`pdfplumber.extract_tables()` + `pytesseract.image_to_string`），无坐标、无乱码检测、无视觉后端切换，代码 ≤ 50 行；
 - **生产单租户 / 中等复杂度 PDF** → 加乱码检测（`_is_garbled_text`）+ word-level bbox（`image_to_data`），切 PaddleOCR 后端，代码 +50 行换 +200% 鲁棒性；
@@ -222,7 +212,7 @@ RAGFlow 的多模态模块在 `deepdoc/parser/` 下走"**视觉后端可插拔 +
 - **图片 / 公式 / 图表** → 视觉 LLM（GPT-4V / Qwen-VL / `figure_parser.py`），OCR 只读字、读不出趋势线和柱状图，视觉 LLM 能直接"看图说话"，但代价是 GPU + 模型几十 MB + 推理秒级；
 - **要先看清每个边界再选** → 用本章 unit 01 把"启发式画线"和"扫到无线表 / 跨页表 / 合并格"各跑一次，对比输出——这是最简单的"表格抽取 A/B"实验。
 
-### 4.4 思考题
+### 4.3 思考题
 
 1. **怎么把 OCR 结果跟原文段落对齐？**  
    答：OCR 引擎（无论 tesseract 还是 PaddleOCR）默认返回**纯字符串**——丢掉了每个字的空间位置。解决思路是 OCR 输出改成带坐标的格式（`pytesseract.image_to_data` 拿 word-level bbox），把图像坐标映射回 PDF 页面坐标（`scale = dpi / 72`，`y` 轴翻转），段内聚合 + 段落回填（按 `(block_num, par_num, line_num)` 分组），存到 chunk metadata 的 `page` + `page_bbox` 字段。详见 [`thinking_answers.md`](./thinking_answers.md)。

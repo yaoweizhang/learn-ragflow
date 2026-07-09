@@ -41,11 +41,11 @@ python s02_doc_loading/units/02_failure_modes/code.py
 
 `deepdoc/parser/` 下的两个核心模块直接对应本单元的两个失败：
 
-- **`deepdoc/parser/pdf_parser.py`** —— `RAGFlowPdfParser` 内部用 `pdfplumber` + XGBoost 30 特征模型识别多栏 / 表格 / 图，详见 [`ragflow_notes/deepdoc_chunking.md`](../../../../ragflow_notes/deepdoc_chunking.md)；
+- **`deepdoc/parser/pdf_parser.py`** —— `RAGFlowPdfParser` 内部用 `pdfplumber` + XGBoost 30 特征模型识别多栏 / 表格 / 图，详见 [`docs/reference/ragflow-notes/deepdoc_chunking.md`](../../../../docs/reference/ragflow-notes/deepdoc_chunking.md)；
 - **`deepdoc/parser/docx_parser.py`** —— `DocxParser` 同步遍历 `paragraphs` + `tables`，每段打 `section` 标签（`text` / `table` / `image`）；
 - **`deepdoc/parser/utils.py`** —— VisionParser 用 OCR 模型兜底扫描件（s11 会更细讲）。
 
-参考：[`ragflow_notes/multimodal_parsing.md`](../../../../ragflow_notes/multimodal_parsing.md)
+参考：[`docs/reference/ragflow-notes/multimodal_parsing.md`](../../../../docs/reference/ragflow-notes/multimodal_parsing.md)
 
 ## 思考题
 

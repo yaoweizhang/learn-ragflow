@@ -33,7 +33,7 @@ COLLECTION_NAME = "docs"
 #   3. 引用用 [i] 角标对资料编号(可追溯)
 #   4. 中文 + 简洁直接(防输出风格漂移)
 # ragflow 走得更远:独立的 sufficiency_check / citation_prompt 多 pass,
-# 见 ragflow_notes/prompt_templates.md。
+# 见 docs/reference/ragflow-notes/prompt_templates.md。
 PROMPT = """你是严谨的问答助手，只能依据 <context> 里的资料回答问题。
 - 如果资料中没有直接回答问题的内容，仅回答"我不知道"，不要附加任何引用或相关但不直接回答问题的信息。
 - 引用时用 [1]、[2] 这样的角标对应资料编号。

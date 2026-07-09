@@ -72,7 +72,7 @@ def retrieve(query: str, paragraphs: list[str], k: int = 3) -> list[str]:
 
 
 def build_prompt(question: str, hits: list[str]) -> str:
-    """对照 ragflow_notes/prompt_templates.md 里的 'You are an AI assistant...' 模板.
+    """对照 docs/reference/ragflow-notes/prompt_templates.md 里的 'You are an AI assistant...' 模板.
     本章用极简版，只保留 [i] (source) text 的渲染."""
     ctx = "\n\n".join(f"[{i + 1}] {h}" for i, h in enumerate(hits))
     return (

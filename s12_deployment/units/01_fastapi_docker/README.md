@@ -73,7 +73,7 @@ s12_deployment-rag-1  | INFO:     Uvicorn running on http://0.0.0.0:8000
 
 ## 对照 ragflow 怎么做的
 
-参考:[`ragflow_notes/deployment.md`](../../../../ragflow_notes/deployment.md)
+参考:[`docs/reference/ragflow-notes/deployment.md`](../../../../docs/reference/ragflow-notes/deployment.md)
 
 RAGFlow 把整套系统拆成 **10+ 容器**(ES / Infinity / MySQL / MinIO /
 Redis / 任务队列 / 沙箱执行 / 主 API / 视觉 OCR),靠 `depends_on:

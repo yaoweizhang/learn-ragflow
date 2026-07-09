@@ -44,19 +44,10 @@ provider: local, dim: 512, count: 3
 ## 它做错了什么
 
 - **没 retry / 没 rate-limit**：openai 偶发 5xx / ollama 长连接 timeout 直接抛，单元外的 retry 还得自己写——
-  对照 RAGFlow 把所有异常统一包成 `EmbeddingError`（`embedding_model.py:46-54`），调用方只看一种类型就能重试或换 provider；
+  生产环境应把所有异常包成统一的 `EmbeddingError`，调用方只看一种类型就能重试或换 provider；
 - **没 batched ollama fallback**：本实现逐文本 POST，N 个句子 = N 次请求；Ollama 原生支持 `inputs=[...]` 一把提交，
   缺批处理在大 batch 时延迟成倍放大；
 - **本地 BGE 仍依赖联网**：第一次 `SentenceTransformer(...)` 还会触发模型下载，路由层假设离线就废了。
-
-## 对照 ragflow 怎么做的
-
-RAGFlow 的 `select_embedding`（`rag/llm/__init__.py:163-192`）用 `inspect.getmembers` 在 import 时把
-所有继承 `Base` 的 provider 类按 `_FACTORY_NAME` 自动塞进 `EmbeddingModel` 字典，dispatch 端只查表、
-零 `if/elif`。我们这里的 `_REGISTRY` 是同一思路、但用最朴素的字面量字典——想加第四条 provider，
-RAGFlow 写一个类 + 给它 `_FACTORY_NAME`，我们写一个函数 + 注册一行。
-
-参考：[`ragflow_notes/embedding_routing.md`](../../../../ragflow_notes/embedding_routing.md)
 
 ## 思考题
 

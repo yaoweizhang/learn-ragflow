@@ -34,19 +34,10 @@ python s04_embedding/units/01_local_bge/code.py
 ## 它做错了什么
 
 - **只对中文友好**：`bge-small-zh-v1.5` 是中文专用模型，英文 / 代码 / 长文档混合输入时向量空间会失真——
-  对照 RAGFlow `BuiltinEmbed.MAX_TOKENS` 用字典显式登记每个模型的语种和维度上限，避免错配；
+  生产环境应按语种切模型、把每个 provider 的维度上限显式登记，避免错配；
 - **大 batch 缺 GPU**：CPU 上一次塞 1000+ 句会跑分钟级，需要 GPU 或 ONNX 量化才快；
 - **首次依赖网络**：HF Hub 下载 100MB+，离线 / 内网环境直接报错；生产通常在构建镜像时预下载并把
   `HF_HOME` 指到挂载卷。
-
-## 对照 ragflow 怎么做的
-
-RAGFlow 把每个 Embedding provider(BGE / OpenAI / Tongyi / BaiduYiyan / Voyage / SiliconFlow /
-HuggingFace / Ollama …)写成继承 `Base` 的类、用 `_FACTORY_NAME` 类变量挂"对外名"，由
-`rag/llm/__init__.py` 在 import 时 `inspect.getmembers` 自动塞进 `EmbeddingModel` 字典，零条件分支。
-我们本单元的"bge 作为本地实现"只是这个机制的最小切片——unit 02 会扩展到 openai / ollama。
-
-参考：[`ragflow_notes/embedding_routing.md`](../../../../ragflow_notes/embedding_routing.md)
 
 ## 思考题
 

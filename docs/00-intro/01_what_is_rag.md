@@ -202,7 +202,7 @@ RAG 并非万能。下表 1-2 按风险等级给出典型用例与 RAG 适用性
 | s11 | 多模态 | 离线 / 在线 → 表格 / OCR |
 | s12 | 部署 | 上线 → FastAPI + Docker |
 
-每一章配 [`ragflow_notes/<topic>.md`](../../ragflow_notes/README.md) 对照工业级实现——同一个组件，30 行玩具和 1000 行生产代码的差距在哪里一目了然。
+每一章配 [`docs/reference/ragflow-notes/<topic>.md`](../../docs/reference/ragflow-notes/README.md) 对照工业级实现——同一个组件，30 行玩具和 1000 行生产代码的差距在哪里一目了然。
 
 ---
 

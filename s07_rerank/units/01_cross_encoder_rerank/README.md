@@ -52,7 +52,7 @@ query='内存', alpha=0.5 (BM25 + dense 等权融合)
 
 ## 对照 ragflow 怎么做的
 
-ragflow 的 `_rerank_window(page_size, top)`（见 [`ragflow_notes/hybrid_retrieval.md`](../../../../ragflow_notes/hybrid_retrieval.md)）解决的是"分页和块拉取不对齐"这个真实生产 bug：
+ragflow 的 `_rerank_window(page_size, top)`（见 [`docs/reference/ragflow-notes/hybrid_retrieval.md`](../../../../docs/reference/ragflow-notes/hybrid_retrieval.md)）解决的是"分页和块拉取不对齐"这个真实生产 bug：
 
 ```python
 window = math.ceil(64 / page_size) * page_size   # 向上取整到 page_size 整数倍
@@ -62,7 +62,7 @@ window = math.ceil(64 / page_size) * page_size   # 向上取整到 page_size 整
 
 对照本 MVP：MVP 是"固定 topk=10"，根本没有分页概念。但本单元演示的"cross-encoder 在 ~50-100 候选上跑"的精排模式，正是 ragflow `_rerank_window` 把 64 候选作为目标池子的来源 —— 它把 ~64 当成 cross-encoder / LLM rerank 能吃的最大池子，超过就要再向上取整到 page_size 的整数倍保证分页对齐。本单元的 top-10 是 64 池子的子集，符合 ragflow 同样的"小池子精排"原则。
 
-参考：[`ragflow_notes/hybrid_retrieval.md`](../../../../ragflow_notes/hybrid_retrieval.md)
+参考：[`docs/reference/ragflow-notes/hybrid_retrieval.md`](../../../../docs/reference/ragflow-notes/hybrid_retrieval.md)
 
 ## 思考题
 

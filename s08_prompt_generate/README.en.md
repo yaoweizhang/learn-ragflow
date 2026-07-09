@@ -10,4 +10,4 @@ upstream UI can render clickable references. The production hard parts — promp
 injection defence, long-context truncation, and citation number drift — are addressed
 in the chapter README; RAGFlow's multi-template approach (separating sufficiency check,
 query rewrite, and citation re-pass) is summarised in
-[ragflow_notes/prompt_templates.md](../ragflow_notes/prompt_templates.md).
+[docs/reference/ragflow-notes/prompt_templates.md](../docs/reference/ragflow-notes/prompt_templates.md).

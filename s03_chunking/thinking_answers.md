@@ -36,5 +36,5 @@ RAGFlow 用 **parent-child 双层结构**:
 `HierarchicalNodeParser` 的共同选择。
 
 ### 参考
-- `../ragflow_notes/deepdoc_chunking.md`: parent-child 在 RAGFlow
+- `../docs/reference/ragflow-notes/deepdoc_chunking.md`: parent-child 在 RAGFlow
   `pdf_parser.py` / `rag/nlp/__init__.py:naive_merge` 的具体实现。
