@@ -75,7 +75,7 @@ python s00_concepts/units/03_evolution/code.py      # 1 分钟：三代演进
 | s11 | 多模态 | 离线 / 在线 → 表格 / OCR |
 | s12 | 部署 | 上线 → FastAPI + Docker |
 
-每一章配 [`docs/reference/ragflow-notes/<topic>.md`](./docs/reference/ragflow-notes/README.md) 对照工业级实现——同一个组件，30 行玩具和 1000 行生产代码的差距在哪里一目了然。
+每一章配 [`docs/reference/ragflow-notes/<topic>.md`](../docs/reference/ragflow-notes/README.md) 对照工业级实现——同一个组件，30 行玩具和 1000 行生产代码的差距在哪里一目了然。
 
 ## 四、延伸阅读
 
