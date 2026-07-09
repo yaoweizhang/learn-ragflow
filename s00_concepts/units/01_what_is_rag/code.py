@@ -4,7 +4,7 @@ Offline demo. Shows what the LLM's prompt looks like
 - without RAG (only the user's question, drawing on parametric memory)
 - with RAG (the question + retrieved context, drawing on non-parametric memory)
 """
-from textwrap import indent, shorten
+
 
 # Toy "retrieved context" — what a RAG pipeline would inject
 RETRIEVED_CHUNK = """\
