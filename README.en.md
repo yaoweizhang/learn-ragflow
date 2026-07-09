@@ -266,6 +266,7 @@ After working through all 12 chapters, the natural next steps are:
 ## Acknowledgements
 
 - [**RAGFlow**](https://github.com/infiniflow/ragflow) — primary industrial reference; see [`docs/reference/ragflow-notes/`](./docs/reference/ragflow-notes/) for chapter-aligned source excerpts. RAGFlow evolves, so excerpts may go stale.
+- [**all-in-rag**](https://github.com/datawhalechina/all-in-rag) — sibling tutorial. The "project intro / motivation / audience / highlights / detailed outline" layout of this README borrows from its "content outline" organization.
 - [**learn-claude-code**](https://github.com/shareAI-lab/learn-claude-code) — inspiration for the "minimal runnable MVP per chapter" format.
 - [**BGE models**](https://github.com/FlagOpen/FlagEmbedding) (BAAI) — default embedding and reranker.
 
