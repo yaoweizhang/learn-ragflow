@@ -11,6 +11,21 @@
 
 **文档加载（Document Loading）** 是把磁盘上的 PDF / DOCX / HTML / Markdown 等文件，转成程序可以继续处理的 `list[dict]`——每段通常带三个字段：`text`（正文）、`page`（页码；DOCX 时常为 `None`）、`source`（文件名）。它的上游是文件系统，下游是切块（s03）、Embedding（s04）、写向量库（s05）。
 
+```
+ PDF / DOCX 字节流               list[{text, page, source}]
+ (samples/*.pdf / *.docx)        段落级结构化数据
+        │                                  │
+        │  pypdf.PdfReader                 │
+        │  ────────────────────────────▶   │
+        │  .extract_text() 每页            │
+        │                                  │
+        │  python-docx                     │
+        │  ────────────────────────────▶   │
+        │  Document.paragraphs             │
+        ▼                                  ▼
+   "解析 → 抽取 → 对齐"  ──▶  s03 chunking  / s04 embedding  / s05 index
+```
+
 把它放进 RAG 全景看：**s02 是离线索引链路的入口**。如果入口吐出来的是错位、漏表、被页眉污染的段落，后面 embedding 再贵、检索策略再花哨也救不回来。这就是社区那句老话——**Garbage In, Garbage Out**——在 RAG 里被反复引用的原因。
 
 ### 1.2 三个核心任务

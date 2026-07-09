@@ -34,6 +34,22 @@ python s10_graphrag/code.py
 
 **GraphRAG（Graph-based Retrieval-Augmented Generation）** 是一种把"段落检索"升级为"图谱查询"的范式：把每段文字里的实体和实体间关系抽出来，建一张知识图谱；查的时候先定位起点实体、再沿着边（关系）走 N 跳邻居，最后把邻居信息拼成上下文喂给 LLM。它的核心思想是——**段落的"相似度"只回答"哪段相关"，而图的"邻接关系"才能回答"实体之间有什么关系"**。
 
+```
+   chunk 段落文字                (head, rel, tail) 三元组                1 跳邻居查询
+   "R3630 G5 支持 32 条 DDR4"    ┌───────────────────────────┐         query_graph(graph, "R3630 G5")
+        │                        │ (R3630 G5, 支持内存, DDR4 3200)      │
+        │  EXTRACT_PROMPT + LLM   │ (R3630 G5, 面向场景, AI 推理)         ▼
+        ▼                        │ (R3630 G5, 适配行业, 金融)         [("支持内存", "DDR4 3200"),
+   list[dict]                     └───────────────────────────┘          ("面向场景", "AI 推理"),
+   每段一次 LLM 抽取                                              ("适配行业", "金融")]
+        │
+        ▼
+   build_graph → dict[head] → set[(rel, tail)]   ← O(1) dict.get
+        │
+        ▼
+   save_graph → _graph.jsonl (持久化, 离线可重查)
+```
+
 > 💡 **一句话总结**：GraphRAG = 实体抽取（Extraction）+ 图构建（Graph）+ 图检索（Graph Query）。
 >
 > 让 RAG 从"找相似的段"升级为"沿着边走的图查询"——既能查"X 和 Y 之间什么关系"，也能查"Z 的所有合作伙伴"。

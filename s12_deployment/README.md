@@ -37,11 +37,27 @@ python s12_deployment/units/01_fastapi_docker/code.py
 **部署 MVP（Deployment MVP）** 是把"本地命令行能跑"升级为"HTTP 服务能调"的过程——核心动作有三件：① 用 **FastAPI**（或 Flask / Django）把 s04 → s06 → s07 → s08 这条链路包成 `POST /qa {question: ...} → {text, citations}`；② 用 **Dockerfile** 把 Python 运行时 + 业务代码 + 系统依赖（tesseract）一起烧进镜像；③ 用 **docker-compose.yml** 声明端口、卷挂载、环境变量，让 `docker compose up --build` 一条命令拉起整个服务。本章的 4 个文件就是这三件动作的最小落地：
 
 ```
-app.py           → FastAPI 应用 (POST /qa, _get_col lazy-load)
-Dockerfile       → python:3.11-slim + tesseract + build-essential + pip install -r requirements.txt
-docker-compose.yml → 1 个 rag 服务: build context=项目根, port 8000, mount .env/samples/_chroma
-code.py          → .env gating + 索引 gating + docker compose up --build
+   本地命令行 RAG                                容器化 HTTP 服务
+   python s08/code.py                            docker compose up --build
+        │                                              │
+        │  FastAPI 包装                                 │
+        │  ─────────────▶                              │
+        │  POST /qa 端点                               │
+        │  QARequest(BaseModel)                       │
+        ▼                                              ▼
+   app.py (FastAPI 实例)                         容器 rag:8000
+   ──────────▶                                  ──────────▶
+   Dockerfile (python:3.11-slim + tesseract)    镜像层缓存: 基础→依赖→代码
+        │                                              │
+        │  docker-compose.yml                          │
+        │  ─────────────▶                              │
+        │  build context / ports / env_file            │
+        │  volumes: samples + _chroma:ro               ▼
+        ▼                                       curl POST /qa → {text, citations}
+   启动器 code.py: .env gating + 索引 gating + subprocess docker compose up
 ```
+
+把它放进 RAG 全景看：**s12 是把 s08 的 `answer()` 函数从"我在自己机器上跑得通"升级为"别人用 `curl` 就能调"**——同时把"装 Python / 下模型 / 重建索引"这些环境成本转嫁给 Docker 镜像。
 
 > 💡 **一句话总结**：部署 MVP = FastAPI 包装（HTTP 入口）+ Dockerfile（镜像）+ docker-compose.yml（编排）+ 启动器（前置校验）。
 >

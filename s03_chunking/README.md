@@ -11,6 +11,16 @@
 
 **文本分块（Text Chunking）** 是把 s02 的 `list[{text, page, source}]`（每段通常几百到上千字符）切成**更小、可索引的语义单元**——每个 chunk 通常带 `text`（块正文）、`chunk_id`（`{source}#{page}#p{n}`）、`source`、`page` 四个字段。它的上游是 s02 的 loader，下游是 embedding（s04）和向量索引（s05）。
 
+```
+    段 (页或 paragraph)                       chunks
+    "二、关键特性\n计算密度..."                  ┌─ "二、关键特性\n计算密度..."(短段整段)
+    [500+ 字符]                                 ├─ "...单台 2U..."(长段按句界切)
+        │                                       └─ {text, chunk_id=source#page#pN, source, page}
+        │  max_chars cap=500 + [。.!?] 句界正则
+        ▼
+    chunk_by_paragraph → split_long_paragraph
+```
+
 把它放进 RAG 全景看：**分块决定了检索的单位**。如果 chunk 切在句子中间，embedding 把残句算成完整语义；如果 chunk 跨多个主题，召回时会同时拉回一堆无关上下文；分块的质量直接决定了检索的信噪比。
 
 ### 1.2 三种典型边界

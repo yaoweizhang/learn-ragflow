@@ -29,6 +29,16 @@ python s07_rerank/code.py
 
 **重排序 (Re-ranking)** 是 RAG 在线链路的**第二阶段**——把第一阶段 (s06) 召回的 top-N 候选 (~10-100 条) 喂给一个**精排模型**,让模型对每个 `(query, chunk_text)` 对独立打分,再按新分取 top-k。s06 的混合召回 (BM25 + dense cosine) 是**双塔 (bi-encoder)**——query 和 chunk 各自独立编码再算相似度,**快但只看到向量层面的语义接近度**,没办法捕捉"查询词"和"chunk 里某个具体词"的精确匹配。重排序就是为了补这一刀:**慢一点,但看得更准**。
 
+```
+        s06 hits (top-N)                            s08 hits (top-K)
+        BM25 + dense 融合后                         BGE-reranker 重打分后
+        ┌─ #1 [bm25冠军] score=0.795 ─┐             ┌─ #1 [主题真沾边] rerank=0.664 ─┐
+        ├─ #2 [vec=0.552]    score=0.736  ─▶  cross-encoder N 次 BERT forward   ─▶  ├─ #2 ...        rerank=0.550 ─┤
+        ├─ #3 ...                score=0.726        (query, chunk) 拼接 → [0,1]    ├─ #3 ...        rerank=0.527 ─┘
+        └─ ... top-N ...                              按 rerank_score 降序取 K
+            段级语义对齐(粗)                          token 级 cross-attention(精)
+```
+
 把它放进 RAG 全景看:**s07 是把 s06 的 top-N 命中再过一道 cross-attention,挑出真正相关的 top-k**。s05 落盘索引、s06 拉回候选、s07 在小池子上精排、s08 拼 Prompt 喂 LLM 生成。**没有 rerank 的 RAG 通常 top-1 精度只有 60-70%,加上 cross-encoder rerank 能顶到 80-90%**——这是工业 RAG 几乎必加 rerank 的根因。
 
 ### 1.2 Cross-encoder vs Bi-encoder:两条性质相反的通道

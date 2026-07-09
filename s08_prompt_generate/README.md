@@ -35,6 +35,19 @@ python s08_prompt_generate/code.py
 
 Prompt 模板的核心思想是**用显式约束 + 上下文注入**,把这 3 类错误关进笼子。它的工程价值在生产线上被严重低估——很多团队花大力气调 embedding / rerank,却在 prompt 这一步随手写一句"请基于以下资料回答",然后看着 LLM 一本正经地胡说八道。
 
+```
+   s07 hits (top-3)                        prompt                             LLM answer
+   [{text, source, page, score}×3]    ┌─────────────────────────────┐    ┌──────────────────┐
+        │                            │ [1] 硬约束(4 条)             │    │ "R3630 G5 配备  │
+        │  _format_context(hits)     │   只能依据 <context>         │    │  32 个 DIMM 插  │
+        ▼                            │   没有就拒答                 │    │  槽[2]..."       │
+   [i] (source#page) text 块          │ [2] <context> 上下文块       │    │                  │
+   [1] (server_whitepaper.pdf#1)...   │   [1] ...  [2] ...  [3] ...  │ ──▶│ re.findall [i] ──▶│ citations list
+        │                            │ [3] 问题                      │    │ [{i, source, page}×N]
+        └───────────────▶            └─────────────────────────────┘    └──────────────────┘
+                          PROMPT.format(context=..., question=...)
+```
+
 ### 1.2 三段式 prompt 结构:s约束 + 上下文 + 问题
 
 s08 的 `PROMPT` 常量是一个典型的**三段式结构**:

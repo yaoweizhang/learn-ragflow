@@ -31,6 +31,20 @@ python s05_vector_index/code.py
 
 **向量索引 (Vector Index)** 是一个把 *稠密向量 + 原始文本 + 元数据* 三者绑在一起、落到磁盘、并提供 *近似最近邻 (ANN) 查询 + 元数据过滤* 的容器。它的上游是 s04 的 embedding,下游是 s06+ 的召回 / rerank / prompt 拼装。
 
+```
+   s04 chunk + vec                Chroma collection("docs")
+   {text, source, page}            ┌─ HNSW 索引 (hnswlib, cosine)
+   [vec₁, vec₂, ...]               │   百万级毫秒级 ANN
+        │                          ├─ SQLite: documents + metadata (source/page)
+        │  col.add(embeddings=...) │
+        ▼                          └─ PersistentClient → _chroma/ 目录
+   chroma.PersistentClient
+   ─────────▶  query(q_vec, where={...})
+                                          │
+                                          ▼
+                                s06 召回: top-k hits 带 (text, source, page, score)
+```
+
 把它放进 RAG 全景看:**s05 是把"飘在内存里的向量"变成"可持久化、可检索的数据结构"**。如果只把 s04 跑出来扔进 Python `list`、每次启进程重算一次,几万条 chunk 还行,几十万条就要算几分钟;更糟的是 —— 你**根本没法在线查**。s05 解决两件事:**持久化**(进程关掉不丢)和 **ANN 查询**(百万级向量毫秒级 top-k)。
 
 ### 1.2 三个核心部件
