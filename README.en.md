@@ -25,7 +25,7 @@ git clone <repo-url>
 cd learn-ragflow
 pip install -r requirements.txt
 cp .env.example .env       # then edit .env and set LLM_API_KEY / LLM_BASE_URL / LLM_MODEL
-python s00_concepts/units/01_what_is_rag/code.py        # Chapter 0, unit 1 — what is RAG (start here for the mental model)
+python s00_concepts/code_01_what_is_rag.py             # Chapter 0, unit 1 — what is RAG (start here for the mental model)
 python s01_what_is_rag/code_01_naive_keyword.py
 ```
 
@@ -227,12 +227,11 @@ learn-ragflow/
 │   ├── 00-intro/                # RAG primer + docs/ usage
 │   └── reference/
 │       └── ragflow-notes/       # RAGFlow source excerpts (one per chapter)
-├── s00_concepts/                # Chapter 0 (concept primer; keeps units/ subdir unlike s01-s12)
+├── s00_concepts/                # Chapter 0 (concept primer)
 │   ├── README.md
-│   └── units/
-│       ├── 01_what_is_rag/
-│       ├── 02_why_rag/
-│       └── 03_evolution/
+│   ├── code_01_what_is_rag.py
+│   ├── code_02_why_rag.py
+│   └── code_03_evolution.py
 ├── s01_what_is_rag/             # Chapter 1
 │   ├── README.md
 │   ├── code_01_naive_keyword.py

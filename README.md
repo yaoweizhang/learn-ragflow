@@ -164,8 +164,8 @@ cd learn-ragflow
 pip install -r requirements.txt
 cp .env.example .env              # 编辑 .env，填入 LLM_API_KEY / LLM_BASE_URL / LLM_MODEL
 source env.sh                     # 可选：HF_ENDPOINT=https://hf-mirror.com + LD_PRELOAD 修正
-python s00_concepts/units/01_what_is_rag/code.py     # 第 0 章 unit 1：什么是 RAG（建议先跑，建立心智模型）
-python s01_what_is_rag/code_01_naive_keyword.py        # 第 1 章 unit 1：朴素检索
+python s00_concepts/code_01_what_is_rag.py             # 第 0 章 unit 1：什么是 RAG（建议先跑，建立心智模型）
+python s01_what_is_rag/code_01_naive_keyword.py         # 第 1 章 unit 1：朴素检索
 ```
 
 LLM 端点默认配置 OpenAI 兼容协议（`LLM_BASE_URL` + `LLM_MODEL`），用户可指向任意 OpenAI 兼容服务（OpenAI / DeepSeek / 智谱 / MiniMax / vLLM 自部署等）。`LLM_MODEL` 填你所用服务实际支持的 chat 模型名即可。
@@ -199,12 +199,11 @@ learn-ragflow/
 │           ├── graph_extraction.md       # s10
 │           ├── multimodal_parsing.md     # s11
 │           └── deployment.md             # s12
-├── s00_concepts/                 # ← 第 0 章：概念速览（3 unit，每个 unit 一个迷你 demo；结构与 s01-s12 不同，保留原 units/ 子目录）
+├── s00_concepts/                 # ← 第 0 章：概念速览（3 unit，每个 unit 一个迷你 demo）
 │   ├── README.md
-│   └── units/
-│       ├── 01_what_is_rag/
-│       ├── 02_why_rag/
-│       └── 03_evolution/
+│   ├── code_01_what_is_rag.py
+│   ├── code_02_why_rag.py
+│   └── code_03_evolution.py
 ├── s01_what_is_rag/              # ← 章节 1：1 个 README + 3 个 code_NN_<topic>.py
 │   ├── README.md
 │   ├── code_01_naive_keyword.py

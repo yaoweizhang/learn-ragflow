@@ -9,7 +9,7 @@ Offline demo. Shows what the LLM's prompt looks like
 # Toy "retrieved context" — what a RAG pipeline would inject
 RETRIEVED_CHUNK = """\
 [1] (server_whitepaper.pdf#2) 三、整机规格 内存:32 × DDR4 DIMM 插槽,最大 4TB 容量。
-[2] (server_whitepaper.pdf#4) 五、可靠性 内存支持镜像、备用与纠错码(ECC)三种数据保护模式。\
+[2] (server_whitepaper.pdf#4) 五、可靠性 内存支持镜像、备用与纠错码(ECC)三种数据保护模式.\
 """
 
 def without_rag(question: str) -> str:
