@@ -8,7 +8,7 @@
 RAGFlow 的"重排序"实际上是一段**两阶段**流水线——DB 内 `weighted_sum`
 做粗召回（上一章讲过），然后**可选地**用跨编码器（cross-encoder）或者云
 LLM rerank 做精排；只有配了 `rerank_mdl` 才会走第二阶段
-（[search.py:640-666](ragflow/rag/nlp/search.py#L640-L666)）：
+（[search.py](ragflow/rag/nlp/search.py)）：
 
 ```python
         if rerank_mdl and sres.total > 0:
@@ -40,7 +40,7 @@ LLM rerank 做精排；只有配了 `rerank_mdl` 才会走第二阶段
 ```
 
 `rerank_by_model` 内部把**跨编码器分数** `vtsim` 与**本地词项相似度**
-`tksim` 再做一次线性加权（[search.py:513-540](ragflow/rag/nlp/search.py#L513-L540)）：
+`tksim` 再做一次线性加权（[search.py](ragflow/rag/nlp/search.py)）：
 
 ```python
         tksim = self.qryr.token_similarity(keywords, ins_tw)
@@ -56,7 +56,7 @@ LLM rerank 做精排；只有配了 `rerank_mdl` 才会走第二阶段
 
 `rerank_mdl` 是一个 `RerankModel.Base` 子类，按用户配置可以是 Jina /
 Cohere / Voyage / NVIDIA / Qwen / **本地 HuggingFace 跨编码器**
-（`BAAI/bge-reranker-v2-m3`，[rerank_model.py:447-488](ragflow/rag/llm/rerank_model.py#L447-L488)）
+（`BAAI/bge-reranker-v2-m3`，[rerank_model.py](ragflow/rag/llm/rerank_model.py)）
 ——所以"RAGFlow 接入了 LLM-as-rerank"这一说准确说成"接入了多种 rerank
 provider"，其中云端大模型类（Cohere / Voyage / Qwen）本质上调用远程
 LLM 风格的端点，本地类（BGE）才是真正的 cross-encoder。
@@ -69,14 +69,14 @@ LLM 风格的端点，本地类（BGE）才是真正的 cross-encoder。
   chunk **拼在一起**让 BERT/Transformer 一次性看两端、做 token 级的
   cross attention，准但慢（O(n) 而非向量检索的 O(log n)）。两阶段
   把"召回广"和"排序准"分开：先用便宜的 bi-encoder 拉 ~64 候选
-  （`RERANK_LIMIT = ceil(64/page_size) * page_size`，[search.py:548-571](ragflow/rag/nlp/search.py#L548-L571)），
+  （`RERANK_LIMIT = ceil(64/page_size) * page_size`，[search.py](ragflow/rag/nlp/search.py)），
   再让 cross-encoder 在小池子上精排。`rerank_mdl` 配不配决定是否
   走第二阶段（`if rerank_mdl and sres.total > 0`），这是把"开销留给
   愿意付钱的人"的开关。
 
 - **为什么 RAGFlow 还接入了 LLM-as-rerank（多 provider 抽象）？**
   `rag/llm/rerank_model.py` 列了 Jina / Cohere / Voyage / NVIDIA / Qwen /
-  百度千帆 / 本地 HuggingFace 等十几个 provider（[rerank_model.py:94-488](ragflow/rag/llm/rerank_model.py#L94-L488)），
+  百度千帆 / 本地 HuggingFace 等十几个 provider（[rerank_model.py](ragflow/rag/llm/rerank_model.py)），
   这是**业务妥协**而不是技术必须：cross-encoder 在通用英文基准强，
   但**多语言/垂直领域**（中文金融、中文法律、医疗）未必有开源模型能
   打；接多家云就能让租户按自己 KB 的语种/领域挑最合适的。云端那一路

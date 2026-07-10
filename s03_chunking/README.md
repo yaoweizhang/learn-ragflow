@@ -85,6 +85,135 @@ embedding 模型的 `max_seq_len` 通常是 512 token（BGE 系列）或 8192 to
 
 这也是为什么我们不直接用 LangChain `RecursiveCharacterTextSplitter`——它在底层解决了"递归找分隔符"，但你看不清每一步切在哪、为什么切。先见失败，再看修复，比直接用封装库学到的多。
 
+## unit 01 — 最小可跑分块：500 字符 cap + 句界切  (`code_01_basic_chunk.py`)
+
+> 由浅入深第 1 步：把 s02 输出的 `list[{text, page, source}]` 切成可灌进 embedding 的小块，契约是 `chunk_id + ≤ max_chars 文本`。
+> unit 02 会跑同一套函数到真实样本上，展示哪些情况它会崩。
+
+### 这是什么
+
+1. `split_long_paragraph(text, max_chars)` — lookbehind 正则在 `[.。!?！？]` 之后切，把超长段落切成 ≤ max_chars 的若干块；极端情况（无标点的规格表）按字符硬切兜底；
+2. `chunk_by_paragraph(docs, max_chars=500)` — 短段整段保留为 1 块，长段调 `split_long_paragraph` 后展开多块；每块带 `chunk_id = {source}#{page}#p{n}`；
+3. **复用 s02 unit 01 的 `load_pdf` / `load_docx`**——loader 是上游契约，本单元不重复实现。
+
+### 跑起来
+
+```bash
+python s03_chunking/code_01_basic_chunk.py
+```
+
+输出：
+
+```
+输入段落 31 → 输出块 34
+最大块长度 452 字符 (cap=500)
+server_whitepaper.pdf#1#p0 | 紫光恒越 R3630 G5 双路机架式服
+务器
+产品白皮书 ...
+server_whitepaper.pdf#1#p1 | 二、关键特性
+计算密度 ...
+server_whitepaper.pdf#2#p2 | 三、整机规格
+组件 规格 说明 ...
+```
+
+### 它做对了什么
+
+- **token-aware 边界**：按 `[.。!?！？]` 切而不是裸字符切，中英文段落都不会拦腰砍断句子；
+- **硬切兜底**：单句本身超过 `max_chars`（无标点规格表）按字符切，最坏情况下输出不超过 `2 * max_chars`；
+- **chunk_id 稳定可引用**：`{source}#{page}#p{n}` 形式让 s04+ 可以直接引用具体 chunk；
+- **零新依赖**：只用 `re` + `pathlib`。
+
+### 它做错了什么
+
+- **表格被切碎**：`pypdf.extract_text()` 输出的表格是挤在一行的长串，句界切不到、只能硬切 → 每个 chunk 只看到半张表；
+- **父子块概念缺失**：500 字封顶的扁平列表，召回后 LLM 拿不到"完整语义单位"，回答"Q3 营收多少"只能看到切碎的片段；
+- **跨段落引用断裂**："见上表""如表 3 所示" 这种指代词单独成 chunk 后，检索召回的是指代词本身、不是它指向的实体。
+
+unit 02 会在 `samples/` 上把这三类失败各跑一遍。
+
+### 思考题
+
+**如果一段就是 800 字但语义完整（比如一段财务披露），是该切还是不该切？**
+
+提示：固定字符切分解决不了这个问题——切了句子被拦腰截断；不切单 chunk 太长 embedding 模型失真（BGE `max_seq_len=512`，但超长块会稀释语义）。RAGFlow 的 parent-child 是答案：整段作为 parent 保留语义完整性，内部再切小 child 用于召回匹配，命中后把 parent 整体塞给 LLM。详见 unit 02 的 `demo_parent_child`。
+
+## unit 02 — chunker 在真实样本上的三类失败  (`code_02_chunk_failures.py`)
+
+> 由浅入深第 2 步：unit 01 在 toy 上能跑；放到真实 `samples/` 上会崩在哪？
+> 本单元定位 3 类问题 + 引出工业解法。
+
+### 这是什么
+
+把 unit 01 的 `chunk_by_paragraph` 喂给真实样本（`server_whitepaper.pdf` 4 页 + `disclosure.docx` 27 段），把"看不见的损失"暴露出来：
+
+1. **表格被切碎**——`pypdf.extract_text()` 输出的规格表挤在一行里，句界切不到、只能字符硬切，每个 chunk 只看到半张表；
+2. **父子块缺失**——节标题（"第四节 分季度财务数据"）单独成 10-char chunk，用户问"Q3 营收"时检索命中的是标题，数字本身在 DOCX tables 里（被 s02 loader 丢了）；
+3. **跨段引用断裂**——"收入结构如下""见表 3"这种指代词单独成 chunk 后无主语，召回的是指代词本身而不是它指向的实体。
+
+### 跑起来
+
+```bash
+python s03_chunking/code_02_chunk_failures.py
+```
+
+输出片段：
+
+```
+================================================================
+[a] 表格被切碎 — 整机规格表 hard-cut
+================================================================
+BEFORE (整段 562 字符):
+三、整机规格
+组件 规格 说明
+处理器 2 × 第三代 Intel Xeon 可
+扩展处理器
+...
+AFTER  (cap=500 → 切成 2 块):
+  chunk 0 len= 396 | 末行: NAND
+  chunk 1 len= 164 | 末行: ...
+→ 失败点: 第 0 块末尾停在 '8GB' (BMC 那行的中间),
+          第 1 块从 'NAND' 开头继续,失去 '组件 / 规格 / 说明' 列对齐语义。
+```
+
+```
+================================================================
+[b] 父子块缺失 — 节标题 chunk 与数据本体分离
+================================================================
+BEFORE (用户问 'Q3 营收多少'):
+  召回命中 chunk_id=disclosure.docx#None#p18 len=11 text='第四节 分季度财务数据'
+AFTER  (季度数据本体在 DOCX tables,共 3 张表):
+  (本样本 DOCX 表未含 Q3 字面量; 但所有季度数字都只在 tables 里,chunker 看不到)
+```
+
+```
+================================================================
+[c] 跨段引用断裂 — 指代词单独成 chunk
+================================================================
+BEFORE (过短的 header-only chunks,语义为零):
+  id=disclosure.docx#None#p8  len=15 | '2024 年度财务信息披露报告'
+  id=disclosure.docx#None#p13 len=10 | '第二节 主要财务数据'
+  id=disclosure.docx#None#p18 len=11 | '第四节 分季度财务数据'
+```
+
+### 它做对了什么
+
+- **暴露问题**：每个 demo 都打印 before/after 片段，让"为什么这种切法不够"肉眼可见；
+- **解法对照**：每个失败都点名工业方案的对应模块（`_concat_downward` / `naive_merge` / `hierarchical_merge` / `attach_media_context`）；
+- **量化损失**：表格切成 2 块时第 0 块停在 mid-row "8GB"——直接给 LLM 看它能不能拼回去；
+- **零新依赖**：只 import unit 01 + 标准库 + `python-docx`（已装）。
+
+### 它做错了什么
+
+- 它是个 demo，不是 fix——没有真的把表拼回去、没有真的建父子树、没有真的回填 context；
+- 依赖 s02 unit 01 的 loader（后者已丢 DOCX tables）；如果想看到表格里的季度数字，要么改 s02 loader 要么用 `python-docx` 直读；
+- 只测了 3 类失败，真实场景还有 (d) 页眉页脚污染 / (e) 多栏错位 / (f) 扫描件 OCR 缺失，那些是 s02 + s11 的事。
+
+### 思考题
+
+**如果只允许修 1 类失败，优先修哪类？为什么？**
+
+提示：决策不是技术问题——是产品问题。如果你的语料以**白皮书 / 财报** 为主，表格切碎会让检索准度断崖下降（用户问"内存最大多大"命中半张表 → LLM 瞎编）；如果以**长文档 / 法规** 为主，父子块缺失让 LLM 永远只看片段；如果是**导航型** 文档（FAQ），跨段引用最多让用户体验不好但不影响答案正确性。你要结合自己的 samples 分布选。
+
 ## 三、怎么做？
 
 ### 3.1 跑起来
@@ -237,134 +366,6 @@ BEFORE (过短的 header-only chunks):
 
 答案见下方"思考题答案"。
 
-## unit 01 — 最小可跑分块：500 字符 cap + 句界切  (`code_01_basic_chunk.py`)
-
-> 由浅入深第 1 步：把 s02 输出的 `list[{text, page, source}]` 切成可灌进 embedding 的小块，契约是 `chunk_id + ≤ max_chars 文本`。
-> unit 02 会跑同一套函数到真实样本上，展示哪些情况它会崩。
-
-### 这是什么
-
-1. `split_long_paragraph(text, max_chars)` — lookbehind 正则在 `[.。!?！？]` 之后切，把超长段落切成 ≤ max_chars 的若干块；极端情况（无标点的规格表）按字符硬切兜底；
-2. `chunk_by_paragraph(docs, max_chars=500)` — 短段整段保留为 1 块，长段调 `split_long_paragraph` 后展开多块；每块带 `chunk_id = {source}#{page}#p{n}`；
-3. **复用 s02 unit 01 的 `load_pdf` / `load_docx`**——loader 是上游契约，本单元不重复实现。
-
-### 跑起来
-
-```bash
-python s03_chunking/code_01_basic_chunk.py
-```
-
-输出：
-
-```
-输入段落 31 → 输出块 34
-最大块长度 452 字符 (cap=500)
-server_whitepaper.pdf#1#p0 | 紫光恒越 R3630 G5 双路机架式服
-务器
-产品白皮书 ...
-server_whitepaper.pdf#1#p1 | 二、关键特性
-计算密度 ...
-server_whitepaper.pdf#2#p2 | 三、整机规格
-组件 规格 说明 ...
-```
-
-### 它做对了什么
-
-- **token-aware 边界**：按 `[.。!?！？]` 切而不是裸字符切，中英文段落都不会拦腰砍断句子；
-- **硬切兜底**：单句本身超过 `max_chars`（无标点规格表）按字符切，最坏情况下输出不超过 `2 * max_chars`；
-- **chunk_id 稳定可引用**：`{source}#{page}#p{n}` 形式让 s04+ 可以直接引用具体 chunk；
-- **零新依赖**：只用 `re` + `pathlib`。
-
-### 它做错了什么
-
-- **表格被切碎**：`pypdf.extract_text()` 输出的表格是挤在一行的长串，句界切不到、只能硬切 → 每个 chunk 只看到半张表；
-- **父子块概念缺失**：500 字封顶的扁平列表，召回后 LLM 拿不到"完整语义单位"，回答"Q3 营收多少"只能看到切碎的片段；
-- **跨段落引用断裂**："见上表""如表 3 所示" 这种指代词单独成 chunk 后，检索召回的是指代词本身、不是它指向的实体。
-
-unit 02 会在 `samples/` 上把这三类失败各跑一遍。
-
-### 思考题
-
-**如果一段就是 800 字但语义完整（比如一段财务披露），是该切还是不该切？**
-
-提示：固定字符切分解决不了这个问题——切了句子被拦腰截断；不切单 chunk 太长 embedding 模型失真（BGE `max_seq_len=512`，但超长块会稀释语义）。RAGFlow 的 parent-child 是答案：整段作为 parent 保留语义完整性，内部再切小 child 用于召回匹配，命中后把 parent 整体塞给 LLM。详见 unit 02 的 `demo_parent_child`。
-
-## unit 02 — chunker 在真实样本上的三类失败  (`code_02_chunk_failures.py`)
-
-> 由浅入深第 2 步：unit 01 在 toy 上能跑；放到真实 `samples/` 上会崩在哪？
-> 本单元定位 3 类问题 + 引出工业解法。
-
-### 这是什么
-
-把 unit 01 的 `chunk_by_paragraph` 喂给真实样本（`server_whitepaper.pdf` 4 页 + `disclosure.docx` 27 段），把"看不见的损失"暴露出来：
-
-1. **表格被切碎**——`pypdf.extract_text()` 输出的规格表挤在一行里，句界切不到、只能字符硬切，每个 chunk 只看到半张表；
-2. **父子块缺失**——节标题（"第四节 分季度财务数据"）单独成 10-char chunk，用户问"Q3 营收"时检索命中的是标题，数字本身在 DOCX tables 里（被 s02 loader 丢了）；
-3. **跨段引用断裂**——"收入结构如下""见表 3"这种指代词单独成 chunk 后无主语，召回的是指代词本身而不是它指向的实体。
-
-### 跑起来
-
-```bash
-python s03_chunking/code_02_chunk_failures.py
-```
-
-输出片段：
-
-```
-================================================================
-[a] 表格被切碎 — 整机规格表 hard-cut
-================================================================
-BEFORE (整段 562 字符):
-三、整机规格
-组件 规格 说明
-处理器 2 × 第三代 Intel Xeon 可
-扩展处理器
-...
-AFTER  (cap=500 → 切成 2 块):
-  chunk 0 len= 396 | 末行: NAND
-  chunk 1 len= 164 | 末行: ...
-→ 失败点: 第 0 块末尾停在 '8GB' (BMC 那行的中间),
-          第 1 块从 'NAND' 开头继续,失去 '组件 / 规格 / 说明' 列对齐语义。
-```
-
-```
-================================================================
-[b] 父子块缺失 — 节标题 chunk 与数据本体分离
-================================================================
-BEFORE (用户问 'Q3 营收多少'):
-  召回命中 chunk_id=disclosure.docx#None#p18 len=11 text='第四节 分季度财务数据'
-AFTER  (季度数据本体在 DOCX tables,共 3 张表):
-  (本样本 DOCX 表未含 Q3 字面量; 但所有季度数字都只在 tables 里,chunker 看不到)
-```
-
-```
-================================================================
-[c] 跨段引用断裂 — 指代词单独成 chunk
-================================================================
-BEFORE (过短的 header-only chunks,语义为零):
-  id=disclosure.docx#None#p8  len=15 | '2024 年度财务信息披露报告'
-  id=disclosure.docx#None#p13 len=10 | '第二节 主要财务数据'
-  id=disclosure.docx#None#p18 len=11 | '第四节 分季度财务数据'
-```
-
-### 它做对了什么
-
-- **暴露问题**：每个 demo 都打印 before/after 片段，让"为什么这种切法不够"肉眼可见；
-- **解法对照**：每个失败都点名工业方案的对应模块（`_concat_downward` / `naive_merge` / `hierarchical_merge` / `attach_media_context`）；
-- **量化损失**：表格切成 2 块时第 0 块停在 mid-row "8GB"——直接给 LLM 看它能不能拼回去；
-- **零新依赖**：只 import unit 01 + 标准库 + `python-docx`（已装）。
-
-### 它做错了什么
-
-- 它是个 demo，不是 fix——没有真的把表拼回去、没有真的建父子树、没有真的回填 context；
-- 依赖 s02 unit 01 的 loader（后者已丢 DOCX tables）；如果想看到表格里的季度数字，要么改 s02 loader 要么用 `python-docx` 直读；
-- 只测了 3 类失败，真实场景还有 (d) 页眉页脚污染 / (e) 多栏错位 / (f) 扫描件 OCR 缺失，那些是 s02 + s11 的事。
-
-### 思考题
-
-**如果只允许修 1 类失败，优先修哪类？为什么？**
-
-提示：决策不是技术问题——是产品问题。如果你的语料以**白皮书 / 财报** 为主，表格切碎会让检索准度断崖下降（用户问"内存最大多大"命中半张表 → LLM 瞎编）；如果以**长文档 / 法规** 为主，父子块缺失让 LLM 永远只看片段；如果是**导航型** 文档（FAQ），跨段引用最多让用户体验不好但不影响答案正确性。你要结合自己的 samples 分布选。
 
 ## 思考题答案
 

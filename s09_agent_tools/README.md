@@ -113,6 +113,126 @@ ActionInput: {"query": "R3630 G5 内存插槽数量"}
 
 ---
 
+## unit 01 — 工具调用(单步) (`code_01_tool_call.py`)
+
+> 由浅入深第 1 步:把 2 个工具塞进 system prompt,调一次 LLM,正则抠 `Action / ActionInput`,跑工具。
+> unit 02 会把这一轮包成 `Thought → Action → Observation` 循环,跑多步。
+
+### 这是什么
+
+本单元只走**一轮** agent 决策:
+
+1. `TOOLS_DESC` 把 2 个工具(`retrieve(query)` / `finish(answer)`)和输出格式(`Thought` / `Action` / `ActionInput`)写进 system prompt;
+2. `_llm(messages)` 调 OpenAI 兼容接口(无 key 时降级,演示假设 retrieve),并剥掉 MiniMax / DeepSeek R1 的 `<think>...</think>` 推理块;
+3. 用同款 regex `r"Action:\s*(\w+)\b\s*ActionInput:\s*(.+)"`(DOTALL)从 LLM 原话里抠出工具名 + 参数;
+4. `single_shot(question)` 把原话、解析的 action、解析的 payload、工具返回的 observation 一并打印。
+
+跑过 `python s09_agent_tools/code_01_tool_call.py` 会看到:问"内存插槽数量"时 LLM 选 `retrieve`;问"1+1 等于几"时 LLM 直接选 `finish`——**同一个 system prompt,LLM 自己决定要不要查文档**。
+
+### 跑起来
+
+```bash
+python s09_agent_tools/code_01_tool_call.py
+# 问: R3630 G5 的内存插槽数量
+```
+
+无 `LLM_API_KEY` 时打印演示(假设 LLM 选 retrieve 并跑检索管线):
+
+```
+[Q] R3630 G5 的内存插槽数量
+
+[skipped: LLM_API_KEY not set] — 演示假设 LLM 选了 retrieve:
+
+[LLM raw]
+Thought: 用户问的是 R3630 G5 的内存插槽数量,文档里应该有。
+Action: retrieve
+ActionInput: {"query": "R3630 G5 内存插槽数量"}
+
+[Parsed action] retrieve
+[Parsed payload] {'query': 'R3630 G5 内存插槽数量'}
+
+[Observation]
+- (server_whitepaper.pdf#1) 紫光恒越 R3630 G5 双路机架式服务器 ...
+- (server_whitepaper.pdf#2) 配备 32 个 DIMM 内存插槽 ...
+...
+```
+
+### 它做对了什么
+
+- **同一个 system prompt 里 LLM 会自己挑工具**:问"内存"它选 `retrieve`,问"1+1"它直接 `finish`——把"要不要查"的决策**还给 LLM** 是本章核心观察;
+- **Action / ActionInput 解析**:regex 同时兼容"ActionInput 在新行 / 与 Action 同行 / 被 ```json 围栏包住"三种常见写法,Markdown 围栏剥掉再 `json.loads`;
+- **JSON 解析失败兜底**:解析不出来不崩,返回 `(JSON 解析失败: ...)` 让调用方知道——为 unit 02 的"反馈回 messages 让 LLM 自己修正"埋钩子;
+- **self-contained**:内联 chroma + s04 embed + s06 hybrid + s07 rerank,不依赖 chapter-root。
+
+### 它做错了什么
+
+- **只能走一轮**:observation 出来就停了,没有"看了结果再决定下一步"的循环——这就是 unit 02 要解决的;
+- **没有 plan / execute 分层**:LLM 想回答复杂多跳问题(先查 A 再查 B 再总结)做不了;
+- **LLM 输出格式仍然脆弱**:regex 抓不到时单元就退化成"打印原话"——生产里应该用 OpenAI / Anthropic 的 `tool_calls` 字段让 API 帮你解析;
+- **没有死循环防护**:单步问题,但已经能看出"LLM 一直选 retrieve 不 finish"在多步场景下是定时炸弹。
+
+---
+
+## unit 02 — ReAct 循环 (`code_02_react_loop.py`)
+
+> 由浅入深第 2 步:把 unit 01 的"单步工具调用"包成循环,跑多步,JSON 失败时让 LLM 自己修正。
+
+### 这是什么
+
+本单元是 s09 章节的**主要概念**——agent 循环:
+
+1. 用 unit 01 的 `TOOLS_DESC` / `_llm` / `_retrieve`(importlib 加载,不依赖 chapter-root);
+2. `run_agent(question, max_steps=5)` 维护 messages 列表,每轮:调 LLM → regex 抠 `Action / ActionInput` → `json.loads` → 路由 `retrieve` 或 `finish` → 把结果写回 messages 当 `Observation`;
+3. **JSON 解析失败**时把原文当 Observation 反馈回去("上一次 ActionInput 不是合法 JSON,原文已回显: ..."),让 LLM 下一轮自己修正;
+4. **`max_steps=5` 兜底**——超过就返回 `"Max steps reached."`,防 LLM 死循环;
+5. 返回 `{answer, trace}`,`trace` 是每轮的 `{step, thought, action, obs}`,便于打印 / 调试 / 单元测试。
+
+跑 `python s09_agent_tools/code_02_react_loop.py` 会看到:问"内存插槽" → retrieve → finish 两步;问"1+1" → finish 一步直接结束。
+
+### 跑起来
+
+```bash
+python s09_agent_tools/code_02_react_loop.py
+# 问: R3630 G5 的内存插槽数量
+```
+
+无 `LLM_API_KEY` 时打印演示 trace:
+
+```
+[Q] R3630 G5 的内存插槽数量
+
+[skipped: LLM_API_KEY not set] — 演示 trace 形状:
+
+--- step 1 ---
+Thought: 用户问的是 R3630 G5 的内存插槽数量。
+Action:  retrieve
+Obs:     - (server_whitepaper.pdf#2) 配备 32 个 DIMM 内存插槽 ...
+
+--- step 2 ---
+Thought: 找到了。
+Action:  finish
+Obs:     R3630 G5 配备 32 个 DIMM 内存插槽。
+
+[A] R3630 G5 配备 32 个 DIMM 内存插槽。
+```
+
+### 它做对了什么
+
+- **多步推理 + 多步工具调用**:LLM 看到 observation 后能决定下一步——查了 A 再查 B,或者查完直接 finish;
+- **JSON 失败可恢复**:LLM 偶尔吐 `ActionInput: {query: 内存}`(少了引号)时,把原文回显当 Observation 让它下一轮自己改格式;
+- **死循环兜底**:`max_steps=5` 是硬上限,超过就放弃——比"LLM 一直 retrieve 不 finish"无限耗下去强;
+- **`trace` 结构化返回**:每轮的 thought / action / obs 都存下来,方便后续做日志、可视化、单元测试断言("应该 retrieve 至少 1 次");
+- **复用 unit 01**:本单元不重复写工具描述、LLM 客户端、检索函数——只关心**循环控制**本身。
+
+### 它做错了什么
+
+- **没有 DAG 分支**:循环是单链——"先 retrieve 后 finish",没法表达"先 categorize,按类别走不同路径";
+- **没有 plan-first**:LLM 不会先输出"我要先查 X 再查 Y"再执行——每轮只看上一步 observation 决定下一步,多跳问题容易跑偏;
+- **没有并行工具**:一次只能调一个工具,不能"同时查 A 和 B";
+- **没有"反思"组件**:observation 不相关时模型只能靠 prompt 里一句"找不到就 finish"自保,没有"主动改写 query 再试"的反射动作;
+- **死循环防护弱**:只靠 `max_steps` 兜底,没检测"同一个 Action 重复出现 N 次"——`max_steps=5` 够短所以问题不显,但放大到 `max_steps=20` 就明显;
+- **外部中断不支持**:没法像 RAGFlow 那样写 Redis `cancel` 标记让前端主动中断。
+
 ## 三、怎么做？
 
 ### 3.1 跑起来
@@ -266,128 +386,6 @@ Obs:     R3630 G5 配备 32 个 DIMM 内存插槽。
 3. **工具一多 LLM 选错怎么办?**
 
 (答案见文末「思考题答案」)
-
----
-
-## unit 01 — 工具调用(单步) (`code_01_tool_call.py`)
-
-> 由浅入深第 1 步:把 2 个工具塞进 system prompt,调一次 LLM,正则抠 `Action / ActionInput`,跑工具。
-> unit 02 会把这一轮包成 `Thought → Action → Observation` 循环,跑多步。
-
-### 这是什么
-
-本单元只走**一轮** agent 决策:
-
-1. `TOOLS_DESC` 把 2 个工具(`retrieve(query)` / `finish(answer)`)和输出格式(`Thought` / `Action` / `ActionInput`)写进 system prompt;
-2. `_llm(messages)` 调 OpenAI 兼容接口(无 key 时降级,演示假设 retrieve),并剥掉 MiniMax / DeepSeek R1 的 `<think>...</think>` 推理块;
-3. 用同款 regex `r"Action:\s*(\w+)\b\s*ActionInput:\s*(.+)"`(DOTALL)从 LLM 原话里抠出工具名 + 参数;
-4. `single_shot(question)` 把原话、解析的 action、解析的 payload、工具返回的 observation 一并打印。
-
-跑过 `python s09_agent_tools/code_01_tool_call.py` 会看到:问"内存插槽数量"时 LLM 选 `retrieve`;问"1+1 等于几"时 LLM 直接选 `finish`——**同一个 system prompt,LLM 自己决定要不要查文档**。
-
-### 跑起来
-
-```bash
-python s09_agent_tools/code_01_tool_call.py
-# 问: R3630 G5 的内存插槽数量
-```
-
-无 `LLM_API_KEY` 时打印演示(假设 LLM 选 retrieve 并跑检索管线):
-
-```
-[Q] R3630 G5 的内存插槽数量
-
-[skipped: LLM_API_KEY not set] — 演示假设 LLM 选了 retrieve:
-
-[LLM raw]
-Thought: 用户问的是 R3630 G5 的内存插槽数量,文档里应该有。
-Action: retrieve
-ActionInput: {"query": "R3630 G5 内存插槽数量"}
-
-[Parsed action] retrieve
-[Parsed payload] {'query': 'R3630 G5 内存插槽数量'}
-
-[Observation]
-- (server_whitepaper.pdf#1) 紫光恒越 R3630 G5 双路机架式服务器 ...
-- (server_whitepaper.pdf#2) 配备 32 个 DIMM 内存插槽 ...
-...
-```
-
-### 它做对了什么
-
-- **同一个 system prompt 里 LLM 会自己挑工具**:问"内存"它选 `retrieve`,问"1+1"它直接 `finish`——把"要不要查"的决策**还给 LLM** 是本章核心观察;
-- **Action / ActionInput 解析**:regex 同时兼容"ActionInput 在新行 / 与 Action 同行 / 被 ```json 围栏包住"三种常见写法,Markdown 围栏剥掉再 `json.loads`;
-- **JSON 解析失败兜底**:解析不出来不崩,返回 `(JSON 解析失败: ...)` 让调用方知道——为 unit 02 的"反馈回 messages 让 LLM 自己修正"埋钩子;
-- **self-contained**:内联 chroma + s04 embed + s06 hybrid + s07 rerank,不依赖 chapter-root。
-
-### 它做错了什么
-
-- **只能走一轮**:observation 出来就停了,没有"看了结果再决定下一步"的循环——这就是 unit 02 要解决的;
-- **没有 plan / execute 分层**:LLM 想回答复杂多跳问题(先查 A 再查 B 再总结)做不了;
-- **LLM 输出格式仍然脆弱**:regex 抓不到时单元就退化成"打印原话"——生产里应该用 OpenAI / Anthropic 的 `tool_calls` 字段让 API 帮你解析;
-- **没有死循环防护**:单步问题,但已经能看出"LLM 一直选 retrieve 不 finish"在多步场景下是定时炸弹。
-
----
-
-## unit 02 — ReAct 循环 (`code_02_react_loop.py`)
-
-> 由浅入深第 2 步:把 unit 01 的"单步工具调用"包成循环,跑多步,JSON 失败时让 LLM 自己修正。
-
-### 这是什么
-
-本单元是 s09 章节的**主要概念**——agent 循环:
-
-1. 用 unit 01 的 `TOOLS_DESC` / `_llm` / `_retrieve`(importlib 加载,不依赖 chapter-root);
-2. `run_agent(question, max_steps=5)` 维护 messages 列表,每轮:调 LLM → regex 抠 `Action / ActionInput` → `json.loads` → 路由 `retrieve` 或 `finish` → 把结果写回 messages 当 `Observation`;
-3. **JSON 解析失败**时把原文当 Observation 反馈回去("上一次 ActionInput 不是合法 JSON,原文已回显: ..."),让 LLM 下一轮自己修正;
-4. **`max_steps=5` 兜底**——超过就返回 `"Max steps reached."`,防 LLM 死循环;
-5. 返回 `{answer, trace}`,`trace` 是每轮的 `{step, thought, action, obs}`,便于打印 / 调试 / 单元测试。
-
-跑 `python s09_agent_tools/code_02_react_loop.py` 会看到:问"内存插槽" → retrieve → finish 两步;问"1+1" → finish 一步直接结束。
-
-### 跑起来
-
-```bash
-python s09_agent_tools/code_02_react_loop.py
-# 问: R3630 G5 的内存插槽数量
-```
-
-无 `LLM_API_KEY` 时打印演示 trace:
-
-```
-[Q] R3630 G5 的内存插槽数量
-
-[skipped: LLM_API_KEY not set] — 演示 trace 形状:
-
---- step 1 ---
-Thought: 用户问的是 R3630 G5 的内存插槽数量。
-Action:  retrieve
-Obs:     - (server_whitepaper.pdf#2) 配备 32 个 DIMM 内存插槽 ...
-
---- step 2 ---
-Thought: 找到了。
-Action:  finish
-Obs:     R3630 G5 配备 32 个 DIMM 内存插槽。
-
-[A] R3630 G5 配备 32 个 DIMM 内存插槽。
-```
-
-### 它做对了什么
-
-- **多步推理 + 多步工具调用**:LLM 看到 observation 后能决定下一步——查了 A 再查 B,或者查完直接 finish;
-- **JSON 失败可恢复**:LLM 偶尔吐 `ActionInput: {query: 内存}`(少了引号)时,把原文回显当 Observation 让它下一轮自己改格式;
-- **死循环兜底**:`max_steps=5` 是硬上限,超过就放弃——比"LLM 一直 retrieve 不 finish"无限耗下去强;
-- **`trace` 结构化返回**:每轮的 thought / action / obs 都存下来,方便后续做日志、可视化、单元测试断言("应该 retrieve 至少 1 次");
-- **复用 unit 01**:本单元不重复写工具描述、LLM 客户端、检索函数——只关心**循环控制**本身。
-
-### 它做错了什么
-
-- **没有 DAG 分支**:循环是单链——"先 retrieve 后 finish",没法表达"先 categorize,按类别走不同路径";
-- **没有 plan-first**:LLM 不会先输出"我要先查 X 再查 Y"再执行——每轮只看上一步 observation 决定下一步,多跳问题容易跑偏;
-- **没有并行工具**:一次只能调一个工具,不能"同时查 A 和 B";
-- **没有"反思"组件**:observation 不相关时模型只能靠 prompt 里一句"找不到就 finish"自保,没有"主动改写 query 再试"的反射动作;
-- **死循环防护弱**:只靠 `max_steps` 兜底,没检测"同一个 Action 重复出现 N 次"——`max_steps=5` 够短所以问题不显,但放大到 `max_steps=20` 就明显;
-- **外部中断不支持**:没法像 RAGFlow 那样写 Redis `cancel` 标记让前端主动中断。
 
 ---
 

@@ -93,6 +93,93 @@ ETL 处理的是数据库表 / 日志，文档加载处理的是 PDF / DOCX。**
 
 这也是为什么我们不直接用 `Unstructured` / `PyMuPDF4LLM` 这类更"省心"的库——它们在底层解决了这些问题，但你看不到**哪些原本会出错、错在哪**。先见错误，再看修复，比直接用封装库学到的多。
 
+## unit 01 — 最小可跑加载：PDF + DOCX → 统一 schema  (`code_01_basic_load.py`)
+
+> 由浅入深第 1 步：把 PDF 和 DOCX 都读成 `list[{text, page, source}]`，作为后续章节的输入契约。
+> unit 02 会跑同一套函数到真实样本上，演示哪些情况它会崩。
+
+### 这是什么
+
+1. `load_pdf(path)` — `pypdf.PdfReader` 逐页 `extract_text()`，page 从 1 开始；
+2. `load_docx(path)` — `python-docx` 按 `paragraphs` 顺序读，仅保留非空段；
+3. 输出统一 `{text, page, source}` schema，page 在 DOCX 时为 `None`。
+
+### 跑起来
+
+```bash
+python s02_doc_loading/code_01_basic_load.py
+```
+
+输出：
+
+```
+PDF 段落数: 4, DOCX 段落数: 27
+PDF 第 1 段前 100 字: 紫光恒越 R3630 G5 双路机架式服务器 产品白皮书 ...
+DOCX 第 1 段前 100 字: 青蓝科技股份有限公司 ...
+```
+
+### 它做对了什么
+
+- **零依赖外的最小化**：`pypdf` + `python-docx` 覆盖最常见两种格式；
+- **schema 一致**：PDF 和 DOCX 喂给下游切块器时是同一种形状。
+
+### 它做错了什么
+
+- **DOCX 表格被吃掉**：`Document.paragraphs` 不含 `tables`，所有表内文字都丢；
+- **PDF 多栏排版错位**：双栏 PDF 抽出来的文本会把左栏底部接到右栏顶部；
+- **扫描件完全没救**：`extract_text()` 对图片型 PDF 返回空字符串。
+
+### 思考题
+
+**为什么 PDF 输出会有 4 段（4 页）但 DOCX 输出 27 段？这是"段落"的语义不同吗？**
+
+提示：PDF 的"段" = 页（page 是结构边界）；DOCX 的"段" = `\n` 切分的人工段落。统一 schema 时要不要把"页"硬塞给 DOCX？
+
+## unit 02 — 真实样本上的失败模式  (`code_02_failure_modes.py`)
+
+> 由浅入深第 2 步：unit 01 在 toy 上能跑；放到真实 `samples/` 上会崩在哪？
+> 本单元定位问题 + 引出 ragflow 的工业解法。
+
+### 这是什么
+
+把 unit 01 的 `load_pdf` / `load_docx` 喂给真实样本 (`samples/server_whitepaper.pdf` 4 页 + `samples/disclosure.docx` 27 段)，把"看不见的损失"暴露出来：
+
+1. **PDF 多栏错位**——`pypdf.extract_text()` 在双栏 PDF 上按字符位置扫，左右栏会交错；
+2. **DOCX 表格丢失**——`python-docx.Document.paragraphs` 不含 `Document.tables`，表内所有文字静默丢弃。
+
+### 跑起来
+
+```bash
+python s02_doc_loading/code_02_failure_modes.py
+```
+
+输出片段：
+
+```
+[PDF] 4 页抽出的段落 ...
+  page= 1 len= 612 | 紫光恒越 R3630 G5 双路机架式服务器 产品白皮书 ...
+  page= 2 len=1024 | 产品型号 产品白皮书 文档版本 ...
+  ...
+
+[DOCX] paragraphs(非空)=27, tables=3, 表格内总字符=572
+  → unit 01 的 load_docx 只读 paragraphs，丢失 572 字符（3 张表）
+```
+
+### 它做对了什么
+
+- **暴露问题**：列出真实样本上的"丢失字符数"和"页段错位"，给后续章节优化提供量化目标；
+- **解法对照**：每个失败都点名 ragflow 的对应模块。
+
+### 它做错了什么
+
+- 暂时什么也没"做对"——它的目的就是展示 unit 01 在 prod 上的失败。下一步要么换 loader (s11 表格抽取) 要么换格式（structured extraction）。
+
+### 思考题
+
+**如果你的真实语料里 80% 是扫描件 PDF，unit 01 的链路对它们返回空字符串。要不要给 unit 01 加一层 OCR 兜底？还是放到 s11 单独做？**
+
+提示：放 unit 01 会让所有用户都跑 OCR 模型，下载 1GB+；放 s11 是"按需启用"，更工程化。答案见下方"思考题答案"。
+
 ## 三、怎么做？
 
 ### 3.1 跑起来
@@ -221,92 +308,6 @@ DOCX 第 1 段前 100 字: 青蓝科技股份有限公司 ...
 
 答案见下方"思考题答案"。
 
-## unit 01 — 最小可跑加载：PDF + DOCX → 统一 schema  (`code_01_basic_load.py`)
-
-> 由浅入深第 1 步：把 PDF 和 DOCX 都读成 `list[{text, page, source}]`，作为后续章节的输入契约。
-> unit 02 会跑同一套函数到真实样本上，演示哪些情况它会崩。
-
-### 这是什么
-
-1. `load_pdf(path)` — `pypdf.PdfReader` 逐页 `extract_text()`，page 从 1 开始；
-2. `load_docx(path)` — `python-docx` 按 `paragraphs` 顺序读，仅保留非空段；
-3. 输出统一 `{text, page, source}` schema，page 在 DOCX 时为 `None`。
-
-### 跑起来
-
-```bash
-python s02_doc_loading/code_01_basic_load.py
-```
-
-输出：
-
-```
-PDF 段落数: 4, DOCX 段落数: 27
-PDF 第 1 段前 100 字: 紫光恒越 R3630 G5 双路机架式服务器 产品白皮书 ...
-DOCX 第 1 段前 100 字: 青蓝科技股份有限公司 ...
-```
-
-### 它做对了什么
-
-- **零依赖外的最小化**：`pypdf` + `python-docx` 覆盖最常见两种格式；
-- **schema 一致**：PDF 和 DOCX 喂给下游切块器时是同一种形状。
-
-### 它做错了什么
-
-- **DOCX 表格被吃掉**：`Document.paragraphs` 不含 `tables`，所有表内文字都丢；
-- **PDF 多栏排版错位**：双栏 PDF 抽出来的文本会把左栏底部接到右栏顶部；
-- **扫描件完全没救**：`extract_text()` 对图片型 PDF 返回空字符串。
-
-### 思考题
-
-**为什么 PDF 输出会有 4 段（4 页）但 DOCX 输出 27 段？这是"段落"的语义不同吗？**
-
-提示：PDF 的"段" = 页（page 是结构边界）；DOCX 的"段" = `\n` 切分的人工段落。统一 schema 时要不要把"页"硬塞给 DOCX？
-
-## unit 02 — 真实样本上的失败模式  (`code_02_failure_modes.py`)
-
-> 由浅入深第 2 步：unit 01 在 toy 上能跑；放到真实 `samples/` 上会崩在哪？
-> 本单元定位问题 + 引出 ragflow 的工业解法。
-
-### 这是什么
-
-把 unit 01 的 `load_pdf` / `load_docx` 喂给真实样本 (`samples/server_whitepaper.pdf` 4 页 + `samples/disclosure.docx` 27 段)，把"看不见的损失"暴露出来：
-
-1. **PDF 多栏错位**——`pypdf.extract_text()` 在双栏 PDF 上按字符位置扫，左右栏会交错；
-2. **DOCX 表格丢失**——`python-docx.Document.paragraphs` 不含 `Document.tables`，表内所有文字静默丢弃。
-
-### 跑起来
-
-```bash
-python s02_doc_loading/code_02_failure_modes.py
-```
-
-输出片段：
-
-```
-[PDF] 4 页抽出的段落 ...
-  page= 1 len= 612 | 紫光恒越 R3630 G5 双路机架式服务器 产品白皮书 ...
-  page= 2 len=1024 | 产品型号 产品白皮书 文档版本 ...
-  ...
-
-[DOCX] paragraphs(非空)=27, tables=3, 表格内总字符=572
-  → unit 01 的 load_docx 只读 paragraphs，丢失 572 字符（3 张表）
-```
-
-### 它做对了什么
-
-- **暴露问题**：列出真实样本上的"丢失字符数"和"页段错位"，给后续章节优化提供量化目标；
-- **解法对照**：每个失败都点名 ragflow 的对应模块。
-
-### 它做错了什么
-
-- 暂时什么也没"做对"——它的目的就是展示 unit 01 在 prod 上的失败。下一步要么换 loader (s11 表格抽取) 要么换格式（structured extraction）。
-
-### 思考题
-
-**如果你的真实语料里 80% 是扫描件 PDF，unit 01 的链路对它们返回空字符串。要不要给 unit 01 加一层 OCR 兜底？还是放到 s11 单独做？**
-
-提示：放 unit 01 会让所有用户都跑 OCR 模型，下载 1GB+；放 s11 是"按需启用"，更工程化。答案见下方"思考题答案"。
 
 ## 思考题答案
 

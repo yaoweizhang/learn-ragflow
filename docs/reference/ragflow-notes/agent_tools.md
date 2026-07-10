@@ -11,7 +11,7 @@
 
 ## 关键代码段 1：Canvas 的 DAG 执行引擎
 
-`agent/canvas.py:86-114` 的 `Canvas.__init__` 和 `load()`：
+`agent/canvas.py` 的 `Canvas.__init__` 和 `load()`：
 
 ```python
 class Canvas(Graph):
@@ -43,7 +43,7 @@ class Canvas(Graph):
 
 ## 关键代码段 2：Agent 组件怎么调工具
 
-`agent/component/agent_with_tools.py:74-116` 的 `Agent.__init__`：
+`agent/component/agent_with_tools.py` 的 `Agent.__init__`：
 
 ```python
 class Agent(LLM, ToolBase):
@@ -79,7 +79,7 @@ LLM 的自由文本里 regex 抠 `Action: ...` 行。
 
 ## 关键代码段 3：工具基类
 
-`agent/tools/base.py:51-91` 的 `LLMToolPluginCallSession.tool_call`：
+`agent/tools/base.py` 的 `LLMToolPluginCallSession.tool_call`：
 
 ```python
 class LLMToolPluginCallSession(ToolCallSession):
@@ -122,11 +122,11 @@ DAG 节点跑，也能被 `Agent` 当工具调。
 
 - **怎么避免 LLM 进入死循环？**
   三道防线：① `LLMBundle(..., max_rounds=self._param.max_rounds)`
-  （默认 5，`agent_with_tools.py:88-95`）——LLM 调用次数硬上限；
-  ② `is_canceled()` 检查（`canvas.py:288-297`，写 Redis 的
+  （默认 5，`agent_with_tools.py`）——LLM 调用次数硬上限；
+  ② `is_canceled()` 检查（`canvas.py`，写 Redis 的
   `cancel` 标记）——前端或后台可**主动**中断；
   ③ 失败不重试而是**跳路径**——`Categorize` 组件的 `_extend_path`
-  让一条路走不通时跳到另一条（`canvas.py:661-663`）。
+  让一条路走不通时跳到另一条（`canvas.py`）。
   MVP 只能用 ①（`max_steps=5`），对 ② ③ 没设计。
 
 - **跟 MVP 版本的差异（planner、task queue 等）？**
@@ -141,5 +141,5 @@ DAG 节点跑，也能被 `Agent` 当工具调。
   模板。Task queue 的角色是 `self.path` 数组 + `self.variables` 全局
   变量：组件之间通过 `{component_id@output_var}` 这样的 DSL 变量
   引用解耦，`Canvas.get_variable_value` 在执行时按需解析
-  （`canvas.py:210-225`）——本质是把 MVP 写死的 Python 控制流
+  （`canvas.py`）——本质是把 MVP 写死的 Python 控制流
   全部**数据化**了，可以 UI 编辑、可以保存、可以版本控制。

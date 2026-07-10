@@ -135,6 +135,107 @@ query_graph(graph, "不存在的实体")
 
 ---
 
+## unit 01 — LLM 抽实体关系三元组 + 持久化 JSONL (`code_01_extract.py`)
+
+> 由浅入深第 1 步:把每个 chunk 喂给 LLM 让它吐 `(head, rel, tail)` 三元组,合并成图,写到 `s10_graphrag/_graph.jsonl` 供 unit 02 离线查询。
+> unit 02 只读 JSONL,不再调 LLM。
+
+### 这是什么
+
+`code_01_extract.py` 是一个"LLM 抽取 + 容错解析 + 内存合并 + 落盘"的小教学版 GraphRAG 抽取器:
+
+- `EXTRACT_PROMPT` —— 喂文字给 LLM,要求吐 JSON 数组,每项 `{head, rel, tail}`,没有就 `[]`;
+- `_llm_json(prompt)` —— 调 OpenAI 兼容接口,**对 MiniMax-M3 的三种坏输出做兜底**:剥 `<think>...</think>` 推理块、剥 ```json``` 围栏、再容忍 `dict / list` 两种 JSON 顶层结构。任一失败返 `[]`,**不抛异常**,让上游 `build_graph` 当作"这个 chunk 没抽到"继续;
+- `extract_triples(text)` —— 一段文字 → 一组三元组;
+- `build_graph(triples_list)` —— 把所有 chunk 的结果合并成 `dict[head] → set[(rel, tail)]`;
+- `save_graph(graph, path)` —— 落盘到 JSONL,每行一个 triple(便于追加 / 复查 / 不加载整图就能 grep);
+- `main()` —— **self-contained**:内联 pypdf + python-docx + 简化版 chunking(双换行分段 + 500 字 cap + 取前 8 段),跑固定输入,打印节点 / 边数,落盘。
+
+### 跑起来
+
+```bash
+python s10_graphrag/code_01_extract.py
+```
+
+输出示例(MiniMax-M3 over minimaxi.com,samples = server_whitepaper.pdf + disclosure.docx,只取前 8 个 chunk):
+
+```
+chunks: 8
+图节点数: 8, 边数: 6
+持久化: s10_graphrag/_graph.jsonl
+```
+
+不同次跑节点 / 边数会小幅抖动(LLM 在 temperature=0 下对长 prompt 仍有少量随机性;chunk 0/1/2 是封面 + 目录,信息密度低,模型决定抽不抽也有差异)——这是 LLM 抽取的固有现象,不是 bug。
+
+### 它做对了什么
+
+- **没有 schema 也能跑**:`EXTRACT_PROMPT` 只要求 `(head, rel, tail)` 三元组列表,不限定实体类型(人 / 公司 / 产品)、不要求 entity description、不要求 relationship strength——结构最简,新手也能秒看明白"图是怎么来的";
+- **MiniMax-M3 兼容性**:三个客户端兜底串成一行兜底链——剥 `<think>`,剥 ```json``` fence,容忍 dict 或 list 顶层。这套写法 s08 / s09 也在用,跨章节一致;
+- **失败不 crash**:JSON parse 失败直接返 `[]`,所以 8 个 chunk 里偶尔有 1-2 个解析坏掉也不会中断整条管线;
+- **JSONL 持久化**:一行一个 triple,文本可读、可 grep、可 `wc -l`,不依赖任何图数据库——unit 02 一个 `for line in f` 就能跑 1 跳查询。
+
+### 它做错了什么
+
+- **没有 entity resolution**:`"紫光恒越"` / `"紫光恒越技术有限公司"` / `"紫光恒越技术"` 是 3 个独立节点,3 条独立边——召回只有命中其中一个名字时才能拿到边。生产里要 entity resolution(embedding 聚类 + LLM 判断合并);
+- **没有 entity_types 白名单**:模型可能把章节标题(`"3.1 技术规格"`)当成实体,抽到一堆噪声节点。RAGFlow 的 `DEFAULT_ENTITY_TYPES = ["organization", "person", "geo", "event", "category"]` 就是这一刀;
+- **每 chunk 一次 LLM**:8 段 8 次同步调用,顺序阻塞;生产里走 `asyncio.Semaphore(10)` + LLM cache,几千段也不超时;
+- **没有并发、没有重试、没有缓存**:LLM 偶尔抽到空、超时、限流,我们的实现一律当成"没抽到";生产要 retry + cache,同一 chunk 重跑不重抽;
+- **没有节点 / 边合并策略**:同实体跨段出现时,`build_graph` 直接当新节点处理;生产要走 merge_nodes(type 取 Counter 最大值、description 拼 `<SEP>`)和 merge_edges(weight 累加、keywords 并集)。
+
+---
+
+## unit 02 — 1 跳图查询(纯内存,无 LLM) (`code_02_query.py`)
+
+> 由浅入深第 2 步:加载 unit 01 落盘的 `_graph.jsonl`,在 `dict[head] → set[(rel, tail)]` 上跑 O(1) 的 1 跳邻居查询。
+> 这是 GraphRAG 的"读"半边——和单元 01 的"写"半边分开,便于离线调试。
+
+### 这是什么
+
+`code_02_query.py` 把 unit 01 写出的 JSONL 重新加载回内存的图结构,提供最朴素的 1 跳查询:
+
+- `load_graph(path)` —— 按行读 JSONL,反向重建 `dict[head] → set[(rel, tail)]`;同时把 `tail` 也注册成节点,即便它没有出边也能被 query 命中(便于"这个实体存在但孤立"的诊断);
+- `query_graph(graph, entity)` —— `graph.get(entity, set())`,O(1);返回前按 `(rel, tail)` 字母序排,便于对比不同次抽取的结果;
+- `main()` —— 加载 → 打印节点 / 边数 → 循环输入实体 → 打印 1 跳邻居,直到空行退出。**完全不调 LLM**,只要 `_graph.jsonl` 存在就跑得起。
+
+### 跑起来
+
+```bash
+# 1. 先跑一次抽取(生成 _graph.jsonl)
+python s10_graphrag/code_01_extract.py
+
+# 2. 再跑查询(可重复跑,不调 LLM)
+python s10_graphrag/code_02_query.py
+```
+
+实测(MiniMax-M3 抽完 8 个 chunk 后的图):
+
+```
+图节点数: 8, 边数: 6
+查哪个实体 (回车退出): 紫光恒越技术有限公司
+  紫光恒越技术有限公司 --版权所有--> 紫光恒越 R3630 G5 双路机架式服务器 产品白皮书 v1.0
+
+查哪个实体 (回车退出): 不存在的实体xyz
+  (无结果——'不存在的实体xyz' 不在图中或没有出边)
+
+查哪个实体 (回车退出):
+```
+
+### 它做对了什么
+
+- **O(1) 查询**:`dict.get(entity)` 是哈希查找,8 节点和 80 万节点同一个 latency——只要 entity 名字完全匹配,立刻返回;
+- **确定性**:同一个 `_graph.jsonl` 跑 N 次结果完全一致,适合做"prompt 改了之后,看 query 输出有没有变"的回归对照;
+- **离线 / 零成本**:不调 LLM、不调 embedding、不调任何外部服务——CI 里跑测试、或调试实体名 / prompt 时可以放心重跑;
+- **可中断 / 可恢复**:循环读输入,空行退出——调试时反复改 entity 名快速验证,不用每次重启进程。
+
+### 它做错了什么
+
+- **没有多跳**:`"X 的竞争对手的合作伙伴"` 是 3 跳,1 跳答不全。要 BFS 自己写,而且 3 跳以上必须上 community summary(否则 LLM 拿到的 context 拼接成本太高);
+- **没有 entity resolution**:`"紫光恒越"` 和 `"紫光恒越技术有限公司"` 是两个键,query 命中哪个名字才能拿哪个的边——用户一般不会知道图里到底注册了哪个变体名;
+- **没有语义匹配**:用户输入 `"紫光"` 也命中不了 `"紫光恒越技术有限公司"`——要么靠 entity resolution 提前归一化,要么 LLM 在 prompt 里把 user query 改写一遍;
+- **没有路径权重 / 方向语义**:`set[(rel, tail)]` 不记录反向边、不记录 confidence,复杂关系(`"A 投资 B"` vs `"B 被 A 投资"`)分不清谁主动谁被动;
+- **没有图遍历可视化 / 解释**:`query_graph` 只返边列表,不出"为什么是这条边"、"这条边来自哪个 chunk"——bad case 排查要回到 `_graph.jsonl` 里手 grep;
+- **节点孤立时看不出来**:`graph.get("孤立实体")` 直接返空集,虽然 unit 01 已经把 tail 注册成节点(让"存在但孤立"能被命中),但**没有入边的节点**和**不存在的节点**在我们的实现里都返回空集,提示完全一样。
+
 ## 三、怎么做？
 
 ### 3.1 跑起来
@@ -263,109 +364,6 @@ unit 02 跑起来:
 3. **1 跳不够用怎么办?**
 
 (答案见文末「思考题答案」)
-
----
-
-## unit 01 — LLM 抽实体关系三元组 + 持久化 JSONL (`code_01_extract.py`)
-
-> 由浅入深第 1 步:把每个 chunk 喂给 LLM 让它吐 `(head, rel, tail)` 三元组,合并成图,写到 `s10_graphrag/_graph.jsonl` 供 unit 02 离线查询。
-> unit 02 只读 JSONL,不再调 LLM。
-
-### 这是什么
-
-`code_01_extract.py` 是一个"LLM 抽取 + 容错解析 + 内存合并 + 落盘"的小教学版 GraphRAG 抽取器:
-
-- `EXTRACT_PROMPT` —— 喂文字给 LLM,要求吐 JSON 数组,每项 `{head, rel, tail}`,没有就 `[]`;
-- `_llm_json(prompt)` —— 调 OpenAI 兼容接口,**对 MiniMax-M3 的三种坏输出做兜底**:剥 `<think>...</think>` 推理块、剥 ```json``` 围栏、再容忍 `dict / list` 两种 JSON 顶层结构。任一失败返 `[]`,**不抛异常**,让上游 `build_graph` 当作"这个 chunk 没抽到"继续;
-- `extract_triples(text)` —— 一段文字 → 一组三元组;
-- `build_graph(triples_list)` —— 把所有 chunk 的结果合并成 `dict[head] → set[(rel, tail)]`;
-- `save_graph(graph, path)` —— 落盘到 JSONL,每行一个 triple(便于追加 / 复查 / 不加载整图就能 grep);
-- `main()` —— **self-contained**:内联 pypdf + python-docx + 简化版 chunking(双换行分段 + 500 字 cap + 取前 8 段),跑固定输入,打印节点 / 边数,落盘。
-
-### 跑起来
-
-```bash
-python s10_graphrag/code_01_extract.py
-```
-
-输出示例(MiniMax-M3 over minimaxi.com,samples = server_whitepaper.pdf + disclosure.docx,只取前 8 个 chunk):
-
-```
-chunks: 8
-图节点数: 8, 边数: 6
-持久化: s10_graphrag/_graph.jsonl
-```
-
-不同次跑节点 / 边数会小幅抖动(LLM 在 temperature=0 下对长 prompt 仍有少量随机性;chunk 0/1/2 是封面 + 目录,信息密度低,模型决定抽不抽也有差异)——这是 LLM 抽取的固有现象,不是 bug。
-
-### 它做对了什么
-
-- **没有 schema 也能跑**:`EXTRACT_PROMPT` 只要求 `(head, rel, tail)` 三元组列表,不限定实体类型(人 / 公司 / 产品)、不要求 entity description、不要求 relationship strength——结构最简,新手也能秒看明白"图是怎么来的";
-- **MiniMax-M3 兼容性**:三个客户端兜底串成一行兜底链——剥 `<think>`,剥 ```json``` fence,容忍 dict 或 list 顶层。这套写法 s08 / s09 也在用,跨章节一致;
-- **失败不 crash**:JSON parse 失败直接返 `[]`,所以 8 个 chunk 里偶尔有 1-2 个解析坏掉也不会中断整条管线;
-- **JSONL 持久化**:一行一个 triple,文本可读、可 grep、可 `wc -l`,不依赖任何图数据库——unit 02 一个 `for line in f` 就能跑 1 跳查询。
-
-### 它做错了什么
-
-- **没有 entity resolution**:`"紫光恒越"` / `"紫光恒越技术有限公司"` / `"紫光恒越技术"` 是 3 个独立节点,3 条独立边——召回只有命中其中一个名字时才能拿到边。生产里要 entity resolution(embedding 聚类 + LLM 判断合并);
-- **没有 entity_types 白名单**:模型可能把章节标题(`"3.1 技术规格"`)当成实体,抽到一堆噪声节点。RAGFlow 的 `DEFAULT_ENTITY_TYPES = ["organization", "person", "geo", "event", "category"]` 就是这一刀;
-- **每 chunk 一次 LLM**:8 段 8 次同步调用,顺序阻塞;生产里走 `asyncio.Semaphore(10)` + LLM cache,几千段也不超时;
-- **没有并发、没有重试、没有缓存**:LLM 偶尔抽到空、超时、限流,我们的实现一律当成"没抽到";生产要 retry + cache,同一 chunk 重跑不重抽;
-- **没有节点 / 边合并策略**:同实体跨段出现时,`build_graph` 直接当新节点处理;生产要走 merge_nodes(type 取 Counter 最大值、description 拼 `<SEP>`)和 merge_edges(weight 累加、keywords 并集)。
-
----
-
-## unit 02 — 1 跳图查询(纯内存,无 LLM) (`code_02_query.py`)
-
-> 由浅入深第 2 步:加载 unit 01 落盘的 `_graph.jsonl`,在 `dict[head] → set[(rel, tail)]` 上跑 O(1) 的 1 跳邻居查询。
-> 这是 GraphRAG 的"读"半边——和单元 01 的"写"半边分开,便于离线调试。
-
-### 这是什么
-
-`code_02_query.py` 把 unit 01 写出的 JSONL 重新加载回内存的图结构,提供最朴素的 1 跳查询:
-
-- `load_graph(path)` —— 按行读 JSONL,反向重建 `dict[head] → set[(rel, tail)]`;同时把 `tail` 也注册成节点,即便它没有出边也能被 query 命中(便于"这个实体存在但孤立"的诊断);
-- `query_graph(graph, entity)` —— `graph.get(entity, set())`,O(1);返回前按 `(rel, tail)` 字母序排,便于对比不同次抽取的结果;
-- `main()` —— 加载 → 打印节点 / 边数 → 循环输入实体 → 打印 1 跳邻居,直到空行退出。**完全不调 LLM**,只要 `_graph.jsonl` 存在就跑得起。
-
-### 跑起来
-
-```bash
-# 1. 先跑一次抽取(生成 _graph.jsonl)
-python s10_graphrag/code_01_extract.py
-
-# 2. 再跑查询(可重复跑,不调 LLM)
-python s10_graphrag/code_02_query.py
-```
-
-实测(MiniMax-M3 抽完 8 个 chunk 后的图):
-
-```
-图节点数: 8, 边数: 6
-查哪个实体 (回车退出): 紫光恒越技术有限公司
-  紫光恒越技术有限公司 --版权所有--> 紫光恒越 R3630 G5 双路机架式服务器 产品白皮书 v1.0
-
-查哪个实体 (回车退出): 不存在的实体xyz
-  (无结果——'不存在的实体xyz' 不在图中或没有出边)
-
-查哪个实体 (回车退出):
-```
-
-### 它做对了什么
-
-- **O(1) 查询**:`dict.get(entity)` 是哈希查找,8 节点和 80 万节点同一个 latency——只要 entity 名字完全匹配,立刻返回;
-- **确定性**:同一个 `_graph.jsonl` 跑 N 次结果完全一致,适合做"prompt 改了之后,看 query 输出有没有变"的回归对照;
-- **离线 / 零成本**:不调 LLM、不调 embedding、不调任何外部服务——CI 里跑测试、或调试实体名 / prompt 时可以放心重跑;
-- **可中断 / 可恢复**:循环读输入,空行退出——调试时反复改 entity 名快速验证,不用每次重启进程。
-
-### 它做错了什么
-
-- **没有多跳**:`"X 的竞争对手的合作伙伴"` 是 3 跳,1 跳答不全。要 BFS 自己写,而且 3 跳以上必须上 community summary(否则 LLM 拿到的 context 拼接成本太高);
-- **没有 entity resolution**:`"紫光恒越"` 和 `"紫光恒越技术有限公司"` 是两个键,query 命中哪个名字才能拿哪个的边——用户一般不会知道图里到底注册了哪个变体名;
-- **没有语义匹配**:用户输入 `"紫光"` 也命中不了 `"紫光恒越技术有限公司"`——要么靠 entity resolution 提前归一化,要么 LLM 在 prompt 里把 user query 改写一遍;
-- **没有路径权重 / 方向语义**:`set[(rel, tail)]` 不记录反向边、不记录 confidence,复杂关系(`"A 投资 B"` vs `"B 被 A 投资"`)分不清谁主动谁被动;
-- **没有图遍历可视化 / 解释**:`query_graph` 只返边列表,不出"为什么是这条边"、"这条边来自哪个 chunk"——bad case 排查要回到 `_graph.jsonl` 里手 grep;
-- **节点孤立时看不出来**:`graph.get("孤立实体")` 直接返空集,虽然 unit 01 已经把 tail 注册成节点(让"存在但孤立"能被命中),但**没有入边的节点**和**不存在的节点**在我们的实现里都返回空集,提示完全一样。
 
 ---
 

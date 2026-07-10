@@ -110,150 +110,6 @@ prompt 用 `<context>...</context>` 标签包裹资料，避免 prompt injection
 
 ---
 
-## 三、怎么做
-
-### 3.1 跑起来
-
-```bash
-# 三步走完一遍
-python s01_what_is_rag/code_01_naive_keyword.py          # 30 行，零依赖
-python s01_what_is_rag/code_02_vector_basics.py          # 30 行，零依赖
-python s01_what_is_rag/code_03_augmented_llm.py          # 无 key 时只打印 prompt
-LLM_API_KEY=sk-xxx python s01_what_is_rag/code_03_augmented_llm.py   # 有 key 时真调 LLM
-```
-
-环境变量：unit 03 需要 `LLM_API_KEY`（可选 `LLM_BASE` / `LLM_MODEL`，指向任意 OpenAI 兼容服务）。无 key 时跳过真实生成，只打印 prompt 验证链路。
-
-### 3.2 核心函数一览
-
-| 函数 | 文件 | 输入 | 输出 | 一句话解释 |
-|---|---|---|---|---|
-| `retrieve(q, paragraphs)` | `code_01_naive_keyword.py` | 问题、段落列表 | 第一个命中段落 / `"I don't know."` | 子串匹配第一段 |
-| `vocab_for(paragraphs)` | `code_02_vector_basics.py` | 段落列表 | `{token: index}` | 2-gram 词表 |
-| `cosine(a, b)` | `code_02_vector_basics.py` | 两个等长 list[float] | float ∈ [0, 1] | 手写余弦（避免 NumPy 依赖） |
-| `retrieve(q, paragraphs, k)` | `code_02_vector_basics.py` | 问题、段落列表、k | top-k 段落 | 词袋向量 top-k |
-| `retrieve(q, paragraphs, k)` | `code_03_augmented_llm.py` | 问题、段落列表、k | top-k 段落 | 同 unit 02 |
-| `build_prompt(question, hits)` | `code_03_augmented_llm.py` | 问题、top-k 段落 | 拼好的 prompt 字符串 | `<context>...</context>` 包裹 |
-| `call_llm(prompt)` | `code_03_augmented_llm.py` | prompt 字符串 | LLM 返回字符串 | OpenAI 兼容 `/chat/completions`；缺 key 时跳过 |
-| `main()` (unit 01) | `code_01_naive_keyword.py` | — | 段落 + 查询输出 | unit 01 入口 |
-| `main()` (unit 02) | `code_02_vector_basics.py` | 交互输入查询 | top-3 + 分 | unit 02 入口 |
-| `main()` (unit 03) | `code_03_augmented_llm.py` | — | prompt + LLM 输出 | unit 03 入口 |
-
-### 3.3 如何跑 + troubleshooting
-
-**unit 01 跑出来（实测，`samples/disclosure.docx`）：**
-
-```
-[query] 披露
-[hit]  相关信息披露详见财务报表附注三(二十五)、五 (二)1 及十五(二)。
-
-[query] 外星人
-[hit]  I don't know.
-```
-
-**unit 02 跑出来（实测，`samples/disclosure.docx`，交互输入"披露"）：**
-
-```
-[vocab] 共 N 个 2-gram token
-[query] 披露
-Top-3 与你的问题最相关的段落（按向量余弦排序）：
-[1] score=0.342
-    相关信息披露详见财务报表附注三(二十五)、五 (二)1 及十五(二)...
-[2] score=0.215
-    ...
-```
-
-**unit 03 跑出来（实测，无 key）：**
-
-```
-[retrieve] 召回 3 段
-  [1] 相关信息披露详见财务报表附注三(二十五)...
-  [2] ...
-
-[prompt]
-你只能依据 <context> 标签内的资料回答问题；
-若资料不足以回答，请回复「我不知道」。
-
-<context>
-[1] ...
-[2] ...
-[3] ...
-</context>
-
-问题: 关联方披露
-回答: 
-
-[llm] LLM_API_KEY 未设置，跳过真实生成...
-```
-
-**Troubleshooting：**
-
-- **`ModuleNotFoundError: No module named 'docx'`**：`pip install python-docx`。
-- **`LLM_API_KEY 未设置`**：unit 03 是预期行为——只打印 prompt，验证检索 + 拼 prompt 链路正确。设置 `LLM_API_KEY` 后才会真调 LLM。
-- **`LLM_BASE_URL` 报错 401 / 404**：检查 `.env` 或环境变量里的 base / model 是否跟所用服务匹配（OpenAI / DeepSeek / 智谱 / MiniMax / 自部署 vLLM）。
-- **EOFError when piped**：unit 02 的 `input("问点啥: ")` 在 `< /dev/null` 下抛 EOFError——交互模式是主用方式；想脚本化跑就直接改 `main()` 里的 `q = ...`。
-
-### 3.4 如何切换到工业级
-
-把 3 个 unit 替换成工业实现是后面 11 章的工作：
-
-| s01 unit 里的环节 | 工业实现 | 教程章节 |
-|---|---|---|
-| `python-docx` 读段落 | `pypdf` / `python-docx` + `pdfplumber` + 多 Parser 调度 | s02 |
-| 按段落切（不切） | 固定字符 cap + 句界切 / 父子块 / 表格感知 | s03 |
-| 词袋 sparse 向量 | BGE dense 512 维真语义向量 | s04 |
-| 内存 list | Chroma / Elasticsearch / Infinity 持久化索引 | s05 |
-| cosine only | BM25 + dense `weighted_sum` 融合 | s06 |
-| 无 | cross-encoder rerank + PageRank | s07 |
-| 极简 `<context>` | 多语言模板 + 哨兵 + 角标 | s08 |
-| OpenAI 兼容 | OpenAI / DeepSeek / 智谱 / MiniMax / Bedrock / Ollama | s08 |
-
-工业版 vs s01 的对照：
-
-| 步骤 | s01 | RAGFlow 真实实现 | 教程章节 |
-|---|---|---|---|
-| 文档解析 | `python-docx` | `deepdoc/parser/{pdf,docx}.py` | s02 |
-| 切块 | 按段落 | `naive_merge` token-aware + `hierarchical_merge` | s03 |
-| Embedding | 词袋 sparse 2-gram | BGE small-zh dense 512 | s04 |
-| 索引 | 内存 list | Chroma / Infinity / Elasticsearch | s05 |
-| 召回 | cosine only | BM25 + 向量 `weighted_sum` | s06 |
-| 精排 | 无 | cross-encoder rerank + PageRank | s07 |
-| Prompt | 极简 `<context>` | 多语言模板 + 哨兵 + 角标 | s08 |
-| LLM | OpenAI 兼容 | MiniMax / OpenAI / Bedrock / Ollama | s08 |
-
----
-
-## 四、选型与思考题
-
-### 4.1 主流 RAG 范式速览
-
-| 范式 | 检索 | 增强 | 生成 | 适用场景 |
-|---|---|---|---|---|
-| **朴素 RAG（本章 MVP）** | 词袋 / 子串 | 简单 `<context>` 包裹 | 一次 LLM | 教学 / 玩具 / 文档极小 |
-| **初级 RAG（s02-s08）** | BM25 + dense 融合 | rerank 后取 top-k | 工业 prompt + 引用 | 中小规模生产 |
-| **高级 RAG（s06-s08 叠加）** | + 查询重写 / HyDE | + 重排精排 | + 多 prompt 模板 | 检索质量敏感 |
-| **模块化 RAG（s09-s10 叠加）** | Agent 路由 + 多路 | 工具调用 + 多跳 | 动态编排 | 复杂多源 / 跨系统 |
-
-本章 MVP 只占第一行——朴素 RAG；后续章节逐步叠加 BM25、rerank、Agent 路由。
-
-### 4.2 选型速记
-
-- **教学 / 玩具 / 文档 < 100 段** → 本章 MVP（子串 / 词袋 + cosine），零依赖、能跑通
-- **中小规模生产 / 文档 100-100k 段** → s04 BGE + s06 BM25+dense 融合 + s07 rerank + s08 prompt 模板
-- **检索质量敏感 / 命中率优先** → 高级 RAG 叠加：HyDE 查询重写 + 多路召回 + cross-encoder
-- **复杂多源 / 跨系统 / 多跳推理** → 模块化 RAG：s09 Agent + s10 GraphRAG + 工具调用
-- **要想清楚 toy 跟生产的边界** → 用本章 unit 02 把"词袋 vs BGE"、unit 03 把"无 rerank vs 有 rerank"各跑一次，对比输出
-
-### 4.3 思考题
-
-1. **怎么把 unit 01 的子串匹配改成 Top-3 候选段？最简单的打分怎么算？**
-2. **如果两段都包含"披露"两次，词袋向量会怎么算？它分得开"摘要式披露"和"详细披露"吗？**
-3. **如果 LLM 答了一段不在 `<context>` 里的话（比如"按惯例审计费用通常为 50 万元"），怎么从工程上防住？**
-
-（答案见文末「思考题答案」）
-
----
-
 ## unit 01 — 朴素关键词检索（`code_01_naive_keyword.py`）
 
 > 由浅入深第 1 步：先知道"检索"是什么意思——不用向量库、不用 LLM，只用最简单的子串匹配。
@@ -434,6 +290,148 @@ LLM_BASE=https://api.openai.com/v1 LLM_MODEL=gpt-4o-mini \
 - **没有 rerank**——top-3 不一定最相关；s07 会补 cross-encoder。
 - **没有 hybrid 召回**——本章只有词袋向量；RAGFlow 走 `weighted_sum(BM25, vector)`（详见 `docs/reference/ragflow-notes/hybrid_retrieval.md`）。
 - **无引用检测**——如果 LLM 答了一段不在 `<context>` 里的话（"按惯例审计费用通常为 50 万元"），本章只靠 prompt 约束。生产里通常还要在输出侧用字符串匹配 / LLM-as-judge 检测"未引用"段。
+
+## 三、怎么做
+
+### 3.1 跑起来
+
+```bash
+# 三步走完一遍
+python s01_what_is_rag/code_01_naive_keyword.py          # 30 行，零依赖
+python s01_what_is_rag/code_02_vector_basics.py          # 30 行，零依赖
+python s01_what_is_rag/code_03_augmented_llm.py          # 无 key 时只打印 prompt
+LLM_API_KEY=sk-xxx python s01_what_is_rag/code_03_augmented_llm.py   # 有 key 时真调 LLM
+```
+
+环境变量：unit 03 需要 `LLM_API_KEY`（可选 `LLM_BASE` / `LLM_MODEL`，指向任意 OpenAI 兼容服务）。无 key 时跳过真实生成，只打印 prompt 验证链路。
+
+### 3.2 核心函数一览
+
+| 函数 | 文件 | 输入 | 输出 | 一句话解释 |
+|---|---|---|---|---|
+| `retrieve(q, paragraphs)` | `code_01_naive_keyword.py` | 问题、段落列表 | 第一个命中段落 / `"I don't know."` | 子串匹配第一段 |
+| `vocab_for(paragraphs)` | `code_02_vector_basics.py` | 段落列表 | `{token: index}` | 2-gram 词表 |
+| `cosine(a, b)` | `code_02_vector_basics.py` | 两个等长 list[float] | float ∈ [0, 1] | 手写余弦（避免 NumPy 依赖） |
+| `retrieve(q, paragraphs, k)` | `code_02_vector_basics.py` | 问题、段落列表、k | top-k 段落 | 词袋向量 top-k |
+| `retrieve(q, paragraphs, k)` | `code_03_augmented_llm.py` | 问题、段落列表、k | top-k 段落 | 同 unit 02 |
+| `build_prompt(question, hits)` | `code_03_augmented_llm.py` | 问题、top-k 段落 | 拼好的 prompt 字符串 | `<context>...</context>` 包裹 |
+| `call_llm(prompt)` | `code_03_augmented_llm.py` | prompt 字符串 | LLM 返回字符串 | OpenAI 兼容 `/chat/completions`；缺 key 时跳过 |
+| `main()` (unit 01) | `code_01_naive_keyword.py` | — | 段落 + 查询输出 | unit 01 入口 |
+| `main()` (unit 02) | `code_02_vector_basics.py` | 交互输入查询 | top-3 + 分 | unit 02 入口 |
+| `main()` (unit 03) | `code_03_augmented_llm.py` | — | prompt + LLM 输出 | unit 03 入口 |
+
+### 3.3 如何跑 + troubleshooting
+
+**unit 01 跑出来（实测，`samples/disclosure.docx`）：**
+
+```
+[query] 披露
+[hit]  相关信息披露详见财务报表附注三(二十五)、五 (二)1 及十五(二)。
+
+[query] 外星人
+[hit]  I don't know.
+```
+
+**unit 02 跑出来（实测，`samples/disclosure.docx`，交互输入"披露"）：**
+
+```
+[vocab] 共 N 个 2-gram token
+[query] 披露
+Top-3 与你的问题最相关的段落（按向量余弦排序）：
+[1] score=0.342
+    相关信息披露详见财务报表附注三(二十五)、五 (二)1 及十五(二)...
+[2] score=0.215
+    ...
+```
+
+**unit 03 跑出来（实测，无 key）：**
+
+```
+[retrieve] 召回 3 段
+  [1] 相关信息披露详见财务报表附注三(二十五)...
+  [2] ...
+
+[prompt]
+你只能依据 <context> 标签内的资料回答问题；
+若资料不足以回答，请回复「我不知道」。
+
+<context>
+[1] ...
+[2] ...
+[3] ...
+</context>
+
+问题: 关联方披露
+回答: 
+
+[llm] LLM_API_KEY 未设置，跳过真实生成...
+```
+
+**Troubleshooting：**
+
+- **`ModuleNotFoundError: No module named 'docx'`**：`pip install python-docx`。
+- **`LLM_API_KEY 未设置`**：unit 03 是预期行为——只打印 prompt，验证检索 + 拼 prompt 链路正确。设置 `LLM_API_KEY` 后才会真调 LLM。
+- **`LLM_BASE_URL` 报错 401 / 404**：检查 `.env` 或环境变量里的 base / model 是否跟所用服务匹配（OpenAI / DeepSeek / 智谱 / MiniMax / 自部署 vLLM）。
+- **EOFError when piped**：unit 02 的 `input("问点啥: ")` 在 `< /dev/null` 下抛 EOFError——交互模式是主用方式；想脚本化跑就直接改 `main()` 里的 `q = ...`。
+
+### 3.4 如何切换到工业级
+
+把 3 个 unit 替换成工业实现是后面 11 章的工作：
+
+| s01 unit 里的环节 | 工业实现 | 教程章节 |
+|---|---|---|
+| `python-docx` 读段落 | `pypdf` / `python-docx` + `pdfplumber` + 多 Parser 调度 | s02 |
+| 按段落切（不切） | 固定字符 cap + 句界切 / 父子块 / 表格感知 | s03 |
+| 词袋 sparse 向量 | BGE dense 512 维真语义向量 | s04 |
+| 内存 list | Chroma / Elasticsearch / Infinity 持久化索引 | s05 |
+| cosine only | BM25 + dense `weighted_sum` 融合 | s06 |
+| 无 | cross-encoder rerank + PageRank | s07 |
+| 极简 `<context>` | 多语言模板 + 哨兵 + 角标 | s08 |
+| OpenAI 兼容 | OpenAI / DeepSeek / 智谱 / MiniMax / Bedrock / Ollama | s08 |
+
+工业版 vs s01 的对照：
+
+| 步骤 | s01 | RAGFlow 真实实现 | 教程章节 |
+|---|---|---|---|
+| 文档解析 | `python-docx` | `deepdoc/parser/{pdf,docx}.py` | s02 |
+| 切块 | 按段落 | `naive_merge` token-aware + `hierarchical_merge` | s03 |
+| Embedding | 词袋 sparse 2-gram | BGE small-zh dense 512 | s04 |
+| 索引 | 内存 list | Chroma / Infinity / Elasticsearch | s05 |
+| 召回 | cosine only | BM25 + 向量 `weighted_sum` | s06 |
+| 精排 | 无 | cross-encoder rerank + PageRank | s07 |
+| Prompt | 极简 `<context>` | 多语言模板 + 哨兵 + 角标 | s08 |
+| LLM | OpenAI 兼容 | MiniMax / OpenAI / Bedrock / Ollama | s08 |
+
+---
+
+## 四、选型与思考题
+
+### 4.1 主流 RAG 范式速览
+
+| 范式 | 检索 | 增强 | 生成 | 适用场景 |
+|---|---|---|---|---|
+| **朴素 RAG（本章 MVP）** | 词袋 / 子串 | 简单 `<context>` 包裹 | 一次 LLM | 教学 / 玩具 / 文档极小 |
+| **初级 RAG（s02-s08）** | BM25 + dense 融合 | rerank 后取 top-k | 工业 prompt + 引用 | 中小规模生产 |
+| **高级 RAG（s06-s08 叠加）** | + 查询重写 / HyDE | + 重排精排 | + 多 prompt 模板 | 检索质量敏感 |
+| **模块化 RAG（s09-s10 叠加）** | Agent 路由 + 多路 | 工具调用 + 多跳 | 动态编排 | 复杂多源 / 跨系统 |
+
+本章 MVP 只占第一行——朴素 RAG；后续章节逐步叠加 BM25、rerank、Agent 路由。
+
+### 4.2 选型速记
+
+- **教学 / 玩具 / 文档 < 100 段** → 本章 MVP（子串 / 词袋 + cosine），零依赖、能跑通
+- **中小规模生产 / 文档 100-100k 段** → s04 BGE + s06 BM25+dense 融合 + s07 rerank + s08 prompt 模板
+- **检索质量敏感 / 命中率优先** → 高级 RAG 叠加：HyDE 查询重写 + 多路召回 + cross-encoder
+- **复杂多源 / 跨系统 / 多跳推理** → 模块化 RAG：s09 Agent + s10 GraphRAG + 工具调用
+- **要想清楚 toy 跟生产的边界** → 用本章 unit 02 把"词袋 vs BGE"、unit 03 把"无 rerank vs 有 rerank"各跑一次，对比输出
+
+### 4.3 思考题
+
+1. **怎么把 unit 01 的子串匹配改成 Top-3 候选段？最简单的打分怎么算？**
+2. **如果两段都包含"披露"两次，词袋向量会怎么算？它分得开"摘要式披露"和"详细披露"吗？**
+3. **如果 LLM 答了一段不在 `<context>` 里的话（比如"按惯例审计费用通常为 50 万元"），怎么从工程上防住？**
+
+（答案见文末「思考题答案」）
 
 ---
 

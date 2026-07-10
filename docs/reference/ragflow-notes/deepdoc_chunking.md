@@ -18,7 +18,7 @@ PDF 视觉识别 → 父块 (parent blocks) ─┬→ token-aware 子块 (child 
 
 ## 1. 父块：XGBoost 驱动的版面合并 `_concat_downward`
 
-[pdf_parser.py:1052-1134](https://github.com/infiniflow/ragflow/blob/828c5789/deepdoc/parser/pdf_parser.py#L1052-L1134)
+[pdf_parser.py](https://github.com/infiniflow/ragflow/blob/828c5789/deepdoc/parser/pdf_parser.py)
 
 ```python
 # concat between rows
@@ -60,7 +60,7 @@ while boxes:
 
 ## 2. 30 个特征：`_updown_concat_features`
 
-[pdf_parser.py:131-150](https://github.com/infiniflow/ragflow/blob/828c5789/deepdoc/parser/pdf_parser.py#L131-L150)
+[pdf_parser.py](https://github.com/infiniflow/ragflow/blob/828c5789/deepdoc/parser/pdf_parser.py)
 
 ```python
 def _updown_concat_features(self, up, down):
@@ -103,7 +103,7 @@ self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"
 
 ## 3. 子块：token-aware + 可配重叠 `naive_merge`
 
-[nlp/__init__.py:1155-1225](https://github.com/infiniflow/ragflow/blob/828c5789/rag/nlp/__init__.py#L1155-L1225)
+[nlp/__init__.py](https://github.com/infiniflow/ragflow/blob/828c5789/rag/nlp/__init__.py)
 
 ```python
 def naive_merge(sections: str | list, chunk_token_num=128,
@@ -127,7 +127,7 @@ def naive_merge(sections: str | list, chunk_token_num=128,
 
 ## 4. 层级合并 `hierarchical_merge`
 
-[nlp/__init__.py:1066-1115](https://github.com/infiniflow/ragflow/blob/828c5789/rag/nlp/__init__.py#L1066-L1115)
+[nlp/__init__.py](https://github.com/infiniflow/ragflow/blob/828c5789/rag/nlp/__init__.py)
 
 ```python
 def hierarchical_merge(bull, sections, depth):
@@ -156,7 +156,7 @@ def hierarchical_merge(bull, sections, depth):
 
 ## 5. 媒体上下文回填 `attach_media_context`
 
-[nlp/__init__.py:497-555](https://github.com/infiniflow/ragflow/blob/828c5789/rag/nlp/__init__.py#L497-L555)
+[nlp/__init__.py](https://github.com/infiniflow/ragflow/blob/828c5789/rag/nlp/__init__.py)
 
 ```python
 def attach_media_context(chunks, table_context_size=0, image_context_size=0):

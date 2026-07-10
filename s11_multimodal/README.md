@@ -124,6 +124,106 @@ unit 02 的 OCR 基础数据长这样——`str`(平铺):
 
 ---
 
+## unit 01 — 表格抽取 (pdfplumber) (`code_01_table_extract.py`)
+
+> 由浅入深第 1 步:用 pdfplumber 把 PDF 里的表格按行列原样抽出来。
+> 这是"结构化表格"这一类多模态输入的最小可解,下游 chunking 通常按行切。
+
+### 这是什么
+
+`code_01_table_extract.py` 打开 PDF,逐页调用 `page.extract_tables()`,把"至少有一行含非空白单元格"的表收进 `out`,每条记录形如 `{"page": i, "rows": [[cell, ...], ...]}`——一个二维数组,第一行通常是表头、后面是数据行。
+
+`pdfplumber.extract_tables()` 是启发式画线算法:对**带边框 / 带网格线**的规整表格(白皮书规格表、CSV-like 表)很顶;碰到无线表格、跨页表、合并单元格就掉链子。本单元重点是"先把基本盘跑通"——MVP 的核心产物就是 list of dicts,下游 chunking / embedding 直接吃。
+
+### 跑起来
+
+```bash
+python s11_multimodal/code_01_table_extract.py
+```
+
+输出示例(`samples/server_whitepaper.pdf`,`pdfplumber` 0.10+):
+
+```
+PDF 表格数: 1
+--- page 2 ---
+['', '组件', '规格', '说明']
+['处理器', '2 × 第三代 Intel Xeon 可扩展处理器', '最高 40 核 / 80 线程 ...']
+['内存', '32 × DDR4 3200MHz DIMM', '最高 8TB ...']
+```
+
+### 它做对了什么
+
+- **跨页**:逐页循环,把 page 序号写进每条记录,下游能定位回原 PDF。
+- **空表过滤**:`pdfplumber.extract_tables()` 偶尔返回 `[["", "", ...]]` 这种"网格存在但全是空白"的空表;`any(any(c.strip() ...))` 双重循环把它们丢掉。
+- **保留原始结构**:`rows` 是原样二维 list,列对齐、行顺序不丢;下游可以直接转 `pandas.DataFrame`、按行 chunking、或拼成 markdown 表喂给 LLM。
+
+### 它做错了什么
+
+- **不处理合并单元格**:pdfplumber 的启发式会把合并 cell 拆成多个相同值,或把空 cell 当成 None;真实报告里"季度合计 / 全行合计"这类合并格经常读错。
+- **不识别无线表格**:很多现代 PDF 用空白对齐而不是画线(政府报告、研报),pdfplumber 会当文本读、根本不进 `extract_tables()`。
+- **跨页表会断成两半**:白皮书里"长表翻页"很常见,本实现不会合并;真实场景要靠 page 坐标 + 行列结构相似度判定要不要拼。
+- **没有表头检测**:第一行被当 header,但白皮书经常有"标题段 + 表格",pdfplumber 会把标题行吞进表里;真实场景要单独 detect header。
+- **只信 pdfplumber 的启发式**:无线表、合并格、艺术化排版全崩;这是接下来 unit 02 不会修、但生产要修的事。
+
+---
+
+## unit 02 — OCR (pytesseract) (`code_02_ocr.py`)
+
+> 由浅入深第 2 步:用 pytesseract + Pillow 把图片里的字(中英混排)抽成字符串。
+> 这是"图像里的字"这一类多模态输入的最小可解——扫描件 / 图片型 PDF 的兜底。
+
+### 这是什么
+
+`code_02_ocr.py` 用 Pillow 打开图片,调 pytesseract 转交**系统 tesseract 二进制**做识别,返回字符串。`lang="chi_sim+eng"` 同时支持简体中文 + 英文——够覆盖绝大多数中文 RAG 场景。
+
+pytesseract 只是 Python 壳——**真正的 OCR 引擎是系统二进制 `tesseract`**。装包忘了装二进制、或装了二进制没装 `chi_sim` 语言包,是 99% 的踩坑来源。
+
+### 跑起来
+
+```bash
+# 1. Python 依赖
+pip install pytesseract Pillow
+
+# 2. 系统 tesseract 二进制(按平台三选一)
+#    Windows: https://github.com/UB-Mannheim/tesseract/wiki 下载安装包,勾上 Chinese (Simplified)
+#    macOS:   brew install tesseract tesseract-lang
+#    Linux:   sudo apt install tesseract-ocr tesseract-ocr-chi-sim
+
+# 3. 跑脚本(默认无图,按回车跳过;想跑就输入图片绝对路径)
+python s11_multimodal/code_02_ocr.py
+```
+
+输出示例(中文扫描件 + `chi_sim+eng`):
+
+```
+可选: 输入图片路径跑 OCR (回车跳过): /tmp/page.png
+服务器规格
+处理器: 2 x 第三代 Intel Xeon 可扩展处理器
+内存: 32 x DDR4 3200MHz DIMM
+...
+```
+
+无图片输入时:
+
+```
+可选: 输入图片路径跑 OCR (回车跳过):
+OCR skipped: 未提供图片路径
+```
+
+### 它做对了什么
+
+- **多语言兜底**:`chi_sim+eng` 同时识别中文 + 英文 + 数字 + 标点;对付"中英混排技术文档"够用,不需要写语言探测。
+- **标准 Pillow 输入**:`pytesseract.image_to_string(Image.open(path))` 接受任何 PIL 支持的格式(PNG / JPG / TIFF / PDF 单帧),pipeline 接入零成本。
+- **优雅降级**:缺 `pytesseract` 包 / 缺 tesseract 二进制 / 图不存在——三类异常分别 catch,给出针对性提示而不是抛 traceback。
+
+### 它做错了什么
+
+- **没有版面分析**:tesseract 按行扫,**不知道哪段是标题、哪段是正文、哪段是表格**;输出是平铺字符串,要下游自己用空白 / 标点切段落。
+- **不识别表格结构**:表格单元格的字能读出来,但**行列结构丢了**——OCR 输出跟 unit 01 的 `extract_tables` 输出完全不在一个坐标系,没法拼回"哪一格是哪一格"。生产里要么走工业 `TableStructureRecognizer`,要么上 PaddleOCR / mineru。
+- **依赖系统二进制**:脚本本身不绑 tesseract 版本;服务器部署 / Docker 镜像要单独装 `tesseract-ocr` + `tesseract-ocr-chi-sim`,CI 容易漏。
+- **大图慢**:单页 3000×4000 扫描件跑 chi_sim+eng 大概要 5–15 秒;批量处理要起 multiprocessing 或换 GPU 后端(PaddleOCR / mineru)。
+- **中文准确率 80–90%**:低分辨率扫描、字体倾斜、加粗混排都会掉;生产通常要 ① 放大 2–3 倍再 OCR;② 加 jieba 分词 + 编辑距离纠错;③ 上视觉 LLM。
+
 ## 三、怎么做？
 
 ### 3.1 跑起来
@@ -226,108 +326,6 @@ OCR skipped: 未提供图片路径
 3. **怎么判断表格是"真表"还是"页眉 / 页脚 + 短文本碰巧排成表格形"?**
 
 (答案见文末「思考题答案」)
-
----
-
-## unit 01 — 表格抽取 (pdfplumber) (`code_01_table_extract.py`)
-
-> 由浅入深第 1 步:用 pdfplumber 把 PDF 里的表格按行列原样抽出来。
-> 这是"结构化表格"这一类多模态输入的最小可解,下游 chunking 通常按行切。
-
-### 这是什么
-
-`code_01_table_extract.py` 打开 PDF,逐页调用 `page.extract_tables()`,把"至少有一行含非空白单元格"的表收进 `out`,每条记录形如 `{"page": i, "rows": [[cell, ...], ...]}`——一个二维数组,第一行通常是表头、后面是数据行。
-
-`pdfplumber.extract_tables()` 是启发式画线算法:对**带边框 / 带网格线**的规整表格(白皮书规格表、CSV-like 表)很顶;碰到无线表格、跨页表、合并单元格就掉链子。本单元重点是"先把基本盘跑通"——MVP 的核心产物就是 list of dicts,下游 chunking / embedding 直接吃。
-
-### 跑起来
-
-```bash
-python s11_multimodal/code_01_table_extract.py
-```
-
-输出示例(`samples/server_whitepaper.pdf`,`pdfplumber` 0.10+):
-
-```
-PDF 表格数: 1
---- page 2 ---
-['', '组件', '规格', '说明']
-['处理器', '2 × 第三代 Intel Xeon 可扩展处理器', '最高 40 核 / 80 线程 ...']
-['内存', '32 × DDR4 3200MHz DIMM', '最高 8TB ...']
-```
-
-### 它做对了什么
-
-- **跨页**:逐页循环,把 page 序号写进每条记录,下游能定位回原 PDF。
-- **空表过滤**:`pdfplumber.extract_tables()` 偶尔返回 `[["", "", ...]]` 这种"网格存在但全是空白"的空表;`any(any(c.strip() ...))` 双重循环把它们丢掉。
-- **保留原始结构**:`rows` 是原样二维 list,列对齐、行顺序不丢;下游可以直接转 `pandas.DataFrame`、按行 chunking、或拼成 markdown 表喂给 LLM。
-
-### 它做错了什么
-
-- **不处理合并单元格**:pdfplumber 的启发式会把合并 cell 拆成多个相同值,或把空 cell 当成 None;真实报告里"季度合计 / 全行合计"这类合并格经常读错。
-- **不识别无线表格**:很多现代 PDF 用空白对齐而不是画线(政府报告、研报),pdfplumber 会当文本读、根本不进 `extract_tables()`。
-- **跨页表会断成两半**:白皮书里"长表翻页"很常见,本实现不会合并;真实场景要靠 page 坐标 + 行列结构相似度判定要不要拼。
-- **没有表头检测**:第一行被当 header,但白皮书经常有"标题段 + 表格",pdfplumber 会把标题行吞进表里;真实场景要单独 detect header。
-- **只信 pdfplumber 的启发式**:无线表、合并格、艺术化排版全崩;这是接下来 unit 02 不会修、但生产要修的事。
-
----
-
-## unit 02 — OCR (pytesseract) (`code_02_ocr.py`)
-
-> 由浅入深第 2 步:用 pytesseract + Pillow 把图片里的字(中英混排)抽成字符串。
-> 这是"图像里的字"这一类多模态输入的最小可解——扫描件 / 图片型 PDF 的兜底。
-
-### 这是什么
-
-`code_02_ocr.py` 用 Pillow 打开图片,调 pytesseract 转交**系统 tesseract 二进制**做识别,返回字符串。`lang="chi_sim+eng"` 同时支持简体中文 + 英文——够覆盖绝大多数中文 RAG 场景。
-
-pytesseract 只是 Python 壳——**真正的 OCR 引擎是系统二进制 `tesseract`**。装包忘了装二进制、或装了二进制没装 `chi_sim` 语言包,是 99% 的踩坑来源。
-
-### 跑起来
-
-```bash
-# 1. Python 依赖
-pip install pytesseract Pillow
-
-# 2. 系统 tesseract 二进制(按平台三选一)
-#    Windows: https://github.com/UB-Mannheim/tesseract/wiki 下载安装包,勾上 Chinese (Simplified)
-#    macOS:   brew install tesseract tesseract-lang
-#    Linux:   sudo apt install tesseract-ocr tesseract-ocr-chi-sim
-
-# 3. 跑脚本(默认无图,按回车跳过;想跑就输入图片绝对路径)
-python s11_multimodal/code_02_ocr.py
-```
-
-输出示例(中文扫描件 + `chi_sim+eng`):
-
-```
-可选: 输入图片路径跑 OCR (回车跳过): /tmp/page.png
-服务器规格
-处理器: 2 x 第三代 Intel Xeon 可扩展处理器
-内存: 32 x DDR4 3200MHz DIMM
-...
-```
-
-无图片输入时:
-
-```
-可选: 输入图片路径跑 OCR (回车跳过):
-OCR skipped: 未提供图片路径
-```
-
-### 它做对了什么
-
-- **多语言兜底**:`chi_sim+eng` 同时识别中文 + 英文 + 数字 + 标点;对付"中英混排技术文档"够用,不需要写语言探测。
-- **标准 Pillow 输入**:`pytesseract.image_to_string(Image.open(path))` 接受任何 PIL 支持的格式(PNG / JPG / TIFF / PDF 单帧),pipeline 接入零成本。
-- **优雅降级**:缺 `pytesseract` 包 / 缺 tesseract 二进制 / 图不存在——三类异常分别 catch,给出针对性提示而不是抛 traceback。
-
-### 它做错了什么
-
-- **没有版面分析**:tesseract 按行扫,**不知道哪段是标题、哪段是正文、哪段是表格**;输出是平铺字符串,要下游自己用空白 / 标点切段落。
-- **不识别表格结构**:表格单元格的字能读出来,但**行列结构丢了**——OCR 输出跟 unit 01 的 `extract_tables` 输出完全不在一个坐标系,没法拼回"哪一格是哪一格"。生产里要么走工业 `TableStructureRecognizer`,要么上 PaddleOCR / mineru。
-- **依赖系统二进制**:脚本本身不绑 tesseract 版本;服务器部署 / Docker 镜像要单独装 `tesseract-ocr` + `tesseract-ocr-chi-sim`,CI 容易漏。
-- **大图慢**:单页 3000×4000 扫描件跑 chi_sim+eng 大概要 5–15 秒;批量处理要起 multiprocessing 或换 GPU 后端(PaddleOCR / mineru)。
-- **中文准确率 80–90%**:低分辨率扫描、字体倾斜、加粗混排都会掉;生产通常要 ① 放大 2–3 倍再 OCR;② 加 jieba 分词 + 编辑距离纠错;③ 上视觉 LLM。
 
 ---
 

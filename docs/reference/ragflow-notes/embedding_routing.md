@@ -4,14 +4,14 @@
 >
 > 主文件：`rag/llm/embedding_model.py`
 >
-> 调度入口：`rag/llm/__init__.py:163-192`
+> 调度入口：`rag/llm/__init__.py`
 
 ## 一句话
 RAGFlow 把每个 Embedding 提供商(OpenAI、Tongyi、BaiduYiyan、Voyage、SiliconFlow、HuggingFace、Ollama …)
 写成继承 `Base` 的类、用 `_FACTORY_NAME` 类变量挂"对外名"，由 `__init__.py` 在 import 时自动
 扫一遍、塞进 `EmbeddingModel` 字典；外部按字符串名查表拿到对应类，零条件分支。
 
-## 5-10 行原文 (dispatch loop, `rag/llm/__init__.py:169-183`)
+## 5-10 行原文 (dispatch loop, `rag/llm/__init__.py`)
 
 ```python
     base_class = None
@@ -31,7 +31,7 @@ RAGFlow 把每个 Embedding 提供商(OpenAI、Tongyi、BaiduYiyan、Voyage、Si
                         mapping_dict[obj._FACTORY_NAME] = obj
 ```
 
-## 5-10 行原文 (示例类, `rag/llm/embedding_model.py:256-263`)
+## 5-10 行原文 (示例类, `rag/llm/embedding_model.py`)
 
 ```python
 class OpenAIEmbed(Base):
@@ -52,11 +52,11 @@ class OpenAIEmbed(Base):
   (`{"local": ..., "openai": ..., "ollama": ...}`) 是同样思路的最小版；RAGFlow
   把这种模式扩展到 30+ 家提供商。
 - **`_FACTORY_NAME` 可为 list 一对多**。同一 SDK 适配多家(如 `Astraflow` /
-  `AstraflowCN` 都继承 `OpenAIEmbed`，见 `embedding_model.py:329-345`)只需
+  `AstraflowCN` 都继承 `OpenAIEmbed`，见 `embedding_model.py`)只需
   在子类的列表里多写一个名字，主流程不用动。这把"维度继承"和"对外命名"
   解耦——子类继承父类所有行为，只换 base_url + 名。
 - **错误统一为 `EmbeddingError`，可重试语义一致**。每个 `_call` /
-  `_batched_encode` 都把任何异常包成 `EmbeddingError`（`embedding_model.py:46-54`），
+  `_batched_encode` 都把任何异常包成 `EmbeddingError`（`embedding_model.py`），
   调用方只看一种异常类型就能做"换 provider 重试"或"降级回退"。这是
   `EMBED_PROVIDER` 切换之外的第二条防线：同一 provider 内网络失败也走
   统一的 retry/降级路径。

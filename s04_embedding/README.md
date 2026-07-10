@@ -89,6 +89,101 @@ BM25 处理"原词命中"，Embedding 处理"意思命中"——s06 会把两条
 
 这也是为什么我们不直接用 LangChain 的 `OpenAIEmbeddings` / `HuggingFaceEmbeddings` 这类更"省心"的封装——它在底层解决了 provider 切换，但你看不到**每个后端要哪个 env、哪段代码、哪个边界条件会崩**。先见问题，再看封装，比直接用学到的多。
 
+## unit 01 — 本地 BGE Embedding (BAAI/bge-small-zh-v1.5)  (`code_01_local_bge.py`)
+
+> 由浅入深第 1 步：免 key、离线(或准离线)可跑的中文嵌入 backbone，输出 512 维归一化向量。
+> unit 02 会基于同样的 `EMBED_PROVIDER` 字典分发思路，把 openai / ollama 串进同一套接口。
+
+### 这是什么
+
+`code.py` 提供一个 `embed_local(texts)` 函数，把任意字符串列表送进 `sentence-transformers` 加载的 `BAAI/bge-small-zh-v1.5`（默认模型名，可用 `EMBED_MODEL` 覆盖），模型跑完 `model.encode(..., normalize_embeddings=True)` 返回 `list[list[float]]`，每行是 512 维、长度 1 的单位向量。模型用 `@lru_cache(maxsize=1)` 缓存，第二次跑同一进程不重载。
+
+### 跑起来
+
+```bash
+python s04_embedding/code_01_local_bge.py
+```
+
+输出：
+
+```
+维度: 512, chunks: 4
+```
+
+首次跑 local 会从 HF Hub 下载 ~100MB 模型到 `~/.cache/huggingface/hub/`；后续运行靠 `lru_cache` 直接命中内存模型，秒回。
+
+### 它做对了什么
+
+- **离线 / 免 key**：不需要任何外部 API，第一行就能跑通；
+- **归一化**：所有向量落在单位球面上 → 内积 ≡ 余弦相似度，下游选点积 / L2 / cosine 哪种度量都对；
+- **模型小**：单文件 ~100MB，嵌入 4 个 chunk 在 CPU 上 < 1s，重跑靠 `lru_cache` 几乎瞬时。
+
+### 它做错了什么
+
+- **只对中文友好**：`bge-small-zh-v1.5` 是中文专用模型，英文 / 代码 / 长文档混合输入时向量空间会失真——生产环境应按语种切模型、把每个 provider 的维度上限显式登记，避免错配；
+- **大 batch 缺 GPU**：CPU 上一次塞 1000+ 句会跑分钟级，需要 GPU 或 ONNX 量化才快；
+- **首次依赖网络**：HF Hub 下载 100MB+，离线 / 内网环境直接报错；生产通常在构建镜像时预下载并把 `HF_HOME` 指到挂载卷。
+
+### 思考题
+
+**为什么 BGE 输出的向量需要 `normalize_embeddings=True`？如果忘了归一化会怎样？**
+
+提示：归一化让"内积"和"余弦相似度"在数值上等价，下游用点积或 L2 都能直接比较；不归一化时短文本向量天然小、长文本向量天然大，会让检索结果被"长度"而非"语义"主导。BGE 训练时也按余弦相似度优化，忘了归一化相当于和训练目标错位。
+
+## unit 02 — Provider 路由：EMBED_PROVIDER 字典分发  (`code_02_provider_routing.py`)
+
+> 由浅入深第 2 步：把 unit 01 的本地 BGE 思路扩展成"env-driven dispatcher"——同一接口后挂多个后端。
+> 与 unit 01 不同，本单元不 import 任何前序 unit，分发层独立。
+
+### 这是什么
+
+`code.py` 暴露一个 `route(texts)`，按 `EMBED_PROVIDER` 环境变量选：
+
+- `local`（默认）— `sentence-transformers` 跑 `BAAI/bge-small-zh-v1.5`，512 维；
+- `openai` — `openai.OpenAI` 走 OpenAI 兼容协议，模型默认 `text-embedding-3-small`，读 `LLM_API_KEY` / `LLM_BASE_URL`；
+- `ollama` — `requests` POST 到 `EMBED_BASE_URL/api/embeddings`（默认 `http://localhost:11434`），模型默认 `bge-m3`。
+
+注册表 `_REGISTRY = {"local": ..., "openai": ..., "ollama": ...}` 是和 RAGFlow `EmbeddingModel` 字典同思路的最小版本——新增 provider 只要写一个函数 + 注册一行。
+
+### 跑起来
+
+```bash
+# 默认 local,免 key
+python s04_embedding/code_02_provider_routing.py
+
+# 切 openai
+EMBED_PROVIDER=openai LLM_API_KEY=sk-... python s04_embedding/code_02_provider_routing.py
+
+# 切 ollama
+EMBED_PROVIDER=ollama EMBED_BASE_URL=http://localhost:11434 python s04_embedding/code_02_provider_routing.py
+```
+
+输出示例（本机无 ollama / 无 key）：
+
+```
+provider: local, dim: 512, count: 3
+[openai] skipped, set LLM_API_KEY (and LLM_BASE_URL) to enable
+[ollama] skipped, set EMBED_BASE_URL and run `ollama serve` to enable
+```
+
+### 它做对了什么
+
+- **同一接口三个后端**：调用方只 `route(texts)`，后端切换零代码改动；
+- **graceful fallback**：缺 key / ollama 没起时打印 `skipped, set env to enable`，不会让本地 demo 崩；
+- **env-only 配置**：切换 = 改一个 env 变量，不需要重新打包。
+
+### 它做错了什么
+
+- **没 retry / 没 rate-limit**：openai 偶发 5xx / ollama 长连接 timeout 直接抛，单元外的 retry 还得自己写——生产环境应把所有异常包成统一的 `EmbeddingError`，调用方只看一种类型就能重试或换 provider；
+- **没 batched ollama fallback**：本实现逐文本 POST，N 个句子 = N 次请求；Ollama 原生支持 `inputs=[...]` 一把提交，缺批处理在大 batch 时延迟成倍放大；
+- **本地 BGE 仍依赖联网**：第一次 `SentenceTransformer(...)` 还会触发模型下载，路由层假设离线就废了。
+
+### 思考题
+
+**为什么 `_REGISTRY` 用字面量字典而不是 `if/elif` 链？RAGFlow 用 `inspect.getmembers` 自动扫的目的是什么？**
+
+提示：新增一个 provider 时，"字典版"只在文件底部加一行 `"Xxx": fn_xxx`；`if/elif` 链要改 dispatch 函数——后者每次加 provider 都动调度代码，diff 噪声大、自动测试也容易漏；`inspect` 自动扫更进一步，连注册那行也省了。
+
 ## 三、怎么做？
 
 ### 3.1 跑起来
@@ -226,100 +321,6 @@ provider: local, dim: 512, count: 3
 
 答案见下方"思考题答案"——三条理由：内积 = 余弦、距离度量统一、和训练目标对齐。
 
-## unit 01 — 本地 BGE Embedding (BAAI/bge-small-zh-v1.5)  (`code_01_local_bge.py`)
-
-> 由浅入深第 1 步：免 key、离线(或准离线)可跑的中文嵌入 backbone，输出 512 维归一化向量。
-> unit 02 会基于同样的 `EMBED_PROVIDER` 字典分发思路，把 openai / ollama 串进同一套接口。
-
-### 这是什么
-
-`code.py` 提供一个 `embed_local(texts)` 函数，把任意字符串列表送进 `sentence-transformers` 加载的 `BAAI/bge-small-zh-v1.5`（默认模型名，可用 `EMBED_MODEL` 覆盖），模型跑完 `model.encode(..., normalize_embeddings=True)` 返回 `list[list[float]]`，每行是 512 维、长度 1 的单位向量。模型用 `@lru_cache(maxsize=1)` 缓存，第二次跑同一进程不重载。
-
-### 跑起来
-
-```bash
-python s04_embedding/code_01_local_bge.py
-```
-
-输出：
-
-```
-维度: 512, chunks: 4
-```
-
-首次跑 local 会从 HF Hub 下载 ~100MB 模型到 `~/.cache/huggingface/hub/`；后续运行靠 `lru_cache` 直接命中内存模型，秒回。
-
-### 它做对了什么
-
-- **离线 / 免 key**：不需要任何外部 API，第一行就能跑通；
-- **归一化**：所有向量落在单位球面上 → 内积 ≡ 余弦相似度，下游选点积 / L2 / cosine 哪种度量都对；
-- **模型小**：单文件 ~100MB，嵌入 4 个 chunk 在 CPU 上 < 1s，重跑靠 `lru_cache` 几乎瞬时。
-
-### 它做错了什么
-
-- **只对中文友好**：`bge-small-zh-v1.5` 是中文专用模型，英文 / 代码 / 长文档混合输入时向量空间会失真——生产环境应按语种切模型、把每个 provider 的维度上限显式登记，避免错配；
-- **大 batch 缺 GPU**：CPU 上一次塞 1000+ 句会跑分钟级，需要 GPU 或 ONNX 量化才快；
-- **首次依赖网络**：HF Hub 下载 100MB+，离线 / 内网环境直接报错；生产通常在构建镜像时预下载并把 `HF_HOME` 指到挂载卷。
-
-### 思考题
-
-**为什么 BGE 输出的向量需要 `normalize_embeddings=True`？如果忘了归一化会怎样？**
-
-提示：归一化让"内积"和"余弦相似度"在数值上等价，下游用点积或 L2 都能直接比较；不归一化时短文本向量天然小、长文本向量天然大，会让检索结果被"长度"而非"语义"主导。BGE 训练时也按余弦相似度优化，忘了归一化相当于和训练目标错位。
-
-## unit 02 — Provider 路由：EMBED_PROVIDER 字典分发  (`code_02_provider_routing.py`)
-
-> 由浅入深第 2 步：把 unit 01 的本地 BGE 思路扩展成"env-driven dispatcher"——同一接口后挂多个后端。
-> 与 unit 01 不同，本单元不 import 任何前序 unit，分发层独立。
-
-### 这是什么
-
-`code.py` 暴露一个 `route(texts)`，按 `EMBED_PROVIDER` 环境变量选：
-
-- `local`（默认）— `sentence-transformers` 跑 `BAAI/bge-small-zh-v1.5`，512 维；
-- `openai` — `openai.OpenAI` 走 OpenAI 兼容协议，模型默认 `text-embedding-3-small`，读 `LLM_API_KEY` / `LLM_BASE_URL`；
-- `ollama` — `requests` POST 到 `EMBED_BASE_URL/api/embeddings`（默认 `http://localhost:11434`），模型默认 `bge-m3`。
-
-注册表 `_REGISTRY = {"local": ..., "openai": ..., "ollama": ...}` 是和 RAGFlow `EmbeddingModel` 字典同思路的最小版本——新增 provider 只要写一个函数 + 注册一行。
-
-### 跑起来
-
-```bash
-# 默认 local,免 key
-python s04_embedding/code_02_provider_routing.py
-
-# 切 openai
-EMBED_PROVIDER=openai LLM_API_KEY=sk-... python s04_embedding/code_02_provider_routing.py
-
-# 切 ollama
-EMBED_PROVIDER=ollama EMBED_BASE_URL=http://localhost:11434 python s04_embedding/code_02_provider_routing.py
-```
-
-输出示例（本机无 ollama / 无 key）：
-
-```
-provider: local, dim: 512, count: 3
-[openai] skipped, set LLM_API_KEY (and LLM_BASE_URL) to enable
-[ollama] skipped, set EMBED_BASE_URL and run `ollama serve` to enable
-```
-
-### 它做对了什么
-
-- **同一接口三个后端**：调用方只 `route(texts)`，后端切换零代码改动；
-- **graceful fallback**：缺 key / ollama 没起时打印 `skipped, set env to enable`，不会让本地 demo 崩；
-- **env-only 配置**：切换 = 改一个 env 变量，不需要重新打包。
-
-### 它做错了什么
-
-- **没 retry / 没 rate-limit**：openai 偶发 5xx / ollama 长连接 timeout 直接抛，单元外的 retry 还得自己写——生产环境应把所有异常包成统一的 `EmbeddingError`，调用方只看一种类型就能重试或换 provider；
-- **没 batched ollama fallback**：本实现逐文本 POST，N 个句子 = N 次请求；Ollama 原生支持 `inputs=[...]` 一把提交，缺批处理在大 batch 时延迟成倍放大；
-- **本地 BGE 仍依赖联网**：第一次 `SentenceTransformer(...)` 还会触发模型下载，路由层假设离线就废了。
-
-### 思考题
-
-**为什么 `_REGISTRY` 用字面量字典而不是 `if/elif` 链？RAGFlow 用 `inspect.getmembers` 自动扫的目的是什么？**
-
-提示：新增一个 provider 时，"字典版"只在文件底部加一行 `"Xxx": fn_xxx`；`if/elif` 链要改 dispatch 函数——后者每次加 provider 都动调度代码，diff 噪声大、自动测试也容易漏；`inspect` 自动扫更进一步，连注册那行也省了。
 
 ## 思考题答案
 

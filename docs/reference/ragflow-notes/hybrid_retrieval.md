@@ -5,7 +5,7 @@
 ## 关键代码段：`weighted_sum` fusion + 本地 `rerank` 加权
 
 `Dealer.search` 阶段把全文召回和向量召回一起送给 ES/Infinity，由底层的
-`FusionExpr` 用 weighted_sum 合并（[search.py:189-196](ragflow/rag/nlp/search.py#L189-L196)）：
+`FusionExpr` 用 weighted_sum 合并（[search.py](ragflow/rag/nlp/search.py)）：
 
 ```python
 if settings.DOC_ENGINE_OCEANBASE:
@@ -20,7 +20,7 @@ res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filter
 ```
 
 `Dealer.retrieval` 阶段，权重由 API 入参 `vector_similarity_weight` 决定，并
-**互补地** 算全文权重（[search.py:582-637](ragflow/rag/nlp/search.py#L582-L637)）：
+**互补地** 算全文权重（[search.py](ragflow/rag/nlp/search.py)）：
 
 ```python
             vector_similarity_weight=0.3, ...
@@ -34,7 +34,7 @@ logging.debug(
 ```
 
 `Dealer.rerank_with_knn` 把 ES 出来的 KNN 余弦分和本地算的 term 相似度
-再线性加权一次（[search.py:443-472](ragflow/rag/nlp/search.py#L443-L472)）：
+再线性加权一次（[search.py](ragflow/rag/nlp/search.py)）：
 
 ```python
 def rerank_with_knn(self, sres, query, knn_scores, tkweight=0.3, vtweight=0.7, ...):
@@ -129,7 +129,7 @@ MVP 完全没这一层——所有 chunk 一视同仁，权威文档没被抬高
 
 ## 分页与候选窗口对齐 `_rerank_window`
 
-[search.py:525-547](https://github.com/infiniflow/ragflow/blob/828c5789/rag/nlp/search.py#L525-L547)
+[search.py](https://github.com/infiniflow/ragflow/blob/828c5789/rag/nlp/search.py)
 解决"分页和块拉取不对齐"这个真实的生产 bug：
 
 ```python
@@ -156,7 +156,7 @@ def _rerank_window(page_size: int, top: int = 0) -> int:
     ...
 ```
 
-调用点（[search.py:576-590](https://github.com/infiniflow/ragflow/blob/828c5789/rag/nlp/search.py#L576-L590)）：
+调用点（[search.py](https://github.com/infiniflow/ragflow/blob/828c5789/rag/nlp/search.py)）：
 
 ```python
 RERANK_LIMIT = self._rerank_window(page_size, top if rerank_mdl else 0)
