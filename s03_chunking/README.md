@@ -1,7 +1,32 @@
-# s03 文本分块
+# s03 文本分块 — 把段落切成"长度可控、语义相对完整"的小块
 
 > **章节定位**：RAG 离线流水线的第二步——把 s02 吐出的"页 / 段"切成语义完整、长度可控、可被 embedding 索引的 `list[{text, chunk_id, page, source}]`。
-> 本章节围绕 *toy splitter* 这一层给出概念 / 问题 / MVP / 工业对照的完整弧线，**不展开 LangChain `RecursiveCharacterTextSplitter` 的所有配置项**，也不引入 SemanticChunker / Unstructured by_title（那些是工具选择，不是本章 MVP）。
+>
+> **章节结构**：2 个 unit。unit 01 跑通 ≤ 500 字符 cap + 句界切的最小骨架；unit 02 把同一套规则喂给真实样本，把表格 / 父子块 / 跨段引用三类失败摆出来。
+>
+> **scope 注意**：本章节围绕 *toy splitter* 这一层给出概念 / 问题 / MVP / 工业对照的完整弧线——不展开 LangChain `RecursiveCharacterTextSplitter` 的所有配置项，也不引入 SemanticChunker / Unstructured by_title（那些是工具选择，不是本章 MVP）。
+
+---
+
+## 章节导航
+
+| Unit | 标题 | 入口 |
+| --- | --- | --- |
+| 01 | 最小可跑分块：500 字符 cap + 句界切 | [`code_01_basic_chunk.py`](code_01_basic_chunk.py) |
+| 02 | chunker 在真实样本上的三类失败 | [`code_02_chunk_failures.py`](code_02_chunk_failures.py) |
+
+跑法：
+
+```bash
+python s03_chunking/code_01_basic_chunk.py       # 500 字符 cap + 句界切的 toy
+python s03_chunking/code_02_chunk_failures.py    # 把 toy 喂给真实样本，看三类失败
+```
+
+依赖：纯 Python 标准库（无额外依赖；不引入 tiktoken / LangChain）。
+
+样本输入：s02 的 loader 输出（`samples/server_whitepaper.pdf` + `samples/disclosure.docx`）。
+
+---
 
 ## 一、什么是文本分块？
 
@@ -37,7 +62,7 @@ embedding 模型的 `max_seq_len` 通常是 512 token（BGE 系列）或 8192 to
 
 分块本质上是 **"给非结构化文本建立索引单位"**，跟传统搜索里的"段落 / 句子"切分同构——只是单位要适配 embedding 模型，而不是适配 BM25 的词袋。
 
-## 二、为什么要单独写一章分块？
+## 二、为什么单独写一章文本分块
 
 `re.split(...)` 一行就能切，似乎不值得单写一章。但把这种 toy 切法扔到真实样本上，会冒出四类典型问题，每一类都对应一类工业解法：
 
@@ -62,14 +87,7 @@ embedding 模型的 `max_seq_len` 通常是 512 token（BGE 系列）或 8192 to
 
 ## 三、怎么做？
 
-### 3.1 章节导航
-
-| Unit | 主题 | 它解决什么 |
-|---|---|---|
-| unit 01 — `code_01_basic_chunk.py` | 500 字符 cap + 句界切 | "最小可跑 chunker 长什么样" |
-| unit 02 — `code_02_chunk_failures.py` | 真实样本上的 3 类失败模式 | "为什么 unit 01 在 prod 不够" |
-
-### 3.2 跑起来
+### 3.1 跑起来
 
 ```bash
 python s03_chunking/code_01_basic_chunk.py
@@ -78,7 +96,7 @@ python s03_chunking/code_02_chunk_failures.py
 
 依赖：`s03` 复用 `s02` 的 `load_pdf` / `load_docx`（`importlib` 按文件路径加载，避免把 `s02` 装成顶层包）。先把 s02 跑通，s03 才能跑。
 
-### 3.3 核心函数一览
+### 3.2 核心函数一览
 
 | 函数 | 文件 | 输入 | 输出 | 一句话解释 |
 |---|---|---|---|---|
@@ -90,7 +108,7 @@ python s03_chunking/code_02_chunk_failures.py
 | `demo_cross_ref()` | `code_02_chunk_failures.py` | — | 打印短 chunk 列表 + DOCX 原文 | 失败 c：跨段引用断裂 |
 | `main()` (unit 02) | `code_02_chunk_failures.py` | — | 调用上面 3 个 demo + 引出工业解法 | unit 02 演示入口 |
 
-### 3.4 chunker 设计取舍
+### 3.3 chunker 设计取舍
 
 为什么是"500 字符 cap + 句界切"而不是别的？这是几个常见取舍的折中：
 
@@ -103,7 +121,7 @@ python s03_chunking/code_02_chunk_failures.py
 
 如果你的语料以**表格 / 财报**为主，500 字符 cap 必须显著缩小（200 左右），否则每张表都会被拦腰切；如果你处理的是**小说 / 长文**，可以放宽到 1024 字符以保留叙事完整性。
 
-### 3.5 实际跑出来的 schema 形状
+### 3.4 实际跑出来的 schema 形状
 
 把 `unit 01` 跑在仓库自带的 `samples/` 上，得到的真实片段长这样：
 
@@ -127,7 +145,7 @@ python s03_chunking/code_02_chunk_failures.py
 
 下游 embedding（s04）拿到这个列表时，**不需要知道 chunk 是怎么来的**——它只关心 `text` 和 `chunk_id` 两个字段。这就是分块层把"边界检测"封装掉的价值：后续章节按统一接口消费即可。
 
-### 3.6 跑出来是什么样
+### 3.5 跑出来是什么样
 
 `unit 01` 的预期输出（具体数字由 `samples/` 决定）：
 
@@ -265,17 +283,6 @@ server_whitepaper.pdf#2#p2 | 三、整机规格
 
 unit 02 会在 `samples/` 上把这三类失败各跑一遍。
 
-### 对照 ragflow 怎么做的
-
-RAGFlow 的分块是 **4 层流水线**，MVP 把 4 层压成"500 字符 cap + 句界"一层：
-
-- **父块**：XGBoost 30 特征驱动 `_concat_downward`（`pdf_parser.py:1052`）——视觉相邻的 text-box 由 `_updown_concat_features` 算 30 维特征（行距、跨页、版面类型、标点首尾…），`updown_cnt_mdl.predict(...) <= 0.5` 则跳过合并；
-- **子块**：`naive_merge`（`rag/nlp/__init__.py:1155`）按 **tiktoken token 数**算 cap（默认 128），不是字符——BGE `max_seq_len=512`，500 中文字符 ≈ 1000-1500 token，MVP 直接爆掉；
-- **层级**：`hierarchical_merge`（`nlp/__init__.py:1066`）按 `BULLET_PATTERN`（"一、" → "1." → "1.1" → "1.1.1"）分桶到编号标题级别，召回时能放大到节；
-- **媒体回填**：`attach_media_context`（`nlp/__init__.py:497`）把表格/图片前后若干句当 context 拼回去——MVP 完全没做这一步。
-
-参考：[`docs/reference/ragflow-notes/deepdoc_chunking.md`](../../docs/reference/ragflow-notes/deepdoc_chunking.md)
-
 ### 思考题
 
 **如果一段就是 800 字但语义完整（比如一段财务披露），是该切还是不该切？**
@@ -352,17 +359,6 @@ BEFORE (过短的 header-only chunks,语义为零):
 - 它是个 demo，不是 fix——没有真的把表拼回去、没有真的建父子树、没有真的回填 context；
 - 依赖 s02 unit 01 的 loader（后者已丢 DOCX tables）；如果想看到表格里的季度数字，要么改 s02 loader 要么用 `python-docx` 直读；
 - 只测了 3 类失败，真实场景还有 (d) 页眉页脚污染 / (e) 多栏错位 / (f) 扫描件 OCR 缺失，那些是 s02 + s11 的事。
-
-### 对照 ragflow 怎么做的
-
-[`docs/reference/ragflow-notes/deepdoc_chunking.md`](../../docs/reference/ragflow-notes/deepdoc_chunking.md) 描述了 4 层流水线，每一层修一类失败：
-
-| 失败 | ragflow 修法 | 文件:行 |
-|---|---|---|
-| 表格切碎 | `_concat_downward`（XGBoost 30 特征）识别 `layout_type=table` 当 parent | `pdf_parser.py:1052` |
-| 表格孤立 | `attach_media_context` 把表格前后文本当 context 回填 | `nlp/__init__.py:497` |
-| 父子块缺失 | `hierarchical_merge` 按 `BULLET_PATTERN`（"一、" → "1." → "1.1"）建层级树 | `nlp/__init__.py:1066` |
-| 字符 cap 超 BGE 限额 | `naive_merge` 用 tiktoken 算 128 token cap，对齐 BGE | `nlp/__init__.py:1155` |
 
 ### 思考题
 

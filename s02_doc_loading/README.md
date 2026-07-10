@@ -1,7 +1,32 @@
-# s02 文档加载
+# s02 文档加载 — 把 PDF / DOCX 读成 RAG 能用的段落
 
 > **章节定位**：RAG 离线流水线的第一步——把 PDF / DOCX 这些**非结构化文档**读成结构化段落。
-> 本章节围绕 *单文件加载* 这一层给出概念 / 问题 / MVP / 工业对照的完整弧线，**不引入 Unstructured / 多分块策略**（那些留到 s03 / s11）。
+>
+> **章节结构**：2 个 unit。unit 01 跑通 `pypdf` + `python-docx` 的最小骨架；unit 02 把同一套函数喂给真实样本，把"看不见的损失"摆出来。
+>
+> **scope 注意**：本章只覆盖 *单文件加载*；不引入 `Unstructured` / `PyMuPDF4LLM` 这类更"省心"的封装库（先用 toy 把错误摆出来，再看修复）。多模态 / 表格 / OCR 留到 s11。
+
+---
+
+## 章节导航
+
+| Unit | 标题 | 入口 |
+| --- | --- | --- |
+| 01 | 最小可跑加载：PDF + DOCX → 统一 schema | [`code_01_basic_load.py`](code_01_basic_load.py) |
+| 02 | 真实样本上的失败模式 | [`code_02_failure_modes.py`](code_02_failure_modes.py) |
+
+跑法：
+
+```bash
+python s02_doc_loading/code_01_basic_load.py        # 30 行，跑通最小骨架
+python s02_doc_loading/code_02_failure_modes.py     # 同一套函数喂给真实样本
+```
+
+依赖：`pypdf` + `python-docx`（已在 `requirements.txt`）。
+
+样本文件：[`samples/server_whitepaper.pdf`](../samples/server_whitepaper.pdf) + [`samples/disclosure.docx`](../samples/disclosure.docx)。
+
+---
 
 ## 一、什么是文档加载？
 
@@ -46,7 +71,7 @@
 
 ETL 处理的是数据库表 / 日志，文档加载处理的是 PDF / DOCX。**目标都一样——把杂乱的原始数据清洗并对齐为适合后续检索和建模的标准化语料**。
 
-## 二、为什么要单独写一章加载？
+## 二、为什么单独写一章文档加载
 
 `pypdf` 几行就能跑，`python-docx` 也是。看起来不值得单独成章。但把它扔进真实样本就会发现，30 行版本和生产级方案之间隔着一道悬崖——这道悬崖由几类典型问题堆起来：
 
@@ -70,14 +95,7 @@ ETL 处理的是数据库表 / 日志，文档加载处理的是 PDF / DOCX。**
 
 ## 三、怎么做？
 
-### 3.1 章节导航
-
-| Unit | 主题 | 它解决什么 |
-|---|---|---|
-| unit 01 — `code_01_basic_load.py` | 最小可跑加载 (PDF + DOCX) | "统一 schema 是什么样" |
-| unit 02 — `code_02_failure_modes.py` | 真实样本上的失败模式 | "为什么 unit 01 在 prod 不够" |
-
-### 3.2 跑起来
+### 3.1 跑起来
 
 ```bash
 pip install pypdf python-docx
@@ -85,7 +103,7 @@ python s02_doc_loading/code_01_basic_load.py
 python s02_doc_loading/code_02_failure_modes.py
 ```
 
-### 3.3 核心函数一览
+### 3.2 核心函数一览
 
 | 函数 | 文件 | 输入 | 输出 | 一句话解释 |
 |---|---|---|---|---|
@@ -96,7 +114,7 @@ python s02_doc_loading/code_02_failure_modes.py
 | `show_docx_table_loss()` | `code_02_failure_modes.py` | — | 打印表内字符数 | 直接量化"被吞掉的表格字数" |
 | `main()` (unit 02) | `code_02_failure_modes.py` | — | 调用上面两个 + 引出工业解法 | unit 02 演示入口 |
 
-### 3.4 schema 设计取舍
+### 3.3 schema 设计取舍
 
 为什么是 `{text, page, source}` 三个字段而不是别的形状？这是几个常见取舍的折中：
 
@@ -107,7 +125,7 @@ python s02_doc_loading/code_02_failure_modes.py
 
 如果你的语料源需要额外的元数据（比如作者、章节标题、创建时间），就在 schema 里加字段——但**保持向后兼容**：新字段给默认值，老代码不崩。
 
-### 3.5 如何扩展更多格式
+### 3.4 如何扩展更多格式
 
 加一种新格式（比如 Markdown / HTML / Excel）只要三步：
 
@@ -117,7 +135,7 @@ python s02_doc_loading/code_02_failure_modes.py
 
 不要在 `load_pdf` 里写 if-else 分发——它会污染单一职责。`load_pdf` 只懂 PDF，`main()` 懂全格式。
 
-### 3.6 实际跑出来的 schema 形状
+### 3.5 实际跑出来的 schema 形状
 
 把 `unit 01` 跑在仓库自带的 `samples/` 上，得到的真实片段长这样（用于对照"统一 schema 在两格式上是同一形状"）：
 
@@ -139,7 +157,7 @@ python s02_doc_loading/code_02_failure_modes.py
 
 下游切块器（s03）拿到这两种列表时，**不需要知道来源是 PDF 还是 DOCX**——它只关心 `text` / `page` / `source` 三个字段。这就是 schema 对齐的价值：**格式差异被吸收在加载层，后续章节不用再分情况处理**。
 
-### 3.7 跑出来是什么样
+### 3.6 跑出来是什么样
 
 `unit 01` 的预期输出（具体数字由 `samples/` 决定）：
 
@@ -239,16 +257,6 @@ DOCX 第 1 段前 100 字: 青蓝科技股份有限公司 ...
 - **PDF 多栏排版错位**：双栏 PDF 抽出来的文本会把左栏底部接到右栏顶部；
 - **扫描件完全没救**：`extract_text()` 对图片型 PDF 返回空字符串。
 
-### 对照 ragflow 怎么做的
-
-RAGFlow 的 `deepdoc/parser/` 是按文件类型 dispatcher：
-
-- `deepdoc/parser/pdf_parser.py` 用 `pdfplumber` + 自训练 XGBoost 模型（30 特征，详见 [`docs/reference/ragflow-notes/deepdoc_chunking.md`](../../docs/reference/ragflow-notes/deepdoc_chunking.md)）做版面分析，能识别多栏 / 表格 / 图；
-- `deepdoc/parser/docx_parser.py` 同时处理 `paragraphs` 和 `tables`；
-- `deepdoc/parser/utils.py` 里有 VisionParser 兜底扫描件。
-
-参考：[`docs/reference/ragflow-notes/deepdoc_chunking.md`](../../docs/reference/ragflow-notes/deepdoc_chunking.md)
-
 ### 思考题
 
 **为什么 PDF 输出会有 4 段（4 页）但 DOCX 输出 27 段？这是"段落"的语义不同吗？**
@@ -293,16 +301,6 @@ python s02_doc_loading/code_02_failure_modes.py
 ### 它做错了什么
 
 - 暂时什么也没"做对"——它的目的就是展示 unit 01 在 prod 上的失败。下一步要么换 loader (s11 表格抽取) 要么换格式（structured extraction）。
-
-### 对照 ragflow 怎么做的
-
-`deepdoc/parser/` 下的两个核心模块直接对应本单元的两个失败：
-
-- **`deepdoc/parser/pdf_parser.py`** —— `RAGFlowPdfParser` 内部用 `pdfplumber` + XGBoost 30 特征模型识别多栏 / 表格 / 图，详见 [`docs/reference/ragflow-notes/deepdoc_chunking.md`](../../docs/reference/ragflow-notes/deepdoc_chunking.md)；
-- **`deepdoc/parser/docx_parser.py`** —— `DocxParser` 同步遍历 `paragraphs` + `tables`，每段打 `section` 标签（`text` / `table` / `image`）；
-- **`deepdoc/parser/utils.py`** —— VisionParser 用 OCR 模型兜底扫描件（s11 会更细讲）。
-
-参考：[`docs/reference/ragflow-notes/multimodal_parsing.md`](../../docs/reference/ragflow-notes/multimodal_parsing.md)
 
 ### 思考题
 

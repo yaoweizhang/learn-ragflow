@@ -114,7 +114,7 @@ query_graph(graph, "不存在的实体")
 
 ---
 
-## 二、为什么要单独写一章 GraphRAG?
+## 二、为什么单独写一章 GraphRAG
 
 `extract_triples(text)` + `build_graph(triples_list)` + `query_graph(graph, entity)` 加一起 80 行就能跑出"图谱 + 1 跳查询"。看起来不值得单独一章。但把它放进 s08 的"向量召回"对照看会发现:**"段落相似度"和"实体邻接关系"答的是两类不同问题**——这道鸿沟由 3 类典型失败堆起来。
 
@@ -135,16 +135,9 @@ query_graph(graph, "不存在的实体")
 
 ---
 
-## 三、怎么做?
+## 三、怎么做？
 
-### 3.1 章节导航
-
-| Unit | 主题 | 它解决什么 |
-|---|---|---|
-| [01_extract](#unit-01--llm-抽实体关系三元组--持久化-jsonl-code_01_extractpy) | LLM 抽 (head, rel, tail) 三元组 + JSON 容错解析 + JSONL 持久化 | "LLM 能不能稳定吐 JSON 数组" |
-| [02_query](#unit-02--1-跳图查询纯内存无-llm-code_02_querypy) | 1 跳图查询(`dict.get` + sorted) | "不调 LLM 的纯内存图查询长什么样" |
-
-### 3.2 跑起来
+### 3.1 跑起来
 
 ```bash
 pip install openai pypdf python-docx   # 已在 requirements.txt
@@ -167,7 +160,7 @@ python s10_graphrag/code_02_query.py   # 不调 LLM,只读 _graph.jsonl
 # 请先跑: python s10_graphrag/code_01_extract.py
 ```
 
-### 3.3 核心函数一览
+### 3.2 核心函数一览
 
 s10 的代码拆得很细,每个函数都对应一种"实体抽取 / 图构建 / 图查询"的角色:
 
@@ -183,7 +176,7 @@ s10 的代码拆得很细,每个函数都对应一种"实体抽取 / 图构建 /
 | `main()` (unit 01) | `code_01_extract.py` | — | 打印图节点数 / 边数 | unit 01 演示入口,跑完落盘 `_graph.jsonl` |
 | `main()` (unit 02) | `code_02_query.py` | — | 交互式 REPL | unit 02 演示入口,输入实体名查 1 跳邻居 |
 
-### 3.4 图设计取舍
+### 3.3 图设计取舍
 
 为什么 schema 用 `(head, rel, tail)` 三元组 + `dict[head] → set[(rel, tail)]`、而不是别的?几个常见取舍的折中:
 
@@ -193,7 +186,7 @@ s10 的代码拆得很细,每个函数都对应一种"实体抽取 / 图构建 /
 - **`set` vs `list` 存邻接边**——MVP 用 `set`,**同一 `(rel, tail)` 多次出现自动去重**;`list` 简单但会在"同段重复抽到同一三元组"时污染边集合。代价是 `set` 不保证顺序,unit 02 用 `sorted(graph.get(entity, set()))` 显式排。
 - **`build_graph` 单层 vs 多层**——MVP 走单层 dict(节点名即 key);RAGFlow 把同一实体名跨段出现时**合并 description**(`<SEP>` 拼接,超过 12 段送 LLM 摘要压缩),并按 `entity_type` 分桶做 entity resolution。**MVP 完全不做合并**——`紫光恒越` 和 `紫光恒越技术有限公司` 是两个节点,召回时只能命中其中一个。
 
-### 3.5 如何切换到工业级 GraphRAG
+### 3.4 如何切换到工业级 GraphRAG
 
 加一种 GraphRAG 策略(Leiden 社区检测 / entity resolution / 结构化分隔符 prompt)只要三步:
 
@@ -203,7 +196,7 @@ s10 的代码拆得很细,每个函数都对应一种"实体抽取 / 图构建 /
 
 不要在 `extract_triples` 里写 `if mode == "json": ... elif mode == "delimiter": ...` 之类分发——它会污染单一职责。`extract_triples` 只懂 JSON,`main()` 懂全抽取模式。本章 MVP 只跑 JSON,但接口形状留好了。
 
-### 3.6 实际跑出来的图形状
+### 3.5 实际跑出来的图形状
 
 把 unit 01 跑在仓库自带的 `samples/` 上,落盘的 `_graph.jsonl` 长这样(实测,`MiniMax-M3 over minimaxi.com`,samples = `server_whitepaper.pdf` + `disclosure.docx`,只取前 8 个 chunk):
 

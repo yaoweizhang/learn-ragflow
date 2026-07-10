@@ -6,10 +6,10 @@
 
 A hands-on, engineering-focused RAG (Retrieval-Augmented Generation) tutorial aimed at LLM application developers. The goal is not to "read theory" but to **write 12 minimal MVP toys of 30–80 lines each**, then explain what each segment of an RAG system does, why it does it, and what production looks like.
 
-Two parallel tracks (双线并行):
+Two layers (双层):
 
-- **Left — build it**: each chapter ships one `README.md` plus N descriptive `code_NN_<topic>.py` files at the chapter root (30–80 lines each); modify one line, see the output change, and validate "does a higher alpha give better recall?" in 5 minutes.
-- **Right — read source**: each chapter has a matching [`docs/reference/ragflow-notes/<topic>.md`](./docs/reference/ragflow-notes/) excerpting 5–15 lines of [RAGFlow](https://github.com/infiniflow/ragflow)'s production code with line numbers, commit pins, and "why this design" commentary.
+- **Main chapters**: each chapter ships one `README.md` plus N descriptive `code_NN_<topic>.py` files at the chapter root (30–80 lines each); modify one line, see the output change, and validate "does a higher alpha give better recall?" in 5 minutes.
+- **Source reference**: [`docs/reference/ragflow-notes/`](./docs/reference/ragflow-notes/) collects [RAGFlow](https://github.com/infiniflow/ragflow)'s 5–15 line production excerpts with line numbers and "why this design" commentary, organized by chapter at the repository top — read when you want to go deep, not duplicated in each chapter README.
 
 Every chapter contains:
 
@@ -107,7 +107,7 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 
 ### Part 1 — RAG fundamentals
 
-**Chapter 1 — What is RAG** &nbsp;[chapter details](./s01_what_is_rag/)
+**Chapter 1 — RAG fundamentals** &nbsp;[chapter details](./s01_what_is_rag/)
 
 - 3 units progressing from naive substring matching → bag-of-words vectors → retrieve + LLM end-to-end
 - Three failure modes of LLMs: training cutoff, private data, hallucination
@@ -119,25 +119,25 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 
 - PDF / DOCX parsing into a unified `list[{text, page, source}]`
 - Three real-world problems: scanned PDFs, tables, headers / footers
-- RAGFlow `deepdoc/parser/` parallel: VisionParser + multi-parser dispatch
+- Production reference: [`docs/reference/ragflow-notes/deepdoc_pdf_parsing.md`](./docs/reference/ragflow-notes/deepdoc_pdf_parsing.md) (`deepdoc/parser/` + VisionParser)
 
 **Chapter 3 — Text chunking** &nbsp;[chapter details](./s03_chunking/)
 
 - Fixed character cap + sentence-boundary split (spec: ≤ 500 chars; sentence boundaries `(.。!?！？)`)
 - Three failure modes: tables, parent-child chunks, cross-paragraph references
-- RAGFlow `_concat_downward` + XGBoost 30-feature + `naive_merge` tiktoken parallel
+- Production reference: [`docs/reference/ragflow-notes/deepdoc_chunking.md`](./docs/reference/ragflow-notes/deepdoc_chunking.md) (`_concat_downward` / `naive_merge` / `hierarchical_merge`)
 
 **Chapter 4 — Embedding** &nbsp;[chapter details](./s04_embedding/)
 
 - BGE local embedding (BAAI/bge-small-zh-v1.5, 512 dim, normalized)
 - OpenAI / Ollama providers optional
-- RAGFlow `embedding_model.py` multi-provider routing parallel
+- Production reference: [`docs/reference/ragflow-notes/embedding_routing.md`](./docs/reference/ragflow-notes/embedding_routing.md)
 
 **Chapter 5 — Vector indexing** &nbsp;[chapter details](./s05_vector_index/)
 
 - Chroma persistent (`PersistentClient` + HNSW cosine)
 - Metadata filtering: `where={"source": "..."}`
-- RAGFlow ES / Infinity / OceanBase three-way parallel
+- Production reference: [`docs/reference/ragflow-notes/vector_indexing.md`](./docs/reference/ragflow-notes/vector_indexing.md) (ES / Infinity / OceanBase)
 
 ### Part 3 — Retrieval and generation
 
@@ -145,26 +145,26 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 
 - Self-implemented BM25 + dense vectors + `alpha * vec + (1-α) * bm25` weighted fusion
 - `alpha` is a configurable knob (fact-style questions skew BM25; concept-style skew vector)
-- RAGFlow three-layer fusion: DB `FusionExpr` + `rerank_with_knn` + PageRank/tag `rank_fea` parallel
+- Production reference: [`docs/reference/ragflow-notes/hybrid_retrieval.md`](./docs/reference/ragflow-notes/hybrid_retrieval.md) (`FusionExpr` + `rerank_with_knn` + `rank_fea`)
 
 **Chapter 7 — Reranking** &nbsp;[chapter details](./s07_rerank/)
 
 - BGE cross-encoder (`bge-reranker-base`) for precision rerank
 - `top_k` controls cross-encoder pair count (O(n) not O(n²))
-- RAGFlow `RerankModel.Base` multi-provider abstraction parallel
+- Production reference: [`docs/reference/ragflow-notes/rerank.md`](./docs/reference/ragflow-notes/rerank.md) (`RerankModel.Base` multi-provider abstraction)
 
 **Chapter 8 — Prompt & generation** &nbsp;[chapter details](./s08_prompt_generate/)
 
 - Prompt templates for citation `[i]`, refusal, footnote alignment
 - `_format_context` renders hits as `[i] (source#page) text`
-- RAGFlow `citation_prompt` dual-pass + multi-prompt-template parallel
+- Production reference: [`docs/reference/ragflow-notes/prompt_templates.md`](./docs/reference/ragflow-notes/prompt_templates.md) (dual-pass + multi-template)
 
 **Chapter 9 — Agent & tools** &nbsp;[chapter details](./s09_agent_tools/)
 
 - ReAct loop: `Thought` / `Action` / `ActionInput` parsing
 - Two tools: `retrieve(query)` + `finish(answer)`
 - Parsing fragility: `max_steps` + markdown-fence stripping + JSON retry
-- RAGFlow `agent/canvas.py` DAG + `bind_tools()` OpenAI tool_calls parallel
+- Production reference: [`docs/reference/ragflow-notes/agent_tools.md`](./docs/reference/ragflow-notes/agent_tools.md) (Canvas DAG + `bind_tools()`)
 
 ### Part 4 — Advanced RAG
 
@@ -172,13 +172,13 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 
 - LLM-extracted `(head, rel, tail)` triples
 - `dict[head] → set[(rel, tail)]` 1-hop query
-- RAGFlow light path + `entity_resolution` two-stage pipeline parallel
+- Production reference: [`docs/reference/ragflow-notes/graph_extraction.md`](./docs/reference/ragflow-notes/graph_extraction.md) (light path + `entity_resolution` two-stage pipeline)
 
 **Chapter 11 — Multimodal** &nbsp;[chapter details](./s11_multimodal/)
 
 - pdfplumber for table extraction (row × column structure)
 - pytesseract OCR (`chi_sim+eng`)
-- RAGFlow `TableStructureRecognizer` vision model + multi-OCR-backend parallel
+- Production reference: [`docs/reference/ragflow-notes/multimodal_parsing.md`](./docs/reference/ragflow-notes/multimodal_parsing.md) (vision model + multi-OCR backend)
 
 ### Part 5 — Deployment and shipping
 
@@ -187,6 +187,7 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 - FastAPI wrapper (`/qa` endpoint) + pydantic input validation
 - docker-compose (api + chroma persistent volume)
 - 503 fallback: clear error when index is missing, not a raw exception
+- Production reference: [`docs/reference/ragflow-notes/deployment.md`](./docs/reference/ragflow-notes/deployment.md)
 
 ### Further reading (project-level reference, not part of the tutorial runtime — referenced from s01-s12)
 
@@ -195,7 +196,7 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 
 ## Chapter index
 
-1. [s01](./s01_what_is_rag/) — **What is RAG?** Naive RAG vs. long-context LLMs; minimal end-to-end demo.
+1. [s01](./s01_what_is_rag/) — **RAG fundamentals.** Substring → bag-of-words → retrieve + LLM end-to-end.
 2. [s02](./s02_doc_loading/) — **Document loading.** PDF / DOCX parsing; metadata preservation.
 3. [s03](./s03_chunking/) — **Text chunking.** Fixed-size vs. structure-aware splitting.
 4. [s04](./s04_embedding/) — **Embedding.** BGE local; OpenAI / Ollama switches.
@@ -248,12 +249,10 @@ Every chapter (`sXX_topic/`) follows the same shape — one `README.md` plus N d
 
 ```
 sXX_topic/
-├── README.md                # Chapter entry: 4-part arc (what / why / how / thinking exercises)
+├── README.md                # Chapter entry: navigation + 4-part arc (what / why / how / thinking exercises)
 ├── code_01_<topic>.py       # unit 1 (always present, 30–80 lines)
 ├── code_02_<topic>.py       # unit 2 (as needed)
-├── code_03_<topic>.py       # unit 3 (as needed; s01/s03 etc. have three units)
-├── AUDIT.md                  # Historical audit of this chapter (kept)
-└── ragflow_notes/            # Chapter-aligned RAGFlow source excerpts (if present)
+└── code_03_<topic>.py       # unit 3 (as needed; s01 / s03 etc. have three units)
 ```
 
 Each code file is independently runnable:

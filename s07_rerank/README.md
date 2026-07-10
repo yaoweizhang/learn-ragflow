@@ -1,7 +1,30 @@
-# s07 重排序 (Rerank)
+# s07 重排序 (Rerank) — Cross-encoder 把 top-N 重排成 top-K
 
 > **章节定位**：RAG 在线链路的"精排器"——把 s06 召回的 top-N 候选再过一次 **cross-encoder**（BAAI/bge-reranker-base），按 token 级 cross-attention 的相关性分重排，挑出真正沾边的 top-k。
-> 本章节围绕 *BGE-reranker 本地精排* 这一层给出概念 / 问题 / MVP / 工业对照的完整弧线 —— 不引入 RankLLM 的 prompt 工程细节（那是另一种 LLM-as-rerank 路线），也不展开 ColBERT 的后期交互机制（那是另一种精度/效率折中）。
+>
+> **章节结构**：1 个 unit。用 BGE-reranker-base 做 cross-encoder 重打分，输入 s06 的 top-N 候选段（默认 10），输出 top-K（默认 3）精排结果。
+>
+> **scope 注意**：本章节围绕 *BGE-reranker 本地精排* 这一层给出概念 / 问题 / MVP / 工业对照的完整弧线——不引入 RankLLM 的 prompt 工程细节（那是另一种 LLM-as-rerank 路线），也不展开 ColBERT 的后期交互机制（那是另一种精度/效率折中）。
+
+---
+
+## 章节导航
+
+| Unit | 标题 | 入口 |
+| --- | --- | --- |
+| 01 | Cross-encoder 重打分（BGE-reranker） | [`code_01_cross_encoder_rerank.py`](code_01_cross_encoder_rerank.py) |
+
+跑法：
+
+```bash
+python s07_rerank/code_01_cross_encoder_rerank.py  # 输入 s06 top-N，输出 top-K 精排
+```
+
+依赖：`sentence-transformers`（BGE-reranker-base 模型，继承 s04）+ `FlagEmbedding` 兼容接口。
+
+样本输入：s06 输出的 top-10 候选段（来自两个样本文件）。
+
+---
 
 ## 一、什么是重排序 (Re-ranking)？
 
@@ -49,7 +72,7 @@ s06 / s07 的代码把所有事都写在一个文件里，但拆开看是两种*
 
 本章 MVP 只用第二行——**BGE-reranker 本地 cross-encoder**。ColBERT / RankLLM 留作扩展，生产代码把这四类统一抽象成 `RerankModel.Base` 的多 provider（Jina / Cohere / Voyage / Qwen / 本地 HF）。
 
-## 二、为什么要单独写一章 rerank？
+## 二、为什么单独写一章重排序
 
 `rerank(query, hits, top_k=3)` 调起来不到 20 行——`_reranker()` 一次、`compute_score` 一次、按分排序取前 k。看起来不值得单独一章。但把它扔进真实样本就会发现，**"bi-encoder 召回了对的 chunk"和"排序把对的 chunk 顶到第一"之间隔着一道悬崖**——这道悬崖由几类典型问题堆起来。
 
@@ -71,13 +94,7 @@ s06 / s07 的代码把所有事都写在一个文件里，但拆开看是两种*
 
 ## 三、怎么做？
 
-### 3.1 章节导航
-
-| Unit | 主题 | 它解决什么 |
-|---|---|---|
-| unit 01 — `code_01_cross_encoder_rerank.py` | BGE-reranker cross-encoder 精排 + BEFORE/AFTER 对比 | "bi-encoder 召回了对的 chunk，排序没顶上去" |
-
-### 3.2 跑起来
+### 3.1 跑起来
 
 ```bash
 pip install FlagEmbedding            # BGE-reranker 依赖
@@ -90,7 +107,7 @@ python s07_rerank/code_01_cross_encoder_rerank.py    # 跑 BEFORE/AFTER rerank (
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python s07_rerank/code_01_cross_encoder_rerank.py
 ```
 
-### 3.3 核心函数一览
+### 3.2 核心函数一览
 
 | 函数 | 文件 | 输入 | 输出 | 一句话解释 |
 |---|---|---|---|---|
@@ -101,7 +118,7 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python s07_rerank/code_01_cross_encoder_
 | `_hybrid_topk(docs, query, query_vec, dense_score_fn, k, alpha)` | `code_01_cross_encoder_rerank.py` | `(list, str, list, callable, int, float)` | `list[{text, source, page, chunk_id, dense, bm25, score}]` | 复制 s06 unit 02 的 hybrid_topk 公式（`α * vec + (1-α) * bm25_norm`）；self-contained 跑通 BM25+dense 召回 → rerank 对比 |
 | `main()` (unit 01) | `code_01_cross_encoder_rerank.py` | — | 打印 BEFORE/AFTER rerank top-3 | unit 01 演示入口，默认 query `"内存"`（EOFError 时兜底） |
 
-### 3.4 rerank 设计取舍
+### 3.3 rerank 设计取舍
 
 为什么 rerank 公式是 `_reranker().compute_score(pairs, normalize=True)` + 按分排序取前 k，而不是 token 级 attention mask / 多任务学习 / ColBERT 后期交互？几个常见取舍的折中：
 
@@ -111,7 +128,7 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python s07_rerank/code_01_cross_encoder_
 - **`use_fp16=False` vs `use_fp16=True`**：`FlagReranker` 默认 fp32，精度最高但显存占用也最高（~2GB）。**GPU + 显存紧** 时改 `use_fp16=True`，推理速度 ~2x 但精度损失 ~1%。本教程选 fp32 是因为 demo 在 CPU 上跑，fp16 反而更慢；**生产 GPU 请开 fp16**。
 - **`normalize=True` vs `normalize=False`**：`FlagReranker.compute_score` 默认输出是**原始 sigmoid logits**，范围 `[0, +∞)`；设 `normalize=True` 后会被 FlagEmbedding 内部映射到 `[0,1]`（具体公式是 sigmoid + 校准），跟 s06 的 cosine ∈ [0,1] 同一个量纲。**如果不归一，print 出来的 `rerank_score` 会显示 10+ 这样的数字**，看起来吓人但其实是 logits。
 
-### 3.5 如何切换到 RAGFlow 风格 rerank
+### 3.4 如何切换到 RAGFlow 风格 rerank
 
 加一种 rerank 策略（ColBERT / RankLLM / Cohere API）只要三步：
 
@@ -121,7 +138,7 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python s07_rerank/code_01_cross_encoder_
 
 不要在 `rerank` 里写 `if mode == "bge": ... elif mode == "colbert": ...` 之类分发——它会污染单一职责。`rerank` 只懂 BGE，`main()` 懂全 rerank 模式。本章 MVP 只跑 BGE，但接口形状留好了。
 
-### 3.6 实际跑出来的 rerank 形状
+### 3.5 实际跑出来的 rerank 形状
 
 把 unit 01 跑在仓库自带的 `samples/` 上，`rerank` 返回的命中结构长这样：
 
@@ -144,7 +161,7 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python s07_rerank/code_01_cross_encoder_
 
 **关键现象**：rerank 分和 s06 的 vec 分**不同步**——s06 把 BM25 字面命中冠军（`#4` 可靠性章节里顺带提到"内存"，`score=0.795`）排到第一，但 cross-encoder 觉得它只有 `rerank_score=0.527`（因为正文主题是"可靠性"，"内存"只是一行配置）；而纯"四、应用场景"章节虽然 `dense=0.545`，`rerank_score` 却给到 **0.664**——cross-encoder 看到它把"高密度计算"作为主题，跟 query "内存"的计算密度语义最沾边。这就是 **cross-encoder 比 bi-encoder 准的地方：它能看到具体词而不是被一个向量平均值糊弄**——bi-encoder 只看 `dense=0.590 vs 0.545` 这种几乎打平的数字，排不出"哪个才是真沾边"。
 
-### 3.7 跑出来是什么样
+### 3.6 跑出来是什么样
 
 Unit 01 的实测输出（`query='内存'`，`EOFError` 自动兜底时实际等价于 stdin 空输入 → `query='内存'`）：
 
@@ -259,20 +276,6 @@ query='内存', alpha=0.5 (BM25 + dense 等权融合)
 - **模型文件 ~1GB**：BGE-reranker-base 第一次跑会从 HuggingFace 下载约 1GB 模型权重；网络慢的话要等几分钟。生产部署通常提前 `huggingface-cli download` 或用模型仓库的 CDN。
 - **O(N) per-pair 成本**：cross-encoder 一次只看 1 个 `(query, chunk)` 对，不复用任何计算。N 个候选 = N 次 BERT forward ≈ N × 3ms；N=100 大概 300ms-1s，N=1000 直接 3-10s 不可接受。和 bi-encoder 的"一次编码、千万次 ANN"完全相反。
 - **小池子的天花板**：如果 bi-encoder 召回阶段就漏了真正相关的 chunk，cross-encoder 也救不回来 —— 精排只能重排已有候选。所以召回（recall）必须先高，再谈精排（precision）。
-
-### 对照 ragflow 怎么做的
-
-生产代码的 `_rerank_window(page_size, top)`（见 [`docs/reference/ragflow-notes/hybrid_retrieval.md`](../../docs/reference/ragflow-notes/hybrid_retrieval.md)）解决的是"分页和块拉取不对齐"这个真实生产 bug：
-
-```python
-window = math.ceil(64 / page_size) * page_size   # 向上取整到 page_size 整数倍
-```
-
-它强制把候选窗口**向上取整到 page_size 的整数倍**，让后端一次返回 `RERANK_LIMIT` 大小的 block、前端在内存里切片 `begin = global_offset % RERANK_LIMIT`。一个窗口公式同时控制 block fetch 和 page slice 两个偏移量，永远对齐。
-
-对照本 MVP：MVP 是"固定 topk=10"，根本没有分页概念。但本单元演示的"cross-encoder 在 ~50-100 候选上跑"的精排模式，正是生产代码 `_rerank_window` 把 64 候选作为目标池子的来源 —— 它把 ~64 当成 cross-encoder / LLM rerank 能吃的最大池子，超过就要再向上取整到 page_size 的整数倍保证分页对齐。本单元的 top-10 是 64 池子的子集，符合生产代码同样的"小池子精排"原则。
-
-参考：[`docs/reference/ragflow-notes/hybrid_retrieval.md`](../../docs/reference/ragflow-notes/hybrid_retrieval.md)
 
 ### 思考题
 

@@ -1,7 +1,10 @@
-# s08 Prompt 与生成 — 章节总览
+# s08 Prompt 与生成 — 让 LLM 带 `[i]` 角标引用答出来
 
-> **章节定位**: RAG 在线链路的"最后一公里"——把 s07 精排后的 top-3 hits 拼成一段 `<context>...</context>`,配一条规则化 prompt 调 LLM,生成**带 `[i]` 角标引用 + 拒答兜底**的答案。**没有 prompt 工程的 RAG,前面所有召回/精排的工作都会被 LLM 的"自由发挥"稀释掉——幻觉、不可信、不可验证是默认结果**。
-> **scope 注意**: 本章围绕 *prompt 模板 + 角标引用解析* 这一层展开,**核心是用 prompt 引导模型做带 `[i]` 角标的引用**,输出载体不是结构化数据,而是带 `citations` 列表的自然语言回答。
+> **章节定位**: RAG 在线链路的"最后一公里"——把 s07 精排后的 top-3 hits 拼成一段 `<context>...</context>`,配一条规则化 prompt 调 LLM,生成**带 `[i]` 角标引用 + 拒答兜底**的答案。
+>
+> **章节结构**: 1 个 unit。`code_01_prompt_template.py` 一次性讲完 prompt 模板 + 角标引用 + LLM 调用 + 拒答兜底。
+>
+> **scope 注意**: 本章围绕 *prompt 模板 + 角标引用解析* 这一层展开。**核心是用 prompt 引导模型做带 `[i]` 角标的引用**——没有 prompt 工程的 RAG,前面所有召回/精排的工作都会被 LLM 的"自由发挥"稀释掉,幻觉/不可信/不可验证是默认结果。
 
 ---
 
@@ -78,7 +81,7 @@ s08 的 `PROMPT` 常量是一个典型的**三段式结构**:
 
 ---
 
-## 二、为什么要单独写一章 prompt + 生成?
+## 二、为什么单独写一章 Prompt 与生成
 
 `_format_context(hits)` 调起来不到 10 行,`answer(question, hits)` 调 OpenAI 客户端也不到 20 行——加一起 30 行就能跑。看起来不值得单独一章。但把它放进生产样本就会发现,**"LLM 默认会怎么输出"和"我们需要 LLM 怎么输出"之间隔着一道悬崖**——这道悬崖由 3 类典型失败堆起来。
 
@@ -107,15 +110,9 @@ s08 的 `PROMPT` 常量是一个典型的**三段式结构**:
 
 ---
 
-## 三、怎么做?
+## 三、怎么做？
 
-### 3.1 章节导航
-
-| Unit | 主题 | 它解决什么 |
-|---|---|---|
-| [01_prompt_template](#unit-01--prompt-模板--llm-引用生成-code_01_prompt_templatepy) | Prompt 模板 + LLM 引用生成(`<context>` 注入 + `[i]` 角标 + 拒答兜底 + graceful skip) | "s07 给候选,LLM 该怎么输出可追溯的答案" |
-
-### 3.2 跑起来
+### 3.1 跑起来
 
 ```bash
 pip install openai                      # OpenAI 兼容 SDK(已在 requirements.txt)
@@ -135,7 +132,7 @@ unset LLM_API_KEY && python s08_prompt_generate/code_01_prompt_template.py
 # 走 graceful-skip:打印 top-3 hits + citations,text 标记为 [skipped: ...]
 ```
 
-### 3.3 核心函数一览
+### 3.2 核心函数一览
 
 | 函数 | 文件 | 输入 | 输出 | 一句话解释 |
 |---|---|---|---|---|
@@ -144,7 +141,7 @@ unset LLM_API_KEY && python s08_prompt_generate/code_01_prompt_template.py
 | `answer(question, hits)` | `code_01_prompt_template.py` | `(str, list[dict])` | `dict{text, citations}` | 调 OpenAI 兼容 LLM 生成答案,返回 `text`(剥掉 `<think>...</think>`)+ `citations`(命中的 source/page);无 `LLM_API_KEY` 时返回 `[skipped: ...]` |
 | `main()` (unit 01) | `code_01_prompt_template.py` | — | 打印 top-3 + answer + citations | unit 01 演示入口,self-contained(内联 chroma + s04 BGE embed + s06 hybrid + s07 rerank);默认 query `"内存"`(EOFError 时兜底) |
 
-### 3.4 prompt 设计取舍
+### 3.3 prompt 设计取舍
 
 为什么 `PROMPT` 是这 4 条硬约束、而不是别的?几个常见取舍的折中:
 
@@ -155,7 +152,7 @@ unset LLM_API_KEY && python s08_prompt_generate/code_01_prompt_template.py
 - **temperature=0 vs default**——s08 显式 `temperature=0` 让 LLM 走 greedy decoding,引用编号一致性显著好于 `temperature=0.7+`(实验数据:~95% 引用对 vs ~60%)。代价是答案多样性下降、生产场景如果需要"换种说法解释"得显式调 temperature。MVP 选 0 是为了 demo 引用稳定。
 - **graceful skip vs hard fail**——s08 的 `answer()` 在无 `LLM_API_KEY` 时返回 `[skipped: LLM_API_KEY not set]` + 仍然填好的 citations,**不抛异常、不退出**。pipeline 在没配 key 的环境下也能跑、只是 LLM 那一步 noop——开发本地裸跑验证 retrieval/rerank 没问题。生产上**应该 fail-fast**(无 key 直接报错,因为线上没 key 是配置事故不是预期状态),但教学 demo 走 graceful skip 让初学者少踩坑。
 
-### 3.5 如何切换到 RAGFlow 风格 prompt
+### 3.4 如何切换到 RAGFlow 风格 prompt
 
 加一种 prompt 策略(双 pass / sufficiency_check / 拒答分支)只要三步:
 
@@ -165,7 +162,7 @@ unset LLM_API_KEY && python s08_prompt_generate/code_01_prompt_template.py
 
 不要在 `answer` 里写 `if mode == "single": ... elif mode == "double": ...` 之类分发——它会污染单一职责。`answer` 只懂单段 PROMPT,`main()` 懂全 prompt 模式。本章 MVP 只跑单段,但接口形状留好了。
 
-### 3.6 实际跑出来的 prompt 形状
+### 3.5 实际跑出来的 prompt 形状
 
 把 unit 01 跑在仓库自带的 `samples/` 上,`PROMPT.format(...)` 返回的最终 prompt 长这样:
 
@@ -196,7 +193,7 @@ PROMPT.format(
 
 **关键现象**:`<context>` 块里的 `[1][2][3]` 编号跟 hits 的下标一一对应,LLM 看到的"第 N 条"就是 hits 列表里的第 N 个——`answer()` 返回时 citations 按**同一编号顺序**回填 source/page,**prompt-侧编号 ↔ code-侧 citations 完全对齐**。这就是为什么 `re.findall(r'\[(\d+)\]', text)` 能一个萝卜一个坑:prompt 里 `i=2` 对应 `hits[1]`,citations 里 `index=2` 也对应 `hits[1]`,三处一致。
 
-### 3.7 跑出来是什么样
+### 3.6 跑出来是什么样
 
 Unit 01 的实测输出(`query='内存'`,有 `LLM_API_KEY` 时):
 
