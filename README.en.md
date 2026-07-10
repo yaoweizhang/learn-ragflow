@@ -8,7 +8,7 @@ A hands-on, engineering-focused RAG (Retrieval-Augmented Generation) tutorial ai
 
 Two parallel tracks (双线并行):
 
-- **Left — build it**: each chapter ships a self-contained `sNN_topic/code.py` (30–80 lines); modify one line, see the output change, and validate "does a higher alpha give better recall?" in 5 minutes.
+- **Left — build it**: each chapter ships one `README.md` plus N descriptive `code_NN_<topic>.py` files at the chapter root (30–80 lines each); modify one line, see the output change, and validate "does a higher alpha give better recall?" in 5 minutes.
 - **Right — read source**: each chapter has a matching [`docs/reference/ragflow-notes/<topic>.md`](./docs/reference/ragflow-notes/) excerpting 5–15 lines of [RAGFlow](https://github.com/infiniflow/ragflow)'s production code with line numbers, commit pins, and "why this design" commentary.
 
 Every chapter contains:
@@ -26,7 +26,7 @@ cd learn-ragflow
 pip install -r requirements.txt
 cp .env.example .env       # then edit .env and set LLM_API_KEY / LLM_BASE_URL / LLM_MODEL
 python s00_concepts/units/01_what_is_rag/code.py        # Chapter 0, unit 1 — what is RAG (start here for the mental model)
-python s01_what_is_rag/units/01_naive_keyword/code.py
+python s01_what_is_rag/code_01_naive_keyword.py
 ```
 
 Requires Python 3.10+ and at least 8 GB RAM (16 GB recommended for BGE embeddings). GPU optional.
@@ -74,7 +74,7 @@ After working through this, you'll have **x-ray vision into LangChain / LlamaInd
 1. **Minimum runnable**: every chapter is "first write a 30-line toy" — running is the first goal; for production look at [`docs/reference/ragflow-notes/`](./docs/reference/ragflow-notes/) yourself.
 2. **Shared sample files**: the repo ships two fictional samples (`samples/server_whitepaper.pdf`, `samples/disclosure.docx`), reused across chapters for easy output comparison.
 3. **Env vars + single dep list**: 12 chapters share one `requirements.txt` and one `.env.example` — no setup pain.
-4. **Questions separated from answers**: each chapter's end-of-chapter "思考题" lives in a separate `thinking_answers.md`; try first, peek later.
+4. **Questions separated from answers**: each chapter's "思考题" sits at the bottom of its `README.md`; try first, peek later.
 
 ## Learning paths
 
@@ -87,12 +87,12 @@ The tutorial has two tracks — pick by your time budget:
 
 **Full path (10–12 hours):** s01 → s02 → ... → s12, one chapter at a time.
 
-- Each chapter takes 30–60 minutes: run `code.py` + modify `code.py` to see the change + read the matching `docs/reference/ragflow-notes/<topic>.md`.
+- Each chapter takes 30–60 minutes: run `code_NN_<topic>.py` + modify `code_NN_<topic>.py` to see the change + read the matching `docs/reference/ragflow-notes/<topic>.md`.
 - Focus is **design tradeoffs in each layer**; suitable for engineers planning to build, select, or extend a RAG system.
 
 ## Detailed outline
 
-The tutorial is split into **5 parts and 12 chapters**, each chapter shipping a self-contained runnable `sXX_topic/code.py`.
+The tutorial is split into **5 parts and 12 chapters**, each chapter shipping one `README.md` plus N descriptive `code_NN_<topic>.py` files at the chapter root.
 
 ### Part 0 — Concept primer
 
@@ -224,10 +224,20 @@ learn-ragflow/
 │   ├── server_whitepaper.pdf
 │   └── disclosure.docx
 ├── docs/                        # Design docs (not part of the tutorial runtime)
-│   ├── s00_concepts/            # RAG primer + docs/ usage
+│   ├── 00-intro/                # RAG primer + docs/ usage
 │   └── reference/
 │       └── ragflow-notes/       # RAGFlow source excerpts (one per chapter)
+├── s00_concepts/                # Chapter 0 (concept primer; keeps units/ subdir unlike s01-s12)
+│   ├── README.md
+│   └── units/
+│       ├── 01_what_is_rag/
+│       ├── 02_why_rag/
+│       └── 03_evolution/
 ├── s01_what_is_rag/             # Chapter 1
+│   ├── README.md
+│   ├── code_01_naive_keyword.py
+│   ├── code_02_vector_basics.py
+│   └── code_03_augmented_llm.py
 ├── s02_doc_loading/             # Chapter 2
 ├── ...
 └── s12_deployment/              # Chapter 12
@@ -235,33 +245,25 @@ learn-ragflow/
 
 ### Per-chapter layout
 
-Every chapter (`sXX_topic/`) follows the same shape:
+Every chapter (`sXX_topic/`) follows the same shape — one `README.md` plus N descriptive `code_NN_<topic>.py` files at the chapter root:
 
 ```
 sXX_topic/
-├── README.md              # Chapter entry: units nav table + this chapter's ragflow_notes parallel
-├── README.en.md
-├── thinking_answers.md
-├── code.py                # Aggregate entry: importlib loads units/NN/code.py (legacy entry kept)
-└── units/
-    ├── 01_xxx/code.py     # unit 1 (always present)
-    ├── 01_xxx/README.md   # four-part arc: what this is / run it / parallel ragflow / thinking exercises
-    └── 02_xxx/...         # unit 2 (as needed; ≤ 2 units per chapter)
+├── README.md                # Chapter entry: 4-part arc (what / why / how / thinking exercises)
+├── code_01_<topic>.py       # unit 1 (always present, 30–80 lines)
+├── code_02_<topic>.py       # unit 2 (as needed)
+├── code_03_<topic>.py       # unit 3 (as needed; s01/s03 etc. have three units)
+├── AUDIT.md                  # Historical audit of this chapter (kept)
+└── ragflow_notes/            # Chapter-aligned RAGFlow source excerpts (if present)
 ```
 
-Each unit is independently runnable:
+Each code file is independently runnable:
 
 ```bash
-python sXX_topic/units/01_xxx/code.py
+python sXX_topic/code_01_<topic>.py
 ```
 
-The legacy aggregate entry still works:
-
-```bash
-python sXX_topic/code.py   # equivalent to running unit 01 (importlib delegation)
-```
-
-> Python module identifiers can't start with a digit, so the chapter-root `code.py` uses `importlib.util.spec_from_file_location` to load files from `units/` — **not** `from units.NN_xxx.code import main` (that would be a `SyntaxError`).
+The 思考题 (thinking exercises) and answers are appended to the bottom of each chapter's `README.md`; no separate `thinking_answers.md`.
 
 ## Where to go next
 

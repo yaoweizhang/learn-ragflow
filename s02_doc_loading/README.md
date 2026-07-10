@@ -1,9 +1,7 @@
-# s02 文档加载 — 章节总览
+# s02 文档加载
 
-> **章节定位**：RAG 离线流水线的第一步——把 PDF / DOCX 这些**非结构化文档**读成结构化段落。  
-> **章节定位**：本章节围绕 *单文件加载* 这一层给出概念 / 问题 / MVP / 工业对照的完整弧线,**不引入 Unstructured / 多分块策略**(那些留到 s03 / s11)。
-
----
+> **章节定位**：RAG 离线流水线的第一步——把 PDF / DOCX 这些**非结构化文档**读成结构化段落。
+> 本章节围绕 *单文件加载* 这一层给出概念 / 问题 / MVP / 工业对照的完整弧线，**不引入 Unstructured / 多分块策略**（那些留到 s03 / s11）。
 
 ## 一、什么是文档加载？
 
@@ -48,13 +46,11 @@
 
 ETL 处理的是数据库表 / 日志，文档加载处理的是 PDF / DOCX。**目标都一样——把杂乱的原始数据清洗并对齐为适合后续检索和建模的标准化语料**。
 
----
-
 ## 二、为什么要单独写一章加载？
 
 `pypdf` 几行就能跑，`python-docx` 也是。看起来不值得单独成章。但把它扔进真实样本就会发现，30 行版本和生产级方案之间隔着一道悬崖——这道悬崖由几类典型问题堆起来：
 
-### 2.1 真实世界的问题（2-4 条典型）
+### 2.1 真实世界的问题
 
 1. **编码与乱码**——DOCX 在 Windows GBK 控制台打印时容易报 `UnicodeEncodeError`；老 PDF 用非 UTF-8 字符映射（如 GBK / Big5）直接出乱码；CJK 字体的 PDF 还可能因字体子集化丢失字符；
 2. **扫描件读不出文字**——`pypdf` 对纯图像页（扫描件、手机拍的合同）`extract_text()` 返回 `""`，整页被静默丢弃；
@@ -72,39 +68,33 @@ ETL 处理的是数据库表 / 日志，文档加载处理的是 PDF / DOCX。**
 
 这也是为什么我们不直接用 `Unstructured` / `PyMuPDF4LLM` 这类更"省心"的库——它们在底层解决了这些问题，但你看不到**哪些原本会出错、错在哪**。先见错误，再看修复，比直接用封装库学到的多。
 
----
-
 ## 三、怎么做？
 
 ### 3.1 章节导航
 
 | Unit | 主题 | 它解决什么 |
 |---|---|---|
-| [01_basic_load](./units/01_basic_load/README.md) | 最小可跑加载 (PDF + DOCX) | "统一 schema 是什么样" |
-| [02_failure_modes](./units/02_failure_modes/README.md) | 真实样本上的失败模式 | "为什么 unit 01 在 prod 不够" |
+| unit 01 — `code_01_basic_load.py` | 最小可跑加载 (PDF + DOCX) | "统一 schema 是什么样" |
+| unit 02 — `code_02_failure_modes.py` | 真实样本上的失败模式 | "为什么 unit 01 在 prod 不够" |
 
 ### 3.2 跑起来
 
 ```bash
 pip install pypdf python-docx
-python s02_doc_loading/units/01_basic_load/code.py
-python s02_doc_loading/units/02_failure_modes/code.py
-# 旧路径仍可用（聚合入口）:
-python s02_doc_loading/code.py
+python s02_doc_loading/code_01_basic_load.py
+python s02_doc_loading/code_02_failure_modes.py
 ```
 
 ### 3.3 核心函数一览
 
-s02 的代码非常薄，但每个函数都对应一种文件格式到统一 schema 的桥接：
-
 | 函数 | 文件 | 输入 | 输出 | 一句话解释 |
 |---|---|---|---|---|
-| `load_pdf(path)` | `units/01_basic_load/code.py` | `Path` (PDF) | `list[{text, page, source}]` | `pypdf.PdfReader` 逐页 `extract_text()`，跳过空页，page 从 1 起 |
-| `load_docx(path)` | `units/01_basic_load/code.py` | `Path` (DOCX) | `list[{text, page=None, source}]` | `python-docx.Document.paragraphs` 顺序读，仅保留非空段（**注意：表格不在内**） |
-| `main()` (unit 01) | `units/01_basic_load/code.py` | — | 打印段落数 + 片段 | 演示入口；unit 02 复用 `load_pdf` / `load_docx` |
-| `show_pdf_failure()` | `units/02_failure_modes/code.py` | — | 打印每页长度与首字 | 把 unit 01 的输出按页铺开，肉眼看出多栏错位 |
-| `show_docx_table_loss()` | `units/02_failure_modes/code.py` | — | 打印表内字符数 | 直接量化"被吞掉的表格字数" |
-| `main()` (unit 02) | `units/02_failure_modes/code.py` | — | 调用上面两个 + 引出 ragflow | unit 02 演示入口 |
+| `load_pdf(path)` | `code_01_basic_load.py` | `Path` (PDF) | `list[{text, page, source}]` | `pypdf.PdfReader` 逐页 `extract_text()`，跳过空页，page 从 1 起 |
+| `load_docx(path)` | `code_01_basic_load.py` | `Path` (DOCX) | `list[{text, page=None, source}]` | `python-docx.Document.paragraphs` 顺序读，仅保留非空段（**注意：表格不在内**） |
+| `main()` (unit 01) | `code_01_basic_load.py` | — | 打印段落数 + 片段 | 演示入口 |
+| `show_pdf_failure()` | `code_02_failure_modes.py` | — | 打印每页长度与首字 | 把 unit 01 的输出按页铺开，肉眼看出多栏错位 |
+| `show_docx_table_loss()` | `code_02_failure_modes.py` | — | 打印表内字符数 | 直接量化"被吞掉的表格字数" |
+| `main()` (unit 02) | `code_02_failure_modes.py` | — | 调用上面两个 + 引出工业解法 | unit 02 演示入口 |
 
 ### 3.4 schema 设计取舍
 
@@ -183,8 +173,6 @@ DOCX 第 1 段前 100 字: 青蓝科技股份有限公司 ...
 - `len(pdf) == 0`：PDF 是纯扫描件，`pypdf` 抽不出文字——见 §二.1 第 2 条。
 - `ModuleNotFoundError: No module named 'pypdf'`：`pip install pypdf python-docx` 后再跑。
 
----
-
 ## 四、选型与思考题
 
 ### 4.1 主流加载工具速览
@@ -213,4 +201,147 @@ DOCX 第 1 段前 100 字: 青蓝科技股份有限公司 ...
 
 **怎么检测某页是扫描件？给一个简单的启发式。**
 
-参考答案见 [`thinking_answers.md`](./thinking_answers.md)。
+答案见下方"思考题答案"。
+
+## unit 01 — 最小可跑加载：PDF + DOCX → 统一 schema  (`code_01_basic_load.py`)
+
+> 由浅入深第 1 步：把 PDF 和 DOCX 都读成 `list[{text, page, source}]`，作为后续章节的输入契约。
+> unit 02 会跑同一套函数到真实样本上，演示哪些情况它会崩。
+
+### 这是什么
+
+1. `load_pdf(path)` — `pypdf.PdfReader` 逐页 `extract_text()`，page 从 1 开始；
+2. `load_docx(path)` — `python-docx` 按 `paragraphs` 顺序读，仅保留非空段；
+3. 输出统一 `{text, page, source}` schema，page 在 DOCX 时为 `None`。
+
+### 跑起来
+
+```bash
+python s02_doc_loading/code_01_basic_load.py
+```
+
+输出：
+
+```
+PDF 段落数: 4, DOCX 段落数: 27
+PDF 第 1 段前 100 字: 紫光恒越 R3630 G5 双路机架式服务器 产品白皮书 ...
+DOCX 第 1 段前 100 字: 青蓝科技股份有限公司 ...
+```
+
+### 它做对了什么
+
+- **零依赖外的最小化**：`pypdf` + `python-docx` 覆盖最常见两种格式；
+- **schema 一致**：PDF 和 DOCX 喂给下游切块器时是同一种形状。
+
+### 它做错了什么
+
+- **DOCX 表格被吃掉**：`Document.paragraphs` 不含 `tables`，所有表内文字都丢；
+- **PDF 多栏排版错位**：双栏 PDF 抽出来的文本会把左栏底部接到右栏顶部；
+- **扫描件完全没救**：`extract_text()` 对图片型 PDF 返回空字符串。
+
+### 对照 ragflow 怎么做的
+
+RAGFlow 的 `deepdoc/parser/` 是按文件类型 dispatcher：
+
+- `deepdoc/parser/pdf_parser.py` 用 `pdfplumber` + 自训练 XGBoost 模型（30 特征，详见 [`docs/reference/ragflow-notes/deepdoc_chunking.md`](../../docs/reference/ragflow-notes/deepdoc_chunking.md)）做版面分析，能识别多栏 / 表格 / 图；
+- `deepdoc/parser/docx_parser.py` 同时处理 `paragraphs` 和 `tables`；
+- `deepdoc/parser/utils.py` 里有 VisionParser 兜底扫描件。
+
+参考：[`docs/reference/ragflow-notes/deepdoc_chunking.md`](../../docs/reference/ragflow-notes/deepdoc_chunking.md)
+
+### 思考题
+
+**为什么 PDF 输出会有 4 段（4 页）但 DOCX 输出 27 段？这是"段落"的语义不同吗？**
+
+提示：PDF 的"段" = 页（page 是结构边界）；DOCX 的"段" = `\n` 切分的人工段落。统一 schema 时要不要把"页"硬塞给 DOCX？
+
+## unit 02 — 真实样本上的失败模式  (`code_02_failure_modes.py`)
+
+> 由浅入深第 2 步：unit 01 在 toy 上能跑；放到真实 `samples/` 上会崩在哪？
+> 本单元定位问题 + 引出 ragflow 的工业解法。
+
+### 这是什么
+
+把 unit 01 的 `load_pdf` / `load_docx` 喂给真实样本 (`samples/server_whitepaper.pdf` 4 页 + `samples/disclosure.docx` 27 段)，把"看不见的损失"暴露出来：
+
+1. **PDF 多栏错位**——`pypdf.extract_text()` 在双栏 PDF 上按字符位置扫，左右栏会交错；
+2. **DOCX 表格丢失**——`python-docx.Document.paragraphs` 不含 `Document.tables`，表内所有文字静默丢弃。
+
+### 跑起来
+
+```bash
+python s02_doc_loading/code_02_failure_modes.py
+```
+
+输出片段：
+
+```
+[PDF] 4 页抽出的段落 ...
+  page= 1 len= 612 | 紫光恒越 R3630 G5 双路机架式服务器 产品白皮书 ...
+  page= 2 len=1024 | 产品型号 产品白皮书 文档版本 ...
+  ...
+
+[DOCX] paragraphs(非空)=27, tables=3, 表格内总字符=572
+  → unit 01 的 load_docx 只读 paragraphs，丢失 572 字符（3 张表）
+```
+
+### 它做对了什么
+
+- **暴露问题**：列出真实样本上的"丢失字符数"和"页段错位"，给后续章节优化提供量化目标；
+- **解法对照**：每个失败都点名 ragflow 的对应模块。
+
+### 它做错了什么
+
+- 暂时什么也没"做对"——它的目的就是展示 unit 01 在 prod 上的失败。下一步要么换 loader (s11 表格抽取) 要么换格式（structured extraction）。
+
+### 对照 ragflow 怎么做的
+
+`deepdoc/parser/` 下的两个核心模块直接对应本单元的两个失败：
+
+- **`deepdoc/parser/pdf_parser.py`** —— `RAGFlowPdfParser` 内部用 `pdfplumber` + XGBoost 30 特征模型识别多栏 / 表格 / 图，详见 [`docs/reference/ragflow-notes/deepdoc_chunking.md`](../../docs/reference/ragflow-notes/deepdoc_chunking.md)；
+- **`deepdoc/parser/docx_parser.py`** —— `DocxParser` 同步遍历 `paragraphs` + `tables`，每段打 `section` 标签（`text` / `table` / `image`）；
+- **`deepdoc/parser/utils.py`** —— VisionParser 用 OCR 模型兜底扫描件（s11 会更细讲）。
+
+参考：[`docs/reference/ragflow-notes/multimodal_parsing.md`](../../docs/reference/ragflow-notes/multimodal_parsing.md)
+
+### 思考题
+
+**如果你的真实语料里 80% 是扫描件 PDF，unit 01 的链路对它们返回空字符串。要不要给 unit 01 加一层 OCR 兜底？还是放到 s11 单独做？**
+
+提示：放 unit 01 会让所有用户都跑 OCR 模型，下载 1GB+；放 s11 是"按需启用"，更工程化。答案见下方"思考题答案"。
+
+## 思考题答案
+
+### §四 Q: 怎么检测某页是扫描件？给一个简单的启发式
+
+**启发式**：
+
+```python
+def is_scanned_page(page, min_chars: int = 20) -> bool:
+    text = (page.extract_text() or "").strip()
+    return len(text) < min_chars
+```
+
+判定逻辑 —— 对任意一页：
+
+1. **空字符串 / 纯空白**：`extract_text()` 返回 `""` 或全是空白，说明 PDF 这一页根本没有文本层（典型扫描件）。
+2. **字符数过少**：返回了文字但远低于一页该有的信息量（比如 < 20 字符），也是可疑扫描件 —— 可能 PDF 是图片里嵌了几个 OCR 残留字符。
+3. 进阶一点可加"图像占比"：如果 `page.images` 数量很多、且 `image.width × image.height` 占页面面积 > 80%，更倾向于扫描件。
+
+判定出来后，**对扫描件不要直接 `skip`，而是标记成 `needs_ocr=True`**，把这一页送进 OCR 流水线（RAGFlow 的 `VisionParser` 就是这么做的 —— 见 [`docs/reference/ragflow-notes/deepdoc_pdf_parsing.md`](../../docs/reference/ragflow-notes/deepdoc_pdf_parsing.md)）。
+
+**为什么这个启发式管用但不够**：靠"字符数"会误伤"文字确实很少的页面"（比如封面、目录页、纯图说明页）。生产里 RAGFlow 用的是更稳的"图像 → OCR → 版面识别"流水线 —— 这正是 **s11 多模态** 会展开的内容：扫描件检测 + OCR + 版面分析是一个完整子任务，不能用一行启发式糊弄过去。
+
+### unit 02 Q: 80% 扫描件，要不要给 unit 01 加 OCR 兜底？
+
+**推荐：放 s11，按需启用，不要进 unit 01。**
+
+判断依据：
+
+1. **资源**：OCR 模型（PaddleOCR / Tesseract / GOT-OCR2）单个 50MB~1GB+；unit 01 是入门骨架，强迫用户下模型 = 把"我想先看看 RAG"的人挡在门外。
+2. **依赖复杂度**：OCR 涉及 GPU/CPU 推理、字体映射、CJK 识别率调参——这些都是独立子任务，不是 unit 01 应承担的复杂度。
+3. **可观测性**：unit 02 的真实样本上有 80% 扫描件 → 这就是量化结果。它本身已经在告诉你"**unit 01 在这种语料上不够用**，该跳到 s11"。**该跳就跳**，不要在 unit 01 上贴膏药。
+
+RAGFlow 的设计印证了这点：`VisionParser` 在 `deepdoc/parser/utils.py` 里是**单独的 dispatcher**——只有当 `RAGFlowPdfParser` 判定某页是扫描件时才会被调用，主路径不被 OCR 阻塞。
+
+**实操建议**：你跑 unit 02 看到扫描件率高 → 直接到 s11，看 RAGFlow 的 `VisionParser` 怎么集成；不需要也不应该改 unit 01。
