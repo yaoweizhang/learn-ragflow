@@ -123,28 +123,28 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 - PDF / DOCX parsing into a unified `list[{text, page, source}]`
 - Three real-world problems: scanned PDFs, tables, headers / footers
 - Production reference: [`docs/reference/ragflow-notes/deepdoc_pdf_parsing.md`](./docs/reference/ragflow-notes/deepdoc_pdf_parsing.md) (`deepdoc/parser/` + VisionParser)
-- → [RAGFlow implementation](docs/reference/ragflow-notes/deepdoc_pdf_parsing.md)
+- → [RAGFlow implementation](./docs/reference/ragflow-notes/deepdoc_pdf_parsing.md)
 
 **Chapter 3 — Text chunking** &nbsp;[chapter details](./s03_chunking/)
 
 - Fixed character cap + sentence-boundary split (spec: ≤ 500 chars; sentence boundaries `(.。!?！？)`)
 - Three failure modes: tables, parent-child chunks, cross-paragraph references
 - Production reference: [`docs/reference/ragflow-notes/deepdoc_chunking.md`](./docs/reference/ragflow-notes/deepdoc_chunking.md) (`_concat_downward` / `naive_merge` / `hierarchical_merge`)
-- → [RAGFlow implementation](docs/reference/ragflow-notes/deepdoc_chunking.md)
+- → [RAGFlow implementation](./docs/reference/ragflow-notes/deepdoc_chunking.md)
 
 **Chapter 4 — Embedding** &nbsp;[chapter details](./s04_embedding/)
 
 - BGE local embedding (BAAI/bge-small-zh-v1.5, 512 dim, normalized)
 - OpenAI / Ollama providers optional
 - Production reference: [`docs/reference/ragflow-notes/embedding_routing.md`](./docs/reference/ragflow-notes/embedding_routing.md)
-- → [RAGFlow implementation](docs/reference/ragflow-notes/embedding_routing.md)
+- → [RAGFlow implementation](./docs/reference/ragflow-notes/embedding_routing.md)
 
 **Chapter 5 — Vector indexing** &nbsp;[chapter details](./s05_vector_index/)
 
 - Chroma persistent (`PersistentClient` + HNSW cosine)
 - Metadata filtering: `where={"source": "..."}`
 - Production reference: [`docs/reference/ragflow-notes/vector_indexing.md`](./docs/reference/ragflow-notes/vector_indexing.md) (ES / Infinity / OceanBase)
-- → [RAGFlow implementation](docs/reference/ragflow-notes/vector_indexing.md)
+- → [RAGFlow implementation](./docs/reference/ragflow-notes/vector_indexing.md)
 
 ### Part 3 — Retrieval and generation
 
@@ -153,21 +153,21 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 - Self-implemented BM25 + dense vectors + `alpha * vec + (1-α) * bm25` weighted fusion
 - `alpha` is a configurable knob (fact-style questions skew BM25; concept-style skew vector)
 - Production reference: [`docs/reference/ragflow-notes/hybrid_retrieval.md`](./docs/reference/ragflow-notes/hybrid_retrieval.md) (`FusionExpr` + `rerank_with_knn` + `rank_fea`)
-- → [RAGFlow implementation](docs/reference/ragflow-notes/hybrid_retrieval.md)
+- → [RAGFlow implementation](./docs/reference/ragflow-notes/hybrid_retrieval.md)
 
 **Chapter 7 — Reranking** &nbsp;[chapter details](./s07_rerank/)
 
 - BGE cross-encoder (`bge-reranker-base`) for precision rerank
 - `top_k` controls cross-encoder pair count (O(n) not O(n²))
 - Production reference: [`docs/reference/ragflow-notes/rerank.md`](./docs/reference/ragflow-notes/rerank.md) (`RerankModel.Base` multi-provider abstraction)
-- → [RAGFlow implementation](docs/reference/ragflow-notes/rerank.md)
+- → [RAGFlow implementation](./docs/reference/ragflow-notes/rerank.md)
 
 **Chapter 8 — Prompt & generation** &nbsp;[chapter details](./s08_prompt_generate/)
 
 - Prompt templates for citation `[i]`, refusal, footnote alignment
 - `_format_context` renders hits as `[i] (source#page) text`
 - Production reference: [`docs/reference/ragflow-notes/prompt_templates.md`](./docs/reference/ragflow-notes/prompt_templates.md) (dual-pass + multi-template)
-- → [RAGFlow implementation](docs/reference/ragflow-notes/prompt_templates.md)
+- → [RAGFlow implementation](./docs/reference/ragflow-notes/prompt_templates.md)
 
 **Chapter 9 — Agent & tools** &nbsp;[chapter details](./s09_agent_tools/)
 
@@ -175,7 +175,7 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 - Two tools: `retrieve(query)` + `finish(answer)`
 - Parsing fragility: `max_steps` + markdown-fence stripping + JSON retry
 - Production reference: [`docs/reference/ragflow-notes/agent_tools.md`](./docs/reference/ragflow-notes/agent_tools.md) (Canvas DAG + `bind_tools()`)
-- → [RAGFlow implementation](docs/reference/ragflow-notes/agent_tools.md)
+- → [RAGFlow implementation](./docs/reference/ragflow-notes/agent_tools.md)
 
 ### Part 4 — Advanced RAG
 
@@ -184,14 +184,14 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 - LLM-extracted `(head, rel, tail)` triples
 - `dict[head] → set[(rel, tail)]` 1-hop query
 - Production reference: [`docs/reference/ragflow-notes/graph_extraction.md`](./docs/reference/ragflow-notes/graph_extraction.md) (light path + `entity_resolution` two-stage pipeline)
-- → [RAGFlow implementation](docs/reference/ragflow-notes/graph_extraction.md)
+- → [RAGFlow implementation](./docs/reference/ragflow-notes/graph_extraction.md)
 
 **Chapter 11 — Multimodal** &nbsp;[chapter details](./s11_multimodal/)
 
 - pdfplumber for table extraction (row × column structure)
 - pytesseract OCR (`chi_sim+eng`)
 - Production reference: [`docs/reference/ragflow-notes/multimodal_parsing.md`](./docs/reference/ragflow-notes/multimodal_parsing.md) (vision model + multi-OCR backend)
-- → [RAGFlow implementation](docs/reference/ragflow-notes/multimodal_parsing.md)
+- → [RAGFlow implementation](./docs/reference/ragflow-notes/multimodal_parsing.md)
 
 ### Part 5 — Deployment and shipping
 
@@ -201,7 +201,7 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 - docker-compose (api + chroma persistent volume)
 - 503 fallback: clear error when index is missing, not a raw exception
 - Production reference: [`docs/reference/ragflow-notes/deployment.md`](./docs/reference/ragflow-notes/deployment.md)
-- → [RAGFlow implementation](docs/reference/ragflow-notes/deployment.md)
+- → [RAGFlow implementation](./docs/reference/ragflow-notes/deployment.md)
 
 ### Further reading (project-level reference, not part of the tutorial runtime — referenced from s01-s12)
 
