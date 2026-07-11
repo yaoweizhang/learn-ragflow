@@ -1,9 +1,6 @@
 # s09 Agent 与工具 — 把"要不要查"这个决策还给 LLM
 
-> **章节定位**:RAG 的"控制面"。前面 s01-s08 把"先检索 → 拼 context → 调 LLM"做成了一条硬管线;本章把"**要不要走这条管线**"这个决策**从代码搬到 LLM 自己手里**——用 ReAct 循环 + 2 个工具(`retrieve` / `finish`)让模型自己挑走哪条路。**没有 agent 的 RAG 只能"无差别先检索",不查文档的简单问题被强行检索污染、查得到但答错了的复杂问题又被一刀切拒答**——agent 是把"该查才查 / 该拒就拒"做对的关键。
->
-> **章节结构**:本章用 2 个代码文件走完"从单步工具调用到多步 ReAct 循环"——**code_01** 演示 LLM 能自己挑工具(1 轮),**code_02** 跑完完整 ReAct 循环(`max_steps=5` 兜底 + JSON 失败反馈)。
-> **scope 注意**:本章实现是**手写 ReAct 循环**——system prompt 里塞工具描述 + `Thought/Action/ActionInput` 三行式 prompt,正则抠 action,自己路由工具;不是 LangChain AgentExecutor 那种把 `tool_calls` 结构化字段当一等公民的工业实现。
+> **本章定位**:s09 是 RAG 的"控制面"。前面 s01-s08 把"先检索 → 拼 context → 调 LLM"做成了一条硬管线;本章把"**要不要走这条管线**"这个决策**从代码搬到 LLM 自己手里**——用 ReAct 循环 + 2 个工具(`retrieve` / `finish`)让模型自己挑走哪条路。详细定位见 s00 §1.4；RAGFlow 实现见本章末"## RAGFlow 实现"。
 
 ---
 
@@ -84,7 +81,7 @@ ActionInput: {"query": "R3630 G5 内存插槽数量"}
 
 本章只演示**最小 agent**——2 个工具 + 5 轮上限 + 手写 prompt 解析;LangChain AgentExecutor / RAGFlow `agent/component/agent_with_tools.py` 把这套结构化了(用 `tool_calls` 字段、async DAG、Categize 失败跳走),见 §四。
 
-### 1.2 真实世界的问题：为什么单独写一章
+### 1.2 真实世界的问题
 
 `_retrieve(query)` 调起来 30 行,`run_agent(question)` 写完 50 行——加一起不到 100 行就能跑出"LLM 自己决定查不查"。看起来不值得单独一章。但把它放进 s08 的"先检索再答"硬管线对照看会发现:**"模型默认会怎么决策"和"我们需要模型怎么决策"之间也隔着一道悬崖**——这道悬崖由 3 类典型失败堆起来。
 
@@ -342,6 +339,16 @@ Obs:     R3630 G5 配备 32 个 DIMM 内存插槽。
 - `UnicodeEncodeError: 'gbk' codec can't encode character`: Windows 控制台编码问题,跑前 `set PYTHONIOENCODING=utf-8`(s05-s09 同问题)。
 - `LLM 一路 retrieve 不 finish`: 撞 `max_steps=5` 兜底,见「思考题答案」第 1 题的 3 种解法(`max_steps` + prompt 软约束 + 重复 action 检测)。
 - `LLM 输出 `Action: retrieve` 但漏 ActionInput`: code_02 会把"原文"当 Observation 反馈回去让模型下一轮自愈;若连续失败,把 `TOOLS_DESC` 里的格式说明加粗(`**严格按以下格式**`)提升遵从度。
+
+---
+
+## RAGFlow 实现
+
+RAGFlow 的 Agent 在 `agent/` 目录下用 Canvas DAG 编排：每个节点是一个 tool 或 LLM 调用，节点之间用 `bind_tools()` 绑定依赖。Canvas 不强制按 linear 顺序执行，可以根据 query 类型走不同路径（FAQ / RAG / 工具调用）。
+
+**设计取舍**：Canvas 把"按 query 走不同路径"做成可视化 DAG，而不是 hard-coded 流程。开发者可以在 UI 里拖拽节点、加边、调权重，不改代码就能调整 agent 行为。s09 toy 的 ReAct 循环是单线直连版，Canvas 是它的可视化升级。
+
+详细摘录与 5-15 行 "为什么这样写" 的分析见 [`docs/reference/ragflow-notes/agent_tools.md`](../docs/reference/ragflow-notes/agent_tools.md)。
 
 ---
 

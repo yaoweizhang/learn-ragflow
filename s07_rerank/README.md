@@ -1,10 +1,6 @@
 # s07 重排序 (Rerank) — Cross-encoder 把 top-N 重排成 top-K
 
-> **章节定位**：RAG 在线链路的"精排器"——把 s06 召回的 top-N 候选再过一次 **cross-encoder**（BAAI/bge-reranker-base），按 token 级 cross-attention 的相关性分重排，挑出真正沾边的 top-k。
->
-> **章节结构**：1 个代码文件。用 BGE-reranker-base 做 cross-encoder 重打分，输入 s06 的 top-N 候选段（默认 10），输出 top-K（默认 3）精排结果。
->
-> **scope 注意**：本章节围绕 *BGE-reranker 本地精排* 这一层给出概念 / 问题 / MVP / 工业对照的完整弧线——不引入 RankLLM 的 prompt 工程细节（那是另一种 LLM-as-rerank 路线），也不展开 ColBERT 的后期交互机制（那是另一种精度/效率折中）。
+> **本章定位**：s07 是 RAG 在线链路的"精排器"——把 s06 召回的 top-N 候选再过一次 **cross-encoder**（BAAI/bge-reranker-base），按 token 级 cross-attention 的相关性分重排，挑出真正沾边的 top-k。详细定位见 s00 §1.4；RAGFlow 实现见本章末"## RAGFlow 实现"。
 
 ---
 
@@ -42,7 +38,7 @@ python s07_rerank/code_01_cross_encoder_rerank.py  # 输入 s06 top-N，输出 t
             段级语义对齐(粗)                          token 级 cross-attention(精)
 ```
 
-把它放进 RAG 全景看：**s07 是把 s06 的 top-N 命中再过一道 cross-attention，挑出真正相关的 top-k**。s05 落盘索引、s06 拉回候选、s07 在小池子上精排、s08 拼 Prompt 喂 LLM 生成。**没有 rerank 的 RAG 通常 top-1 精度只有 60-70%，加上 cross-encoder rerank 能顶到 80-90%**——这是工业 RAG 几乎必加 rerank 的根因。
+把它放进 RAG 全景看：**s07 是把 s06 的 top-N 命中再过一道 cross-attention，挑出真正相关的 top-k**。s05 落盘索引、s06 拉回候选、s07 在小池子上精排、s08 拼 Prompt 喂 LLM 生成。**没有 rerank 的 RAG 通常 top-1 精度只有 60-70%，加上 cross-encoder 重排序 能顶到 80-90%**——这是工业 RAG 几乎必加 rerank 的根因。
 
 #### Cross-encoder vs Bi-encoder：两条性质相反的通道
 
@@ -72,7 +68,7 @@ s06 / s07 的代码把所有事都写在一个文件里，但拆开看是两种*
 
 本章 MVP 只用第二行——**BGE-reranker 本地 cross-encoder**。ColBERT / RankLLM 留作扩展，生产代码把这四类统一抽象成 `RerankModel.Base` 的多 provider（Jina / Cohere / Voyage / Qwen / 本地 HF）。
 
-### 1.2 真实世界的问题：为什么单独写一章
+### 1.2 真实世界的问题
 
 `rerank(query, hits, top_k=3)` 调起来不到 20 行——`_reranker()` 一次、`compute_score` 一次、按分排序取前 k。看起来不值得单独一章。但把它扔进真实样本就会发现，**"bi-encoder 召回了对的 chunk"和"排序把对的 chunk 顶到第一"之间隔着一道悬崖**——这道悬崖由几类典型问题堆起来。
 
@@ -255,6 +251,16 @@ query='内存', alpha=0.5 (BM25 + dense 等权融合)
 - `UnicodeEncodeError: 'gbk' codec can't encode character`：Windows 控制台编码问题，跑前 `set PYTHONIOENCODING=utf-8`（s05 / s06 / s07 同问题）。
 - `rerank_score > 1` 或 `< 0`：`FlagReranker(..., normalize=False)` 默认输出是 logits 不是概率，设 `normalize=True` 让它映射到 `[0,1]`。
 - `rerank 跑 5 分钟不出结果`：`_reranker()` 没缓存住 / 每次新进程——检查 `@lru_cache(maxsize=1)` 是否还在，或者是不是被多线程调用（lru_cache 不跨进程）。
+
+---
+
+## RAGFlow 实现
+
+RAGFlow 的重排序在 `rag/llm/rerank_model.py`：抽象 `RerankModel.Base`，provider 包括 BGE-reranker / Cohere / Jina / 自部署 cross-encoder，统一签名 `rerank(query: str, docs: list[str], top_k: int) -> list[(doc, score)]`。`.env` 的 `RERANK_PROVIDER` 决定用哪个。
+
+**设计取舍**：与 embedding 路由同样的 provider 抽象，避免散弹式判断。同时 `top_k` 是 rerank 后的最终返回数（不是 cross-encoder pair 数）——cross-encoder 要对 query + N 个 doc 算 N 次相似度（O(N)），不是 O(N²)。
+
+详细摘录与 5-15 行 "为什么这样写" 的分析见 [`docs/reference/ragflow-notes/rerank.md`](../docs/reference/ragflow-notes/rerank.md)。
 
 ---
 

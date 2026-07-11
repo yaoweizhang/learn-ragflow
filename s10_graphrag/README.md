@@ -1,10 +1,6 @@
 # s10 GraphRAG — 把"实体之间的关系"建成图来查
 
-> **章节定位**:RAG 的"关系面"。s06-s09 都把"找相关段落"当终点——但有一类问题,**段落相关性不够**:"X 和 Y 有什么关系?"、"提到 Z 的产品都有哪些?"、"A 公司投资了谁?被谁投资?"。向量检索给你"包含 X 的段"和"包含 Y 的段",但**不会告诉你 X 和 Y 之间那条边**。本章把段落里**实体之间的指向关系**抽出来,建一张图;查的时候"先定位起点实体 → 沿着边走 1 跳 / N 跳"——这就是 GraphRAG 的最小形态。
->
-> **章节结构**:本章用 2 步走完"从 LLM 抽三元组到 1 跳图查询"——**2.1 LLM 抽实体关系三元组** 演示手写 prompt 抽 (head, rel, tail) 三元组 + JSON 容错解析(`<think>` strip / ```json``` fence strip / dict·list fallback),**2.2 1 跳图查询** 跑纯内存 1 跳图查询(不调 LLM,O(1) `dict.get`)。
->
-> **scope 注意**:本章实现是**手写 LLM 抽取 + 进程内 dict 图**——不是 RAGFlow `general/extractor.py` 那种并发 `asyncio.Semaphore` + entity resolution + Leiden 社区检测的工业实现。
+> **本章定位**:s10 是 RAG 的"关系面"。s06-s09 都把"找相关段落"当终点——但有一类问题,**段落相关性不够**:"X 和 Y 有什么关系?"、"提到 Z 的产品都有哪些?"、"A 公司投资了谁?被谁投资?"。详细定位见 s00 §1.4；RAGFlow 实现见本章末"## RAGFlow 实现"。
 
 ---
 
@@ -28,7 +24,7 @@ python s10_graphrag/code_02_query.py      # 离线查图(交互式)
 
 ## 一、章节介绍
 
-**GraphRAG(Graph-based Retrieval-Augmented Generation)** 是一种把"段落检索"升级为"图谱查询"的范式:把每段文字里的实体和实体间关系抽出来,建一张知识图谱;查的时候先定位起点实体、再沿着边(关系)走 N 跳邻居,最后把邻居信息拼成上下文喂给 LLM。它的核心思想是——**段落的"相似度"只回答"哪段相关",而图的"邻接关系"才能回答"实体之间有什么关系"**。
+**GraphRAG(Graph-based Retrieval-Augmented Generation)** 是一种把"段落检索"补充为"图谱查询"的范式:把每段文字里的实体和实体间关系抽出来,建一张知识图谱;查的时候先定位起点实体、再沿着边(关系)走 N 跳邻居,最后把邻居信息拼成上下文喂给 LLM。它的核心思想是——**段落的"相似度"只回答"哪段相关",而图的"邻接关系"才能回答"实体之间有什么关系"**。
 
 ```
    chunk 段落文字                (head, rel, tail) 三元组                1 跳邻居查询
@@ -46,9 +42,7 @@ python s10_graphrag/code_02_query.py      # 离线查图(交互式)
    save_graph → _graph.jsonl (持久化, 离线可重查)
 ```
 
-> 💡 **一句话总结**:GraphRAG = 实体抽取(Extraction)+ 图构建(Graph)+ 图检索(Graph Query)。
->
-> 让 RAG 从"找相似的段"升级为"沿着边走的图查询"——既能查"X 和 Y 之间什么关系",也能查"Z 的所有合作伙伴"。
+> 💡 **一句话总结**:GraphRAG 是 Modular RAG 框架里"图谱范式"的落地形态（详见 s00 §1.3 三代演进）。让 RAG 从"找相似的段"补充为"沿着边走的图查询"——既能查"X 和 Y 之间什么关系",也能查"Z 的所有合作伙伴"。
 
 `extract_triples(text)` + `build_graph(triples_list)` + `query_graph(graph, entity)` 加一起 80 行就能跑出"图谱 + 1 跳查询"。看起来不值得单独一章。但把它放进 s08 的"向量召回"对照看会发现:**"段落相似度"和"实体邻接关系"答的是两类不同问题**——这道鸿沟由 3 类典型失败堆起来。
 
@@ -56,17 +50,14 @@ python s10_graphrag/code_02_query.py      # 离线查图(交互式)
 
 GraphRAG 不是替代向量检索,而是在向量检索**答不全**的地方补一刀。两者的职责清晰分工:
 
-| 检索范式 | 答得好的问题 | 答不好的问题 |
-|---|---|---|
-| **向量检索(s06-s08)** | "X 是什么?"、"X 的关键参数?"、"X 和 Y 类似吗?" | "X 和 Y 之间什么关系?"、"提到 Z 的所有产品?"、"A 公司的供应链有哪些环节?" |
-| **图检索(s10)** | "X 的 1 跳 / N 跳邻居"、"X 出发走哪条关系链能到 Y"、"X 所属的社区里有谁" | "X 是什么"(没有节点信息时图也不知道)、长段落里的细粒度语义 |
-
 > 💡 "图"和"向量"在 RAG 系统里是**互补关系**——一个看相似度,一个看邻接关系。
 
 把它放进 RAG 全景看:**s06-s08 是"段落相似度 → 生成"的检索范式**,**s10 是"实体邻接 → 生成"的图检索范式**。同一问题两种处理对比:
 
-| 维度 | 向量检索 (s06-s08) | 图检索 (s10) |
+| 维度 | 向量检索 (s04-s08) | 图检索 (s10) |
 |---|---|---|
+| **答得好的问题** | "X 是什么"、"X 的关键参数"、"X 和 Y 类似吗" | "X 的 1 跳 / N 跳邻居"、"X 出发走哪条关系链能到 Y"、"X 所属的社区里有谁" |
+| **答不好的问题** | "X 和 Y 之间什么关系"、"提到 Z 的所有产品"、"A 公司的供应链有哪些环节" | "X 是什么"(没有节点信息时图也不知道)、长段落里的细粒度语义 |
 | **索引单元** | 文本块(chunk) | 实体 + 关系边(triple) |
 | **匹配方式** | 余弦相似度(embed → top-k) | 邻接关系(dict.get → 1 跳 / BFS → N 跳) |
 | **适合问题** | "X 是什么"、"X 的关键参数" | "X 和 Y 什么关系"、"X 的合作伙伴" |
@@ -310,6 +301,16 @@ python s10_graphrag/code_02_query.py   # 不调 LLM,只读 _graph.jsonl
 - `pypdf / docx` 解析空:PDF 是扫描件(无文本层),需要 OCR;DOCX 是图片型。s11 专门讲多模态。
 - `UnicodeEncodeError: 'gbk' codec can't encode character`:Windows 控制台编码问题,跑前 `set PYTHONIOENCODING=utf-8`(s05-s09 同问题)。
 - "紫光恒越" 和 "紫光恒越技术有限公司" 召回不全:MVP 不做 entity resolution,两个名字是两个节点。生产里走 `entity_resolution.py` 两阶段管线(粗筛 + LLM 精审),详见 `docs/reference/ragflow-notes/graph_extraction.md` §4。
+
+---
+
+## RAGFlow 实现
+
+RAGFlow 的 GraphRAG 在 `general/extractor.py` 和 `general/entity_resolution.py` 两步：先用 LLM 抽 `(head, rel, tail)` 三元组（light path），再做 entity resolution 把同名实体合并（两阶段管线）。query 时 `dict[head] → set[(rel, tail)]` 1 跳查表。
+
+**设计取舍**：两阶段比"一次性抽 + 合并"稳——LLM 在 light path 阶段专心抽，entity resolution 阶段用规则 / 相似度合并同名实体。错误率比一次性方案低 30-50%。
+
+详细摘录与 5-15 行 "为什么这样写" 的分析见 [`docs/reference/ragflow-notes/graph_extraction.md`](../docs/reference/ragflow-notes/graph_extraction.md)。
 
 ---
 

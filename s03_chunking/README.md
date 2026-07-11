@@ -1,10 +1,6 @@
 # s03 文本分块 — 把段落切成"长度可控、语义相对完整"的小块
 
-> **章节定位**：RAG 离线流水线的第二步——把 s02 吐出的"页 / 段"切成语义完整、长度可控、可被 embedding 索引的 `list[{text, chunk_id, page, source}]`。
->
-> **章节结构**：2 个脚本。01 跑通 ≤ 500 字符 cap + 句界切的最小骨架；02 把同一套规则喂给真实样本，把表格 / 父子块 / 跨段引用三类失败摆出来。
->
-> **scope 注意**：本章节围绕 *toy splitter* 这一层给出概念 / 问题 / MVP / 工业对照的完整弧线——不展开 LangChain `RecursiveCharacterTextSplitter` 的所有配置项，也不引入 SemanticChunker / Unstructured by_title（那些是工具选择，不是本章 MVP）。
+> **本章定位**：s03 是 RAG 离线流水线的第二步——把 s02 吐出的"页 / 段"切成语义完整、长度可控、可被 embedding 索引的 `list[{text, chunk_id, page, source}]`。详细定位见 s00 §1.4；RAGFlow 实现见本章末"## RAGFlow 实现"。
 
 ---
 
@@ -58,28 +54,15 @@ python s03_chunking/code_02_chunk_failures.py    # 把 toy 喂给真实样本，
 
 ### 1.3 真实世界的问题
 
-1. **句子被切断**——固定 500 字符 cap 直接砍到中间："今天我们学习 RAG。它包括检索、生成两部分。" → "今天我们学习 RAG。它包括检索、生" + "成两部分"。Embedding 把残句算成完整语义，检索时匹配到一半句子就以为命中了；
-2. **表格被切碎**——规格表 24LFF / 12LFF / 4SFF 横向排在一行，`pypdf.extract_text()` 抽出来是没换行的长串，500 字符 cap 在表格中间切断，每行 chunk 只看到一半字段；
-3. **chunk 太小浪费 embedding 预算**——"第四节 分季度财务数据"这种 10 字符的节标题单独成 chunk。embedding 一次调用几毫秒，单 chunk 没语义也要花钱；
-4. **chunk 太大稀释语义**——单 chunk 800 字符嵌入进 768 维向量，所有句子被平均成一个语义点，"内存"和"CPU"在向量空间里距离拉不开；
-5. **跨段落引用断裂**——"见上表""收入结构如下" 这种指代词单独成 chunk 后，召回的是指代词本身，而不是它指向的实体。
+分块在表格 / 父子块 / 跨段引用上有三类典型失败，本章 §三 用真实样本演示：
+
+1. **表格被切碎**——规格表 24LFF / 12LFF / 4SFF 横向排在一行，`pypdf.extract_text()` 抽出来是没换行的长串，500 字符 cap 在表格中间切断，每行 chunk 只看到一半字段；
+2. **父子块缺失**——"第四节 分季度财务数据"这种 10 字符的节标题单独成 chunk，用户问"Q3 营收"时检索命中的是标题，数字本身在 DOCX tables 里；
+3. **跨段引用断裂**——"见上表""收入结构如下" 这种指代词单独成 chunk 后，召回的是指代词本身，而不是它指向的实体。
 
 ### 1.4 为什么 500 字符是常见 cap
 
 embedding 模型的 `max_seq_len` 通常是 512 token（BGE 系列）或 8192 token（Mistral / BGE-large）。500 中文字符 ≈ 1000-1500 token——**MVP 已经超 BGE 的硬上限**。我们故意保留这个"超限"作为教学锚点：s04 的 embedding 任务会演示"长 chunk 被截断 → 语义稀释"。工业代码应该用 tiktoken 算 token 数（典型 cap=128 token）而不是字符数。
-
-### 1.5 与传统信息检索的对应
-
-分块本质上是 **"给非结构化文本建立索引单位"**，跟传统搜索里的"段落 / 句子"切分同构——只是单位要适配 embedding 模型，而不是适配 BM25 的词袋。
-
-每条都对应不同的工业级解法——版面识别、token-aware cap、parent-child 回填——这些是 s04+ 的扩展空间。**s03 的目标不是解决它们，而是把它们显式暴露出来，让你看到 toy 方案的边界**。
-
-这也是为什么本章用两个脚本递进：
-
-- **01**——跑通最小骨架（`chunk_by_paragraph` + `split_long_paragraph`，500 字符 cap + 中英句界切）；
-- **02**——把同一套函数喂给真实样本，把"看不见的损失"摆出来：表格切成 2 块时第 0 块停在 mid-row "8GB"、节标题变成 10 字符的孤岛、"收入结构如下"和后续数字段永远不见面。
-
-这也是为什么我们不直接用 LangChain `RecursiveCharacterTextSplitter`——它在底层解决了"递归找分隔符"，但你看不清每一步切在哪、为什么切。先见失败，再看修复，比直接用封装库学到的多。
 
 ---
 
@@ -338,6 +321,16 @@ BEFORE (过短的 header-only chunks):
 - `ModuleNotFoundError: No module named 'pypdf'`：s03 复用 s02 的 loader，先把 s02 跑通。
 - 输出块数 ≤ 输入段数：每个 PDF / DOCX 段几乎都被整段保留（因为大多数段 < 500 字符）；长段才会展开成多块。如果你的样本全是 1000 字符的段，输出块数会显著大于输入段数。
 - 输出顺序不对：检查 `len(out)` 的位置——`chunk_id` 里的 `p{n}` 是输出顺序而非输入顺序，确保 `len(out)` 在 append 后递增。
+
+---
+
+## RAGFlow 实现
+
+RAGFlow 的分块在 `deepdoc/chunker.py` 里有三种策略：`naive_merge`（按 token 数合并相邻 chunk）、`hierarchical_merge`（父子块结构 + 跨块引用）、`MarkdownHeaderSplitter`（按标题层级切）。s03 的 toy 只对应 `naive_merge` 的最朴素版本。
+
+**设计取舍**：`hierarchical_merge` 把"段落级检索 + 文档级上下文"分两层——子块用于精确检索（向量小、命中准），父块用于 LLM 生成（上下文全、不丢语义）。这是 RAGFlow 比朴素切块高一档的关键。
+
+详细摘录与 5-15 行 "为什么这样写" 的分析见 [`docs/reference/ragflow-notes/deepdoc_chunking.md`](../docs/reference/ragflow-notes/deepdoc_chunking.md)。
 
 ---
 

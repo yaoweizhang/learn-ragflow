@@ -1,10 +1,6 @@
 # s11 多模态 — 表格抽取 (pdfplumber) + OCR (tesseract)
 
-> **章节定位**:RAG 的"多模态面"。s02 用 `pypdf` 抽文本——遇到两类输入会翻车:① **结构化表格** 被拍扁成一段连续文字,行列结构丢失;② **扫描件 / 图片型 PDF** 根本没有文字层,`pypdf.extract_text()` 返回空字符串。这两类"非纯文本"输入是经典 RAG 链路里最容易塌的环节。本章把两类输入的最简可解跑通——用 `pdfplumber.extract_tables()` 把表格按行列原样抽成 `list[{"page", "rows"}]`,用 `pytesseract` + 系统 `tesseract` 二进制把图片里的字转成字符串。
->
-> **章节结构**:本章用 2 步走完"结构化表格 → 图像里的字"——**2.1 表格抽取 (pdfplumber)** 是 CPU-only 的纯 Python PDF 解析(5 秒内跑完),**2.2 OCR (pytesseract)** 是 Python 壳 + 系统二进制 OCR(中文 `chi_sim+eng` 兜底;缺 tesseract 二进制时优雅跳过)。
->
-> **scope 注意**:本章实现是**启发式画线 + 字符串平铺**——不是 RAGFlow `_table_transformer_job` 的视觉模型识别,也不是 RAGFlow `per-box OCR` 的 bbox 回写。
+> **本章定位**:s11 是 RAG 的"多模态面"。s02 用 `pypdf` 抽文本——遇到两类输入会翻车:① **结构化表格** 被拍扁成一段连续文字,行列结构丢失;② **扫描件 / 图片型 PDF** 根本没有文字层,`pypdf.extract_text()` 返回空字符串。详细定位见 s00 §1.4；RAGFlow 实现见本章末"## RAGFlow 实现"。
 
 ---
 
@@ -75,7 +71,7 @@ python s11_multimodal/code_02_ocr.py             # 输入图片路径跑 OCR(回
 每条失败模式都对应一种工业级解法,把它们显式暴露出来是 s11 的目标——s11 **不是解决它们,而是把它们显式展示**,让你看到纯 `pypdf` 文本 RAG 的边界。这跟 s10 把"向量召回答不全'实体之间关系'"显式对比是同一种思路——**叙述载体从"图函数 + 1 跳 query"换成"表格函数 + OCR 函数"**,但"先跑通 toy、再讲清楚 toy 在哪里会塌"的教学哲学是一致的。
 
 1. **表格被拍扁——"第三行第二列那个数字是多少"答不出来**——`pypdf` 按行扫文字流,碰到 `|` 分隔的伪表格就直接 `text + "\n"` 拼起来,**行列结构消失**。chunking 时如果把整张表当成一段喂给 embedding,召回段里"数字是 8TB"但模型读不出"这是内存那一格的容量"。**生产解法**:用 `pdfplumber.extract_tables()` 把表格按行列抽出来,按行 chunking 或拼成 markdown 表。RAGFlow 的 `_table_transformer_job` 走得更远——视觉模型识别 cell 边框再 per-cell OCR(见 §四)。
-2. **扫描件返回空——整份 PDF 一个字都查不到**——很多企业内部 PDF 是扫描件(合同、财务报告、盖章文件),`pypdf.extract_text()` 返回空字符串。整份文档进 embedding 阶段就变成"空索引"——用户问什么都召回不到。**生产解法**:检测到文本层为空时走 OCR fallback。RAGFlow 的 `_is_garbled_text` 检测阈值(`pdf_parser.py` L1559)触发后清空文本层、走 `recognize_batch`(见 §四)。
+2. **扫描件返回空——整份 PDF 一个字都查不到**——见 [s02 §1.3](../s02_doc_loading/README.md#一3-真实世界的问题) 已识别此问题；本章提供 OCR 解法。很多企业内部 PDF 是扫描件(合同、财务报告、盖章文件),`pypdf.extract_text()` 返回空字符串。整份文档进 embedding 阶段就变成"空索引"——用户问什么都召回不到。**生产解法**:检测到文本层为空时走 OCR fallback。RAGFlow 的 `_is_garbled_text` 检测阈值(`pdf_parser.py` L1559)触发后清空文本层、走 `recognize_batch`(见 §四)。
 3. **乱码判定误伤——纯文本 PDF 被强制走 OCR,跑 5–10 倍时间**——这是生产里更隐蔽的坑:subset 字体把 CJK 映射成 ASCII(PUA / font-encoding garbling),看起来是 ASCII 字符、其实是有毒文本层。`_is_garbled_text` 阈值过低会误判,**让一份纯文本 PDF 也跑 5–10 倍 OCR 时间**。**生产解法**:先用一个小样本试探乱码率,再决定要不要全量走 OCR。MVP 不做乱码检测——假设 PDF 是干净的,复杂场景切 RAGFlow(见 §四)。
 
 ### 1.3 表格的二维 schema
@@ -288,6 +284,16 @@ OCR skipped: 未提供图片路径
 - **OCR 中文乱码 / 错字**:99% 是没装 `chi_sim` 语言包;`lang="chi_sim+eng"` 跟系统装的语言包必须对得上。
 - **样例 PDF 抽不出表**:你的样本可能纯文字。试试换成有表格的,或者用 `pdfplumber` 打开后 `page.find_tables()` 看 `len()`。
 - **`EOFError` when piped**:OCR 那步的 `input()` 在 `< /dev/null` 管道下抛 EOFError——交互模式是主用模式;想脚本化跑就直接传图片路径或改为 `argparse`(MVP 不做)。
+
+---
+
+## RAGFlow 实现
+
+RAGFlow 的多模态在 `deepdoc/parser/` 里复用视觉模型：表格用 `pdfplumber` / `camelot` 抽行 × 列结构，扫描件用 `vision_parser.py`（视觉模型 + pytesseract 兜底），图片用 `vision_model` 描述生成。多 OCR backend 可切换（pytesseract / paddleocr / 商业 OCR API）。
+
+**设计取舍**：表格当一维文本处理就丢列结构；视觉模型能处理扫描件但贵——RAGFlow 的策略是"能 pdfplumber 抽就 pdfplumber，扫不出来才上 vision"。s11 toy 的"pdfplumber → 失败 → pytesseract"是这条主线的最朴素版。
+
+详细摘录与 5-15 行 "为什么这样写" 的分析见 [`docs/reference/ragflow-notes/multimodal_parsing.md`](../docs/reference/ragflow-notes/multimodal_parsing.md)。
 
 ---
 
