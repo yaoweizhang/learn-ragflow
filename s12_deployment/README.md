@@ -1,6 +1,6 @@
 # s12 部署 — Docker Compose 把 MVP 包成服务
 
-> **本章定位**:s12 是 RAG 的"上线面"。s08 的 `answer()` 只能在命令行跑 `python s08_prompt_generate/code_01_prompt_template.py`,然后交互式输入问题——s12 把这条链路包成一个 HTTP 服务,再装进容器里,**让同事 / 前端 / 其他服务用 `curl` 就能调**。整章有 4 个文件: 1 个 `code_01_fastapi_docker.py` 启动器 + 3 个 supporting files (`app.py` FastAPI + `Dockerfile` + `docker-compose.yml`)。详细定位见 s00 §1.4；RAGFlow 实现见本章末"## RAGFlow 实现"。
+> **本章定位**：s12 是 RAG 的"上线面"。s08 的 `answer()` 只能在命令行跑 `python s08_prompt_generate/code_01_prompt_template.py`，然后交互式输入问题——s12 把这条链路包成一个 HTTP 服务，再装进容器里，**让同事 / 前端 / 其他服务用 `curl` 就能调**。整章有 4 个文件：1 个 `code_01_fastapi_docker.py` 启动器 + 3 个 supporting files（`app.py` FastAPI + `Dockerfile` + `docker-compose.yml`）。详细定位见 s00 §1.4；RAGFlow 实现见本章末"## RAGFlow 实现"。
 
 ---
 

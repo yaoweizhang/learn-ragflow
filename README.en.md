@@ -104,7 +104,6 @@ The tutorial is split into **5 parts and 12 chapters**, each chapter shipping on
 - Concept map: RAG = retrieve + augment + generate (parametric vs. non-parametric knowledge)
 - Selection comparison: vs. long-context / vs. fine-tune (token cost + knowledge freshness + controllability)
 - Evolution arc: Naive RAG → Advanced RAG → Modular RAG, and which of the 12 chapters map to each stage
-- 3 concept-level mini demos (no LLM key, 3 minutes total)
 
 Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line will make sense.
 
@@ -239,14 +238,10 @@ learn-ragflow/
 │   ├── server_whitepaper.pdf
 │   └── disclosure.docx
 ├── docs/                        # Design docs (not part of the tutorial runtime)
-│   ├── 00-intro/                # RAG primer + docs/ usage
 │   └── reference/
 │       └── ragflow-notes/       # RAGFlow source excerpts (one per chapter)
-├── s00_concepts/                # Chapter 0 (concept primer)
-│   ├── README.md
-│   ├── code_01_what_is_rag.py
-│   ├── code_02_why_rag.py
-│   └── code_03_evolution.py
+├── s00_concepts/                # Chapter 0 (preface; 5-H2 prose, no code files)
+│   └── README.md
 ├── s01_what_is_rag/             # Chapter 1
 │   ├── README.md
 │   ├── code_01_naive_keyword.py
@@ -266,7 +261,7 @@ sXX_topic/
 ├── README.md                # Chapter entry: navigation + one H2 per code file
 ├── code_01_<topic>.py       # always present, 30–80 lines
 ├── code_02_<topic>.py       # as needed (most chapters have 2)
-└── code_03_<topic>.py       # as needed; s00 / s01 / s03 have 3
+└── code_03_<topic>.py       # as needed; s01 / s03 have 3
 ```
 
 Each chapter's `README.md` uses a uniform H2 skeleton that adapts to the code file count:
@@ -280,7 +275,10 @@ Each chapter's `README.md` uses a uniform H2 skeleton that adapts to the code fi
 - **+1、其他 / 选型与思考题** — mainstream approach quick-look + selection memo + this chapter's thinking exercises.
 - **思考题答案** (last H2) — all Q&A consolidated.
 
-Chapters with 1 code file (s07 / s08 / s12): 一/二/三/四/五 + 思考题答案. Chapters with 2: one extra H2. Chapters with 3 (s00 / s01 / s03): 7 H2 sections total.
+- 1-code-file chapters (s07 / s08 / s12): 一 + 二 (code_01) + 三 (RAGFlow 实现) + 四 (选型) + 五 (思考题答案) = 6 H2 sections.
+- 2-code-file chapters: 一 + 二 + 三 + 四 (RAGFlow 实现) + 五 (选型) + 六 (思考题答案) = 7 H2 sections.
+- 3-code-file chapters (s01 / s03): 一 + 二 + 三 + 四 + 五 (RAGFlow 实现) + 六 (选型) + 七 (思考题答案) = 7 H2 sections.
+- Chapter 0 (preface, no code files): 一/二/三/四/五 + 思考题答案 = 5 H2 sections.
 
 Each code file is independently runnable:
 

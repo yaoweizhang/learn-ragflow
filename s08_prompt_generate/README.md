@@ -1,6 +1,6 @@
 # s08 Prompt 与生成 — 让 LLM 带 `[i]` 角标引用答出来
 
-> **本章定位**: s08 是 RAG 在线链路的最后一环——把 s07 精排后的 top-3 hits 拼成 `<context>...</context>`,配一条规则化 prompt 调 LLM,生成**带 `[i]` 角标引用 + 拒答兜底**的答案。详细定位见 s00 §1.4；RAGFlow 实现见本章末"## RAGFlow 实现"。
+> **本章定位**：s08 是 RAG 在线链路的最后一环——把 s07 精排后的 top-3 hits 拼成 `<context>...</context>`，配一条规则化 prompt 调 LLM，生成**带 `[i]` 角标引用 + 拒答兜底**的答案。详细定位见 s00 §1.4；RAGFlow 实现见本章末"## RAGFlow 实现"。
 
 ---
 
