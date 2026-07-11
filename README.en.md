@@ -249,11 +249,23 @@ Every chapter (`sXX_topic/`) follows the same shape — one `README.md` plus N d
 
 ```
 sXX_topic/
-├── README.md                # Chapter entry: navigation + 4-part arc (what / why / how / thinking exercises)
-├── code_01_<topic>.py       # unit 1 (always present, 30–80 lines)
-├── code_02_<topic>.py       # unit 2 (as needed)
-└── code_03_<topic>.py       # unit 3 (as needed; s01 / s03 etc. have three units)
+├── README.md                # Chapter entry: navigation + one H2 per code file
+├── code_01_<topic>.py       # always present, 30–80 lines
+├── code_02_<topic>.py       # as needed (most chapters have 2)
+└── code_03_<topic>.py       # as needed; s00 / s01 / s03 have 3
 ```
+
+Each chapter's `README.md` uses a uniform H2 skeleton that adapts to the code file count:
+
+- **一、章节介绍** — what this chapter solves, why it's designed this way, where it sits in the RAG pipeline.
+- **二、<code_01 topic>：`code_NN_xxx.py`** — full coverage of one code file (H3 children: 这是什么 / 跑起来 / 它做对了什么 / 它做错了什么 / 思考题). Each code file gets its own H2 so the "what it is" and "how to use it" stay bundled — after reading one section, you know what the code does, how to run it, and where it breaks.
+- **三、<code_02 topic>：`code_NN_xxx.py`** (as needed) — same shape.
+- **四、<code_03 topic>：`code_NN_xxx.py`** (as needed) — same shape.
+- **+1、其他 / 整体设计取舍** — cross-file design decisions, schema shape, troubleshooting.
+- **+1、其他 / 选型与思考题** — mainstream approach quick-look + selection memo + this chapter's thinking exercises.
+- **思考题答案** (last H2) — all Q&A consolidated.
+
+Chapters with 1 code file (s07 / s08 / s12): 一/二/三/四/五 + 思考题答案. Chapters with 2: one extra H2. Chapters with 3 (s00 / s01 / s03): 7 H2 sections total.
 
 Each code file is independently runnable:
 

@@ -83,13 +83,11 @@ embedding 模型的 `max_seq_len` 通常是 512 token（BGE 系列）或 8192 to
 
 ---
 
-## 二、详细解说
-
-### 2.1 最小可跑分块：500 字符 cap + 句界切
+## 二、最小可跑分块：500 字符 cap + 句界切：[code_01_basic_chunk.py](code_01_basic_chunk.py)
 
 > 02 会跑同一套函数到真实样本上，展示哪些情况它会崩。
 
-#### 这是什么
+### 这是什么
 
 1. `split_long_paragraph(text, max_chars)` — lookbehind 正则在 `[.。!?！？]` 之后切，把超长段落切成 ≤ max_chars 的若干块；极端情况（无标点的规格表）按字符硬切兜底；
 2. `chunk_by_paragraph(docs, max_chars=500)` — 短段整段保留为 1 块，长段调 `split_long_paragraph` 后展开多块；每块带 `chunk_id = {source}#{page}#p{n}`；
@@ -97,7 +95,7 @@ embedding 模型的 `max_seq_len` 通常是 512 token（BGE 系列）或 8192 to
 
 入口：[`code_01_basic_chunk.py`](code_01_basic_chunk.py)
 
-#### 跑起来
+### 跑起来
 
 ```bash
 python s03_chunking/code_01_basic_chunk.py
@@ -117,14 +115,14 @@ server_whitepaper.pdf#2#p2 | 三、整机规格
 组件 规格 说明 ...
 ```
 
-#### 它做对了什么
+### 它做对了什么
 
 - **token-aware 边界**：按 `[.。!?！？]` 切而不是裸字符切，中英文段落都不会拦腰砍断句子；
 - **硬切兜底**：单句本身超过 `max_chars`（无标点规格表）按字符切，最坏情况下输出不超过 `2 * max_chars`；
 - **chunk_id 稳定可引用**：`{source}#{page}#p{n}` 形式让 s04+ 可以直接引用具体 chunk；
 - **零新依赖**：只用 `re` + `pathlib`。
 
-#### 它做错了什么
+### 它做错了什么
 
 - **表格被切碎**：`pypdf.extract_text()` 输出的表格是挤在一行的长串，句界切不到、只能硬切 → 每个 chunk 只看到半张表；
 - **父子块概念缺失**：500 字封顶的扁平列表，召回后 LLM 拿不到"完整语义单位"，回答"Q3 营收多少"只能看到切碎的片段；
@@ -132,18 +130,20 @@ server_whitepaper.pdf#2#p2 | 三、整机规格
 
 02 会在 `samples/` 上把这三类失败各跑一遍。
 
-#### 思考题
+### 思考题
 
 **如果一段就是 800 字但语义完整（比如一段财务披露），是该切还是不该切？**
 
 提示：固定字符切分解决不了这个问题——切了句子被拦腰截断；不切单 chunk 太长 embedding 模型失真（BGE `max_seq_len=512`，但超长块会稀释语义）。RAGFlow 的 parent-child 是答案：整段作为 parent 保留语义完整性，内部再切小 child 用于召回匹配，命中后把 parent 整体塞给 LLM。详见 02 的 `demo_parent_child`。
 
-### 2.2 chunker 在真实样本上的三类失败
+---
+
+## 三、chunker 在真实样本上的三类失败：[code_02_chunk_failures.py](code_02_chunk_failures.py)
 
 > 01 在 toy 上能跑；放到真实 `samples/` 上会崩在哪？
 > 本脚本定位 3 类问题 + 引出工业解法。
 
-#### 这是什么
+### 这是什么
 
 把 01 的 `chunk_by_paragraph` 喂给真实样本（`server_whitepaper.pdf` 4 页 + `disclosure.docx` 27 段），把"看不见的损失"暴露出来：
 
@@ -153,7 +153,7 @@ server_whitepaper.pdf#2#p2 | 三、整机规格
 
 入口：[`code_02_chunk_failures.py`](code_02_chunk_failures.py)
 
-#### 跑起来
+### 跑起来
 
 ```bash
 python s03_chunking/code_02_chunk_failures.py
@@ -198,20 +198,20 @@ BEFORE (过短的 header-only chunks,语义为零):
   id=disclosure.docx#None#p18 len=11 | '第四节 分季度财务数据'
 ```
 
-#### 它做对了什么
+### 它做对了什么
 
 - **暴露问题**：每个 demo 都打印 before/after 片段，让"为什么这种切法不够"肉眼可见；
 - **解法对照**：每个失败都点名工业方案的对应模块（`_concat_downward` / `naive_merge` / `hierarchical_merge` / `attach_media_context`）；
 - **量化损失**：表格切成 2 块时第 0 块停在 mid-row "8GB"——直接给 LLM 看它能不能拼回去；
 - **零新依赖**：只 import 01 + 标准库 + `python-docx`（已装）。
 
-#### 它做错了什么
+### 它做错了什么
 
 - 它是个 demo，不是 fix——没有真的把表拼回去、没有真的建父子树、没有真的回填 context；
 - 依赖 s02 中 01 的 loader（后者已丢 DOCX tables）；如果想看到表格里的季度数字，要么改 s02 loader 要么用 `python-docx` 直读；
 - 只测了 3 类失败，真实场景还有 (d) 页眉页脚污染 / (e) 多栏错位 / (f) 扫描件 OCR 缺失，那些是 s02 + s11 的事。
 
-#### 思考题
+### 思考题
 
 **如果只允许修 1 类失败，优先修哪类？为什么？**
 
@@ -219,9 +219,9 @@ BEFORE (过短的 header-only chunks,语义为零):
 
 ---
 
-## 三、怎么做？
+## 四、其他 / 整体设计取舍
 
-### 3.1 跑起来
+### 跑起来
 
 ```bash
 python s03_chunking/code_01_basic_chunk.py
@@ -230,7 +230,7 @@ python s03_chunking/code_02_chunk_failures.py
 
 依赖：`s03` 复用 `s02` 的 `load_pdf` / `load_docx`（`importlib` 按文件路径加载，避免把 `s02` 装成顶层包）。先把 s02 跑通，s03 才能跑。
 
-### 3.2 核心函数一览
+### 核心函数一览
 
 | 函数 | 文件 | 输入 | 输出 | 一句话解释 |
 |---|---|---|---|---|
@@ -242,7 +242,7 @@ python s03_chunking/code_02_chunk_failures.py
 | `demo_cross_ref()` | `code_02_chunk_failures.py` | — | 打印短 chunk 列表 + DOCX 原文 | 失败 c：跨段引用断裂 |
 | `main()` (02) | `code_02_chunk_failures.py` | — | 调用上面 3 个 demo + 引出工业解法 | 02 演示入口 |
 
-### 3.3 chunker 设计取舍
+### chunker 设计取舍
 
 为什么是"500 字符 cap + 句界切"而不是别的？这是几个常见取舍的折中：
 
@@ -255,7 +255,7 @@ python s03_chunking/code_02_chunk_failures.py
 
 如果你的语料以**表格 / 财报**为主，500 字符 cap 必须显著缩小（200 左右），否则每张表都会被拦腰切；如果你处理的是**小说 / 长文**，可以放宽到 1024 字符以保留叙事完整性。
 
-### 3.4 实际跑出来的 schema 形状
+### 跨代码文件集成 / 实际跑出来的 schema 形状
 
 把 `01` 跑在仓库自带的 `samples/` 上，得到的真实片段长这样：
 
@@ -279,7 +279,7 @@ python s03_chunking/code_02_chunk_failures.py
 
 下游 embedding（s04）拿到这个列表时，**不需要知道 chunk 是怎么来的**——它只关心 `text` 和 `chunk_id` 两个字段。这就是分块层把"边界检测"封装掉的价值：后续章节按统一接口消费即可。
 
-### 3.5 跑出来是什么样
+### 跑出来是什么样
 
 `01` 的预期输出（具体数字由 `samples/` 决定）：
 
@@ -333,7 +333,7 @@ BEFORE (过短的 header-only chunks):
   id=disclosure.docx#None#p18 len=11 | '第四节 分季度财务数据'
 ```
 
-**Troubleshooting**：
+### Troubleshooting
 
 - `ModuleNotFoundError: No module named 'pypdf'`：s03 复用 s02 的 loader，先把 s02 跑通。
 - 输出块数 ≤ 输入段数：每个 PDF / DOCX 段几乎都被整段保留（因为大多数段 < 500 字符）；长段才会展开成多块。如果你的样本全是 1000 字符的段，输出块数会显著大于输入段数。
@@ -341,9 +341,9 @@ BEFORE (过短的 header-only chunks):
 
 ---
 
-## 四、选型与思考题
+## 五、其他 / 选型与思考题
 
-### 4.1 主流分块工具速览
+### 主流分块工具速览
 
 下面这张表把社区常用的几类 chunker 按"边界检测 / 单位 / 是否版面感知 / 部署"列出来：
 
@@ -358,7 +358,7 @@ BEFORE (过短的 header-only chunks):
 
 我们的 toy `chunk_by_paragraph` 在边界检测上跟 LangChain 第二行同量级（句界 / 递归），在版面感知上是空白——这是为什么 02 必须显式暴露"表格切碎""父子块缺失"两类失败。
 
-### 4.2 选型速记
+### 选型速记
 
 - **教学 / 快速原型** → `chunk_by_paragraph` (本教程) 或 `RecursiveCharacterTextSplitter`；
 - **Markdown / 技术文档** → `MarkdownHeaderTextSplitter`（保留章节元数据）；
@@ -367,12 +367,13 @@ BEFORE (过短的 header-only chunks):
 - **复杂 PDF / 表格 / 多栏** → RAGFlow DeepDoc（4 层流水线，本地 + XGBoost 模型）；
 - **要先看清错误再选工具** → 用本章 `02` 的真实样本把损失量化，再决定要不要换。
 
-### 4.3 思考题
+### 思考题
 
 **如果一段就是 800 字但语义完整（比如一段财务披露），是该切还是不该切？**
 
 答案见下方"思考题答案"。
 
+---
 
 ## 思考题答案
 

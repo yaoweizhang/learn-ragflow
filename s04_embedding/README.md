@@ -87,19 +87,17 @@ BM25 处理"原词命中"，Embedding 处理"意思命中"——s06 会把两条
 
 ---
 
-## 二、详细解说
-
-### 2.1 本地 BGE Embedding (BAAI/bge-small-zh-v1.5)
+## 二、本地 BGE Embedding (BAAI/bge-small-zh-v1.5)：[code_01_local_bge.py](code_01_local_bge.py)
 
 > 02 会基于同样的 `EMBED_PROVIDER` 字典分发思路，把 openai / ollama 串进同一套接口。
 
-#### 这是什么
+### 这是什么
 
 `code.py` 提供一个 `embed_local(texts)` 函数，把任意字符串列表送进 `sentence-transformers` 加载的 `BAAI/bge-small-zh-v1.5`（默认模型名，可用 `EMBED_MODEL` 覆盖），模型跑完 `model.encode(..., normalize_embeddings=True)` 返回 `list[list[float]]`，每行是 512 维、长度 1 的单位向量。模型用 `@lru_cache(maxsize=1)` 缓存，第二次跑同一进程不重载。
 
 入口：[`code_01_local_bge.py`](code_01_local_bge.py)
 
-#### 跑起来
+### 跑起来
 
 ```bash
 python s04_embedding/code_01_local_bge.py
@@ -113,30 +111,32 @@ python s04_embedding/code_01_local_bge.py
 
 首次跑 local 会从 HF Hub 下载 ~100MB 模型到 `~/.cache/huggingface/hub/`；后续运行靠 `lru_cache` 直接命中内存模型，秒回。
 
-#### 它做对了什么
+### 它做对了什么
 
 - **离线 / 免 key**：不需要任何外部 API，第一行就能跑通；
 - **归一化**：所有向量落在单位球面上 → 内积 ≡ 余弦相似度，下游选点积 / L2 / cosine 哪种度量都对；
 - **模型小**：单文件 ~100MB，嵌入 4 个 chunk 在 CPU 上 < 1s，重跑靠 `lru_cache` 几乎瞬时。
 
-#### 它做错了什么
+### 它做错了什么
 
 - **只对中文友好**：`bge-small-zh-v1.5` 是中文专用模型，英文 / 代码 / 长文档混合输入时向量空间会失真——生产环境应按语种切模型、把每个 provider 的维度上限显式登记，避免错配；
 - **大 batch 缺 GPU**：CPU 上一次塞 1000+ 句会跑分钟级，需要 GPU 或 ONNX 量化才快；
 - **首次依赖网络**：HF Hub 下载 100MB+，离线 / 内网环境直接报错；生产通常在构建镜像时预下载并把 `HF_HOME` 指到挂载卷。
 
-#### 思考题
+### 思考题
 
 **为什么 BGE 输出的向量需要 `normalize_embeddings=True`？如果忘了归一化会怎样？**
 
 提示：归一化让"内积"和"余弦相似度"在数值上等价，下游用点积或 L2 都能直接比较；不归一化时短文本向量天然小、长文本向量天然大，会让检索结果被"长度"而非"语义"主导。BGE 训练时也按余弦相似度优化，忘了归一化相当于和训练目标错位。
 
-### 2.2 Provider 路由：EMBED_PROVIDER 字典分发
+---
+
+## 三、Provider 路由：EMBED_PROVIDER 字典分发：[code_02_provider_routing.py](code_02_provider_routing.py)
 
 > 把 01 的本地 BGE 思路扩展成"env-driven dispatcher"——同一接口后挂多个后端。
 > 与 01 不同，本脚本不 import 任何前序脚本，分发层独立。
 
-#### 这是什么
+### 这是什么
 
 `code.py` 暴露一个 `route(texts)`，按 `EMBED_PROVIDER` 环境变量选：
 
@@ -148,7 +148,7 @@ python s04_embedding/code_01_local_bge.py
 
 入口：[`code_02_provider_routing.py`](code_02_provider_routing.py)
 
-#### 跑起来
+### 跑起来
 
 ```bash
 # 默认 local,免 key
@@ -169,19 +169,19 @@ provider: local, dim: 512, count: 3
 [ollama] skipped, set EMBED_BASE_URL and run `ollama serve` to enable
 ```
 
-#### 它做对了什么
+### 它做对了什么
 
 - **同一接口三个后端**：调用方只 `route(texts)`，后端切换零代码改动；
 - **graceful fallback**：缺 key / ollama 没起时打印 `skipped, set env to enable`，不会让本地 demo 崩；
 - **env-only 配置**：切换 = 改一个 env 变量，不需要重新打包。
 
-#### 它做错了什么
+### 它做错了什么
 
 - **没 retry / 没 rate-limit**：openai 偶发 5xx / ollama 长连接 timeout 直接抛，单元外的 retry 还得自己写——生产环境应把所有异常包成统一的 `EmbeddingError`，调用方只看一种类型就能重试或换 provider；
 - **没 batched ollama fallback**：本实现逐文本 POST，N 个句子 = N 次请求；Ollama 原生支持 `inputs=[...]` 一把提交，缺批处理在大 batch 时延迟成倍放大；
 - **本地 BGE 仍依赖联网**：第一次 `SentenceTransformer(...)` 还会触发模型下载，路由层假设离线就废了。
 
-#### 思考题
+### 思考题
 
 **为什么 `_REGISTRY` 用字面量字典而不是 `if/elif` 链？RAGFlow 用 `inspect.getmembers` 自动扫的目的是什么？**
 
@@ -189,9 +189,9 @@ provider: local, dim: 512, count: 3
 
 ---
 
-## 三、怎么做？
+## 四、其他 / 整体设计取舍
 
-### 3.1 跑起来
+### 跑起来
 
 ```bash
 pip install sentence-transformers
@@ -212,21 +212,7 @@ EMBED_PROVIDER=ollama EMBED_BASE_URL=http://localhost:11434 \
   python s04_embedding/code_02_provider_routing.py
 ```
 
-### 3.2 核心函数一览
-
-| 函数 | 文件 | 输入 | 输出 | 一句话解释 |
-|---|---|---|---|---|
-| `embed_local(texts)` | `code_01_local_bge.py` | `list[str]` | `list[list[float]]` (512 维) | `sentence-transformers` 加载 BGE，输出已 L2 归一化的向量；模型用 `@lru_cache` 缓存 |
-| `main()` (01) | `code_01_local_bge.py` | — | 打印维度 + 块数 | 演示入口；读 samples/ 取 4 个 chunk 跑一遍 |
-| `_embed_local(texts)` | `code_02_provider_routing.py` | `list[str]` | `list[list[float]]` (512 维) | 02 独立实现的 local 分支——和 01 同款，故意不复用以便单测 |
-| `embed_openai(texts)` | `code_02_provider_routing.py` | `list[str]` | `list[list[float]]` (1536 维) | `openai.OpenAI` 走 OpenAI 兼容协议，读 `LLM_API_KEY` / `LLM_BASE_URL` |
-| `embed_ollama(texts)` | `code_02_provider_routing.py` | `list[str]` | `list[list[float]]` (依模型) | `requests` POST 到 `EMBED_BASE_URL/api/embeddings` |
-| `route(texts)` | `code_02_provider_routing.py` | `list[str]` | `(provider_name, vectors)` | 字典分发入口，按 `EMBED_PROVIDER` 选 backend |
-| `_openai_available()` | `code_02_provider_routing.py` | — | `bool` | 检测 `LLM_API_KEY` 是否存在；缺则 graceful skip |
-| `_ollama_available()` | `code_02_provider_routing.py` | — | `bool` | `GET /api/tags` 探活；缺则 graceful skip |
-| `main()` (02) | `code_02_provider_routing.py` | — | 打印三条后端的 status | 演示入口；逐一跑三个 provider 探活 |
-
-### 3.3 schema 设计取舍
+### 跨代码文件的 schema 设计取舍
 
 为什么 `embed()` 返回 `list[list[float]]` 而不是 `np.ndarray` 或 Pydantic 模型？几个常见取舍的折中：
 
@@ -237,7 +223,7 @@ EMBED_PROVIDER=ollama EMBED_BASE_URL=http://localhost:11434 \
 
 如果你的场景需要"每次返回带元数据"（比如 `[{vec, model, dim, took_ms}, ...]`），就在外层加一个 wrapper——但**保持 `embed()` 的签名是 `list[str] → list[list[float]]`**，不要把它升成 Pydantic 那种重型接口。toy 阶段越简单越好。
 
-### 3.4 如何扩展更多 provider
+### 如何扩展更多 provider
 
 加一个后端（比如 Cohere / Voyage / 智谱）只要三步：
 
@@ -247,7 +233,7 @@ EMBED_PROVIDER=ollama EMBED_BASE_URL=http://localhost:11434 \
 
 不要在 `route()` 里写 `if/elif` 分发——它会污染字典分发的简洁性，新加 provider 时 diff 噪声大、容易漏 case。生产代码用 `inspect.getmembers` 模式更进一步——连那行注册都省了，只在 import 时扫一遍类变量 `_FACTORY_NAME`。s04 用最朴素的字面量字典是同等思路的最小版。
 
-### 3.5 实际跑出来的向量形状
+### 实际跑出来的向量形状
 
 把 `01` 跑在仓库自带的 `samples/` 上，得到的真实片段长这样（用于对照"归一化后的向量是单位球面上的点"）：
 
@@ -268,7 +254,7 @@ vecs = embed_local(chunks)
 
 下游向量库（s05）拿到这 4×512 时，**不需要知道来源是 BGE 还是 OpenAI**——它只关心"每个 chunk 对应一行固定维度的浮点数"。这就是 schema 对齐的价值：**模型差异被吸收在 Embedding 层，后续章节不用再分情况处理**——只在你**重新切回另一个模型 embed**时，s05 的索引会告诉你"模型换了，要重建"。
 
-### 3.6 跑出来是什么样
+### 跨代码文件集成
 
 `01` 的预期输出（具体数字由 `samples/` 决定）：
 
@@ -288,7 +274,7 @@ provider: local, dim: 512, count: 3
 
 第二、三行的 "skipped" 是 **graceful fallback**——02 故意不抛异常，让你能在 demo 机器上跑通整条 demo 链，缺哪个后端就只缺哪个。设上 `LLM_API_KEY` 之后 `embed_openai` 才会真发请求，输出从 `skipped` 变成 `[openai] ok: provider=openai, dim=1536`。
 
-**Troubleshooting**：
+### troubleshooting
 
 - `ConnectionError` / `HF Hub unreachable`：内网 / 离线环境跑 01 会失败；构建镜像时预下载 `HF_HOME=/path/to/cache`，或 `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1` 强制走本地缓存。
 - `openai.AuthenticationError`：02 走 openai 分支时 `LLM_API_KEY` 没设或已过期；检查 `.env`。
@@ -297,9 +283,9 @@ provider: local, dim: 512, count: 3
 
 ---
 
-## 四、选型与思考题
+## 五、其他 / 选型与思考题
 
-### 4.1 主流 Embedding 工具速览
+### 主流 Embedding 工具速览
 
 下面这张表把社区常用的几类 Embedding 方案按"维度 / 是否需 key / 是否本地 / 典型尺寸"列出来，方便选型时快速对照：
 
@@ -314,7 +300,7 @@ provider: local, dim: 512, count: 3
 
 我们的 toy 方案（BGE-small-zh-v1.5）在"维度 / 是否本地 / 是否需 key"上只占第一行——能跑但不抗多语言。生产代码在生产里会选 BGE-m3 / text-embedding-3-large 之一作为 1024 / 3072 维的 default，**rerank 友好的 1024 维变体**在 MTEB 检索任务上常常不输 3072 维而省一半存储。
 
-### 4.2 选型速记
+### 选型速记
 
 - **要快、只要中文、零成本起步** → `bge-small-zh-v1.5`（本教程 demo）；
 - **要多语言、混合检索** → `bge-m3`，1024 维有 rerank-friendly 变体；
@@ -322,7 +308,7 @@ provider: local, dim: 512, count: 3
 - **要 rerank 配套** → 选 1024 维 BGE-m3 或 1024 维 Cohere multilingual，和 s07 的 BGE-reranker-large 维度对齐；
 - **要先看清每个后端边界条件再选** → 用本章 `02` 把 openai / ollama 都跑一遍，看清楚"什么 env 缺了就 graceful skip"。
 
-### 4.3 思考题
+### 思考题
 
 **为什么 BGE 输出的向量需要 `normalize_embeddings=True`？如果忘了归一化会怎样？**
 
