@@ -10,6 +10,7 @@ Two layers (双层):
 
 - **Main chapters**: each chapter ships one `README.md` plus N descriptive `code_NN_<topic>.py` files at the chapter root (30–80 lines each); modify one line, see the output change, and validate "does a higher alpha give better recall?" in 5 minutes.
 - **Source reference**: [`docs/reference/ragflow-notes/`](./docs/reference/ragflow-notes/) collects [RAGFlow](https://github.com/infiniflow/ragflow)'s 5–15 line production excerpts with line numbers and "why this design" commentary, organized by chapter at the repository top — read when you want to go deep, not duplicated in each chapter README.
+- **Industrial reference (default reading path)**: [RAGFlow](https://github.com/infiniflow/ragflow) is one of GitHub's highest-star open-source RAG engines, with each RAG-pipeline stage engineered as an independent, swappable module. This tutorial uses RAGFlow as its **sole** industrial reference — every chapter ends with a `## RAGFlow 实现` section excerpting RAGFlow's implementation at that layer, with detailed source analysis in [`docs/reference/ragflow-notes/`](docs/reference/ragflow-notes/). **ragflow-notes is not supplementary material — it's the second half of the learning path**.
 
 Every chapter contains:
 
@@ -47,6 +48,8 @@ This tutorial tears down the first two walls and builds a ladder to the third:
 - [`docs/reference/ragflow-notes/`](./docs/reference/ragflow-notes/) gives you **production code's real design** — [RAGFlow](https://github.com/infiniflow/ragflow) is one of GitHub's highest-star open-source RAG engines, has engineered every layer above, and reads cleanly.
 
 After working through this, you'll have **x-ray vision into LangChain / LlamaIndex / Dify** source — knowing what they abstract, why, when to trust them, and when to bypass and write your own.
+
+**Why focus on RAGFlow** — RAGFlow solves the core tension of industrial-grade RAG systems: every layer needs selection + every layer needs engineering. It abstracts "connect an embedding provider" into a factory pattern + provider registry; splits "PDF parsing" into per-file-type parsers + a dispatcher; turns "agent routing" into a visualizable DAG. These engineering insights are what every chapter's `## RAGFlow 实现` section is about — after running a 30-line toy, see what RAGFlow's 1000-line production code does to handle "invisible engineering".
 
 ## Audience
 
@@ -120,24 +123,28 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 - PDF / DOCX parsing into a unified `list[{text, page, source}]`
 - Three real-world problems: scanned PDFs, tables, headers / footers
 - Production reference: [`docs/reference/ragflow-notes/deepdoc_pdf_parsing.md`](./docs/reference/ragflow-notes/deepdoc_pdf_parsing.md) (`deepdoc/parser/` + VisionParser)
+- → [RAGFlow implementation](docs/reference/ragflow-notes/deepdoc_pdf_parsing.md)
 
 **Chapter 3 — Text chunking** &nbsp;[chapter details](./s03_chunking/)
 
 - Fixed character cap + sentence-boundary split (spec: ≤ 500 chars; sentence boundaries `(.。!?！？)`)
 - Three failure modes: tables, parent-child chunks, cross-paragraph references
 - Production reference: [`docs/reference/ragflow-notes/deepdoc_chunking.md`](./docs/reference/ragflow-notes/deepdoc_chunking.md) (`_concat_downward` / `naive_merge` / `hierarchical_merge`)
+- → [RAGFlow implementation](docs/reference/ragflow-notes/deepdoc_chunking.md)
 
 **Chapter 4 — Embedding** &nbsp;[chapter details](./s04_embedding/)
 
 - BGE local embedding (BAAI/bge-small-zh-v1.5, 512 dim, normalized)
 - OpenAI / Ollama providers optional
 - Production reference: [`docs/reference/ragflow-notes/embedding_routing.md`](./docs/reference/ragflow-notes/embedding_routing.md)
+- → [RAGFlow implementation](docs/reference/ragflow-notes/embedding_routing.md)
 
 **Chapter 5 — Vector indexing** &nbsp;[chapter details](./s05_vector_index/)
 
 - Chroma persistent (`PersistentClient` + HNSW cosine)
 - Metadata filtering: `where={"source": "..."}`
 - Production reference: [`docs/reference/ragflow-notes/vector_indexing.md`](./docs/reference/ragflow-notes/vector_indexing.md) (ES / Infinity / OceanBase)
+- → [RAGFlow implementation](docs/reference/ragflow-notes/vector_indexing.md)
 
 ### Part 3 — Retrieval and generation
 
@@ -146,18 +153,21 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 - Self-implemented BM25 + dense vectors + `alpha * vec + (1-α) * bm25` weighted fusion
 - `alpha` is a configurable knob (fact-style questions skew BM25; concept-style skew vector)
 - Production reference: [`docs/reference/ragflow-notes/hybrid_retrieval.md`](./docs/reference/ragflow-notes/hybrid_retrieval.md) (`FusionExpr` + `rerank_with_knn` + `rank_fea`)
+- → [RAGFlow implementation](docs/reference/ragflow-notes/hybrid_retrieval.md)
 
 **Chapter 7 — Reranking** &nbsp;[chapter details](./s07_rerank/)
 
 - BGE cross-encoder (`bge-reranker-base`) for precision rerank
 - `top_k` controls cross-encoder pair count (O(n) not O(n²))
 - Production reference: [`docs/reference/ragflow-notes/rerank.md`](./docs/reference/ragflow-notes/rerank.md) (`RerankModel.Base` multi-provider abstraction)
+- → [RAGFlow implementation](docs/reference/ragflow-notes/rerank.md)
 
 **Chapter 8 — Prompt & generation** &nbsp;[chapter details](./s08_prompt_generate/)
 
 - Prompt templates for citation `[i]`, refusal, footnote alignment
 - `_format_context` renders hits as `[i] (source#page) text`
 - Production reference: [`docs/reference/ragflow-notes/prompt_templates.md`](./docs/reference/ragflow-notes/prompt_templates.md) (dual-pass + multi-template)
+- → [RAGFlow implementation](docs/reference/ragflow-notes/prompt_templates.md)
 
 **Chapter 9 — Agent & tools** &nbsp;[chapter details](./s09_agent_tools/)
 
@@ -165,6 +175,7 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 - Two tools: `retrieve(query)` + `finish(answer)`
 - Parsing fragility: `max_steps` + markdown-fence stripping + JSON retry
 - Production reference: [`docs/reference/ragflow-notes/agent_tools.md`](./docs/reference/ragflow-notes/agent_tools.md) (Canvas DAG + `bind_tools()`)
+- → [RAGFlow implementation](docs/reference/ragflow-notes/agent_tools.md)
 
 ### Part 4 — Advanced RAG
 
@@ -173,12 +184,14 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 - LLM-extracted `(head, rel, tail)` triples
 - `dict[head] → set[(rel, tail)]` 1-hop query
 - Production reference: [`docs/reference/ragflow-notes/graph_extraction.md`](./docs/reference/ragflow-notes/graph_extraction.md) (light path + `entity_resolution` two-stage pipeline)
+- → [RAGFlow implementation](docs/reference/ragflow-notes/graph_extraction.md)
 
 **Chapter 11 — Multimodal** &nbsp;[chapter details](./s11_multimodal/)
 
 - pdfplumber for table extraction (row × column structure)
 - pytesseract OCR (`chi_sim+eng`)
 - Production reference: [`docs/reference/ragflow-notes/multimodal_parsing.md`](./docs/reference/ragflow-notes/multimodal_parsing.md) (vision model + multi-OCR backend)
+- → [RAGFlow implementation](docs/reference/ragflow-notes/multimodal_parsing.md)
 
 ### Part 5 — Deployment and shipping
 
@@ -188,6 +201,7 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 - docker-compose (api + chroma persistent volume)
 - 503 fallback: clear error when index is missing, not a raw exception
 - Production reference: [`docs/reference/ragflow-notes/deployment.md`](./docs/reference/ragflow-notes/deployment.md)
+- → [RAGFlow implementation](docs/reference/ragflow-notes/deployment.md)
 
 ### Further reading (project-level reference, not part of the tutorial runtime — referenced from s01-s12)
 
@@ -262,6 +276,7 @@ Each chapter's `README.md` uses a uniform H2 skeleton that adapts to the code fi
 - **三、<code_02 topic>：`code_NN_xxx.py`** (as needed) — same shape.
 - **四、<code_03 topic>：`code_NN_xxx.py`** (as needed) — same shape.
 - **+1、其他 / 整体设计取舍** — cross-file design decisions, schema shape, troubleshooting.
+- **+1、RAGFlow 实现** — excerpted RAGFlow production implementation for this layer (5–15 line key code + line numbers + design intent), contrasted with the toy.
 - **+1、其他 / 选型与思考题** — mainstream approach quick-look + selection memo + this chapter's thinking exercises.
 - **思考题答案** (last H2) — all Q&A consolidated.
 
@@ -283,11 +298,11 @@ After working through all 12 chapters, the natural next steps are:
 - **Swap chunker**: s03's `chunk_by_paragraph` is paragraph-based; try sentence + sliding-window or Markdown-heading-based splitting.
 - **Tune retrieval weights**: s06's `alpha` controls vector vs. BM25 weighting; build a 5–10 question eval set to pick the best value.
 - **Go to production**: s12 ships FastAPI + docker compose. Add Prometheus monitoring, Sentry error tracking, and an independent model server (vLLM / TGI) for scale.
-- **Read RAGFlow source (optional)**: see [`docs/reference/ragflow-notes/`](./docs/reference/ragflow-notes/) for chapter-aligned source excerpts; not on the default reading path.
+- **Read RAGFlow source**: see [`docs/reference/ragflow-notes/`](./docs/reference/ragflow-notes/) for chapter-aligned source excerpts; focus on **design intent**, not line-by-line memorization.
 
 ## Acknowledgements
 
-- [**RAGFlow**](https://github.com/infiniflow/ragflow) — primary industrial reference; see [`docs/reference/ragflow-notes/`](./docs/reference/ragflow-notes/) for chapter-aligned source excerpts. RAGFlow evolves, so excerpts may go stale.
+- [**RAGFlow**](https://github.com/infiniflow/ragflow) — primary industrial reference; see [`docs/reference/ragflow-notes/`](./docs/reference/ragflow-notes/) for chapter-aligned source excerpts. RAGFlow evolves, so excerpts may go stale — focus on **design intent**, not line-by-line memorization.
 - [**all-in-rag**](https://github.com/datawhalechina/all-in-rag) — sibling tutorial. The "project intro / motivation / audience / highlights / detailed outline" layout of this README borrows from its "content outline" organization.
 - [**learn-claude-code**](https://github.com/shareAI-lab/learn-claude-code) — inspiration for the "minimal runnable MVP per chapter" format.
 - [**BGE models**](https://github.com/FlagOpen/FlagEmbedding) (BAAI) — default embedding and reranker.
