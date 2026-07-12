@@ -250,6 +250,16 @@ RAGFlow 的文档解析在 `deepdoc/parser/` 目录下：PDF 走 `pdf_parser.py`
 - **要 GPU 加速的版面识别** → `MinerU` / `Marker`;
 - **要先看清错误再选工具** → 用本章 `02` 的真实样本把损失量化,再决定要不要换。
 
+### 扩展指南
+
+加一种新格式(.pptx / .html / .md)或加一层 OCR 兜底只要三步:
+
+1. 写一个 `load_pptx(path) -> list[dict]` / `load_html(path) -> list[dict]`,**返回的 dict 必须沿用 `{text, page, source}` 三键 schema**,下游 chunker / embedder 不改一行;
+2. 在 `code_01_basic_load.py` 的 `main()` 里按 `path.suffix` 分发到对应 loader,**不要**在 `load_pdf` / `load_docx` 里写 `if suffix == '.pptx': ...`——污染单一职责;
+3. 扫描件 PDF 兜底:在 `load_pdf` 里加 `if not text.strip(): return ocr_fallback(path)`,`ocr_fallback` 调到 s11 的 `ocr_image` 实现。
+
+不要在 `load_pdf` 里塞 OCR 逻辑——它只懂 pypdf 文本提取,OCR 是另一个职责层。本章 MVP 只跑 PDF + DOCX,但 loader 形状已经预留到 6 个 suffix 都能挂上去。
+
 ---
 
 ## 思考题

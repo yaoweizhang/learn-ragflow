@@ -285,6 +285,16 @@ RAGFlow 的 embedding 路由在 `rag/llm/embedding_model.py`:抽象出 `Embeddin
 - **要 rerank 配套** → 选 1024 维 BGE-m3 或 1024 维 Cohere multilingual,和 s07 的 BGE-reranker-large 维度对齐;
 - **要先看清每个后端边界条件再选** → 用本章 `02` 把 openai / ollama 都跑一遍,看清楚"什么 env 缺了就 graceful skip"。
 
+### 扩展指南
+
+加一个新 embedding provider（cohere / jina / 本地 sentence-transformers 换模型）只要三步：
+
+1. 写一个 `embed_cohere(texts) -> list[list[float]]` 或 `embed_jina(texts, api_key=...) -> list[list[float]]`，**签名必须和 `embed_openai` / `embed_ollama` 一致**——返回 `list[list[float]]`，dim 写到 `_REGISTRY` 里；
+2. 在 `code_02_provider_routing.py` 顶部加一行 `"cohere": (embed_cohere, 1024)`,`route()` 自动通过 `_REGISTRY[EMBED_PROVIDER]` 拿到函数,不要在 `route()` 里写 `if provider == "cohere": ...`;
+3. 给代码文件 README 加一段"它跟 BGE-small 比，赢在哪 / 输在哪"的对照（cohere：100+ 语言 / 需 key + 按 token 计费；jina：claude 生态友好 / 8K context）。
+
+不要把新 provider 的判断塞进 `route()`——它只懂"按 env 查 `_REGISTRY`"这一件事。本章 MVP 只跑 local + openai + ollama，但 `_REGISTRY` 是开放表，加 provider 不动调度逻辑。
+
 ---
 
 ## 思考题

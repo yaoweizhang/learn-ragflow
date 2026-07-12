@@ -424,6 +424,16 @@ RAGFlow 把 RAG 主干实现成 12 个独立模块——解析、切块、embedd
 - **复杂多源 / 跨系统 / 多跳推理** → 模块化 RAG:s09 Agent + s10 GraphRAG + 工具调用
 - **要想清楚 toy 跟生产的边界** → 用本章 02 把"词袋 vs BGE"、03 把"无 rerank vs 有 rerank"各跑一次,对比输出
 
+### 扩展指南
+
+加一层 RAG 能力(换 LLM / 加 rerank / 加 hybrid)只要三步:
+
+1. 在 `code_03_augmented_llm.py` 的 `build_prompt(hits, question)` 之后插入一个 `rerank(hits, question)` 钩子,s07 的 `rerank(query, hits, top_k=3)` 直接接进来,`hits` 还是 `[(text, source, page)]` 的统一形状,LLM 看到的就是前 3 条精排后的 context;
+2. 把 03 的 `call_llm(question, prompt)` 里的 `model=` 参数抽出来,从环境变量 `LLM_MODEL` 读(默认 `gpt-4o-mini`),切 Claude / 本地 vLLM / Qwen 都只改 env 不改代码;
+3. 把 02 的 `vocab + tfidf` 子串匹配换成 `embed_local(query)` 返回的 512 维向量,余弦检索回 `chunks_emb` 矩阵,s04 的 BGE 把它接进来,**接口形状留好了,只换实现**。
+
+不要把"加 rerank / 换 LLM / 加 hybrid" 写在 `retrieve()` 里——它只懂子串,加 hybrid 会污染单一职责。`retrieve` 只懂 toy,**main() 懂全 RAG 模式**(MVP → +rerank → +hybrid → s12 完整 Modular)。本章只跑 MVP,但接口形状留好了。
+
 ---
 
 ## 思考题

@@ -393,6 +393,16 @@ RAGFlow 的 Agent 在 `agent/` 目录下用 Canvas DAG 编排:每个节点是一
 - **已有 LangChain / LlamaIndex 栈** → 复用框架的 `AgentExecutor` / `ReActAgent`,不重写 prompt 解析、不自己接 LLM 客户端;
 - **要先看清每个边界再选** → 用本章 code_02 把"手写 ReAct"和"加重复 action 检测"各跑一次,对比"模型一路 retrieve 不 finish"的稳定性——这是最简单的"agent A/B"实验。
 
+### 扩展指南
+
+加一个新 tool（API 调用 / 计算器 / code execution）只要三步：
+
+1. 写一个 `def call_api(query: str) -> str` 或 `def calculator(expr: str) -> str`（code exec 走 `subprocess.run([...], timeout=5)`），**返回 str**——agent 不关心工具内部细节，只关心"输入 → 输出"；
+2. 在 `code_01_tool_call.py` 的 `TOOLS_DESC` 字符串里加一段工具描述（名称 + 何时调用 + 输入格式），`run_agent()` 的 prompt 解析会通过正则自动识别 `Action: <tool_name>` 调用，不要在 `_llm()` 里塞工具判断；
+3. 给代码文件 README 加一段"它跟 retrieve 比，赢在哪 / 输在哪"的对照（API：实时数据 / 网络依赖；计算器：精确算术 / 沙箱安全；code exec：任意计算 / 注入风险）。
+
+不要把新工具的 schema 塞进 `TOOLS_DESC` 里搞嵌套 dict——它是给 LLM 看的纯文本，结构化在 `_parse_action()` 里完成。本章 MVP 只跑 `retrieve` 一个 tool，但 `TOOLS_DESC` 是开放清单，加 5 个 tool 不改解析逻辑。
+
 ---
 
 ## 思考题

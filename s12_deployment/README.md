@@ -302,6 +302,16 @@ RAGFlow 的部署在 `docker/` 目录：docker-compose 把 API 服务 + Elastics
 - **Serverless / 不想运维** → 托管向量库(Pinecone / Weaviate Cloud)+ 云函数(AWS Lambda / Vercel)+ 托管 Embedding API,**0 运维**,但**单次调用成本 3-5x 自建**、数据合规要额外评估;
 - **要先看清每个边界再选** → 用本章代码入口把"1 容器"和"compose + 网关"各跑一次,对比"5 分钟跑起来"和"3 个服务 + 50 行配置"——这是最简单的"部署方案 A/B"实验。
 
+### 扩展指南
+
+加一个新部署目标（docker-compose 多服务 / K8s Helm chart / Serverless）只要三步：
+
+1. **多服务 compose**：复制 `docker-compose.yml`，加 `nginx` / `prometheus` / `tei-embedding` 三个 service，`volumes` 共享 `_chroma/` + `samples/`，`depends_on` 加 healthcheck；**K8s**：写 `k8s/deployment.yaml` + `service.yaml` + `configmap.yaml`（镜像 = 当前 `Dockerfile` build 出来的），`kubectl apply -f k8s/` 一键起；**Serverless**：写 `vercel.json` 或 `serverless.yml`，把 `app.py` 的 `POST /qa` 暴露成函数，存储走托管（Pinecone / Upstash Redis）；
+2. `app.py` 的 `POST /qa` 入口不用动——它只读 Chroma + 调 s07/s08 函数，`Dockerfile` 之外的部署形态都把它当"上游 + 环境变量"对待；不要在 `app.py` 里写 `if DEPLOY_MODE == "k8s": ...`——污染入口职责；
+3. 给 README 加一段"它跟单容器比，赢在哪 / 输在哪"的对照（compose：本地起 3 服务 / 5 分钟 / 无 K8s 复杂度；K8s：滚动升级 + 灰度 / Helm chart 200 行；Serverless：0 运维 / 冷启动 200ms）。
+
+不要把部署形态判断塞进 `app.py` 或 `code_01_fastapi_docker.py`——它俩只懂"FastAPI + Chroma + 单容器"。本章 MVP 只跑单容器 compose，但 `Dockerfile` 是干净的 base image，多服务 / K8s / Serverless 都从它派生。
+
 ---
 
 ## 思考题

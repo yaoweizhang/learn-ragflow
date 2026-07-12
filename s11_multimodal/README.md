@@ -311,6 +311,16 @@ RAGFlow 的多模态在 `deepdoc/parser/` 里复用视觉模型:表格用 `pdfpl
 - **图片 / 公式 / 图表** → 视觉 LLM(GPT-4V / Qwen-VL),OCR 只读字、读不出趋势线和柱状图,视觉 LLM 能直接"看图说话",但代价是 GPU + 模型几十 MB + 推理秒级;
 - **要先看清每个边界再选** → 用本章表格抽取那一步把"启发式画线"和"扫到无线表 / 跨页表 / 合并格"各跑一次,对比输出——这是最简单的"表格抽取 A/B"实验。
 
+### 扩展指南
+
+加一种新 modality（音频 → 文本 / 视频关键帧 → 文本）只要三步：
+
+1. 写一个 `transcribe_audio(path: Path) -> list[dict]`（用 `whisper` / `faster-whisper`，返回 `[{text, start, end, source}]`）或 `extract_video_frames(path, fps=1) -> list[dict]`（用 `cv2` 抽帧后喂给 `ocr_image`），**返回 dict 形状必须沿用 `{text, source, page/timestamp}`**，下游 s03 chunker / s04 embedder 不改一行；
+2. 在 `code_01_table_extract.py` 的 `main()` 里加 `if AUDIO_PATH: transcribe_audio(AUDIO_PATH)` / `if VIDEO_PATH: extract_video_frames(VIDEO_PATH)` 分支，**不要**在 `extract_tables` 里写 `if path.suffix == '.mp3': ...`——污染职责；
+3. 给代码文件 README 加一段"它跟 PDF 表格抽取比，赢在哪 / 输在哪"的对照（音频：会议纪要 / 时间戳对齐难；视频关键帧：监控 / 视频太大 fps 难选）。
+
+不要把音频 / 视频逻辑塞进 `extract_tables` 或 `ocr_image`——它俩只懂"PDF 页面 + 图像"。本章 MVP 只跑 PDF 表格 + OCR，但 modality 维度留好了挂音频 / 视频不动核心逻辑。
+
 ---
 
 ## 思考题

@@ -338,6 +338,16 @@ RAGFlow 的向量索引层是抽象接口 `rag/vector_store/`,具体实现分三
 - **算法研究 / 离线评测 / 不要 metadata** → FAISS,把向量当 numpy 处理;
 - **要先看清每个边界再选** → 用本章 code_02 把 query 跑一遍,看清楚"小数过滤 / 分数阈值 / metadata 切片"在 Chroma 上的体感,再决定要不要换。
 
+### 扩展指南
+
+加一个新 vector store 后端（FAISS / Qdrant / Milvus）只要三步：
+
+1. 写一个 `class FaissIndex` 或 `class QdrantIndex`，**对外暴露和 `code_01_chroma_build.py` 里 `get_collection()` / `col.add()` / `col.query()` 同形的 `upsert(vectors, metadatas, ids)` / `search(query_vec, top_k, where)` 方法**，下游 s06 / s12 不用改一行；
+2. 把当前 `_chroma/` 目录的持久化逻辑剥成 `VectorBackend` 抽象类，`main()` 按 `VECTOR_BACKEND` env 选 `ChromaBackend()` / `FaissBackend()` 实例化，不要在 `main()` 里写 `if backend == "faiss": import faiss; ...`；
+3. 给代码文件 README 加一段"它跟 Chroma 比，赢在哪 / 输在哪"的对照（FAISS：算法全 / 没有 metadata；Qdrant：原生 hybrid / 单二进制；Milvus：分片副本 / 运维重）。
+
+不要把后端判断塞进 `code_02_chroma_query.py` 的 `main()`——它只懂 Chroma `col.query()`。本章 MVP 只跑 Chroma，但 `VectorBackend` 接口留好了，挂 3 个后端都不动调度逻辑。
+
 ---
 
 ## 思考题

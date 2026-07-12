@@ -295,6 +295,16 @@ RAGFlow 的混合检索在 `rag/search.py` 的 `search()` 函数里:`FusionExpr`
 - **追求 top-1 精度** → 加 cross-encoder 重排序(s07),把 `hybrid_topk` 的 top-20 喂给 `[CLS]` 模型重打分;
 - **要先看清每个边界再选** → 用本章 code_02 把 query `"应收账款 计提"` 和 `"内存"` 各跑一次,看清楚"BM25 / dense 谁拉上去的、α 在什么范围最稳",再决定要不要换 fusion。
 
+### 扩展指南
+
+加一种新 fusion 策略（RRF / convex / 加权）只要三步：
+
+1. 写一个 `rrf_fusion(rank_lists: list[list[Hit]], k=60) -> list[Hit]` 或 `convex_fusion(score_lists, weights=[0.5, 0.5])`，**签名 / 返回 hit dict 形状和 `hybrid_topk` 一致**（`{chunk_id, text, dense, bm25, score}`），下游 s07 rerank 不用改一行；
+2. 在 `code_02_hybrid_fusion.py` 的 `main()` 里按 `FUSION_MODE` env 选 fusion 函数（默认 `weighted_sum`），不要在 `hybrid_topk` 里写 `if mode == "rrf": ... elif mode == "convex": ...` 之类分发——它只懂 α 加权；
+3. 给代码文件 README 加一段"它跟 weighted_sum 比，赢在哪 / 输在哪"的对照（RRF：不依赖分数量纲 / 多通道融合简单；convex：凸约束 / 数学性质好）。
+
+不要把多 fusion 的判断塞进 `hybrid_topk`——它只懂"BM25 + dense α 加权"这一件事。`main()` 懂全 fusion 模式。本章 MVP 只跑 weighted_sum，但接口形状留好了。
+
 ---
 
 ## 思考题

@@ -332,6 +332,16 @@ RAGFlow 的 GraphRAG 在 `general/extractor.py` 和 `general/entity_resolution.p
 - **图遍历密集 / 大规模实体** → Neo4j / TigerGraph 工业图数据库,Cypher / Gremlin 比 `dict.get` 表达力强,运维成本 10x 但可观测性 +10x;
 - **要先看清每个边界再选** → 用本章 2.1 把"手写 JSON"和"切分隔符"各跑一次,对比格式正确率——这是最简单的"抽取 prompt A/B"实验。
 
+### 扩展指南
+
+加一种新 graph source（数据库 schema 抽取 / CSV 转 RDF / 已有 Neo4j 数据导入）或改 schema（加 entity type / 加 weight 字段）只要三步：
+
+1. **加 source**：写一个 `extract_triples_from_sql(schema_sql: str) -> list[dict]` 或 `extract_triples_from_csv(rows: list[dict]) -> list[dict]`，**返回的 triple dict 必须沿用 `{head, head_type, rel, tail, tail_type}` 五键 schema**，`build_graph()` 不改一行；**改 schema**：在 `extract_triples()` 的 `_llm_json` prompt 里把 `head_type` / `tail_type` 候选枚举扩成新类型（`公司 / 产品 / 合同 / 交易` → + `人 / 部门 / 项目`），下游 `_merge_entity()` 自动 follow；
+2. **加 source**：在 `code_01_extract.py` 的 `main()` 里按 `GRAPH_SOURCE` env 选 source（默认 `text`），不要在 `extract_triples` 里写 `if source == "sql": ...`；**改 schema**：在 `_llm_json` prompt 里扩枚举即可，`build_graph` / `query_graph` 都按 head_type / tail_type 字符串自由组合；
+3. 给代码文件 README 加一段"它跟纯文本抽取比，赢在哪 / 输在哪"的对照（SQL：结构化精确 / 依赖 DDL 文档；CSV：批量 / 缺实体类型）。
+
+不要把多 source / 多 schema 的判断塞进 `extract_triples()`——它只懂"对一段文本做 JSON 抽取"。本章 MVP 只跑纯文本 + 5 个候选 entity type，但 source 维度留好了挂 SQL / CSV 不动抽取逻辑。
+
 ---
 
 ## 思考题
