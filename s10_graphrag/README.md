@@ -248,7 +248,18 @@ python s10_graphrag/code_02_query.py
 
 ---
 
-## 四、其他 / 整体设计取舍
+## 四、核心函数一览
+
+| 函数 | 文件 | 输入 | 输出 | 一句话解释 |
+|---|---|---|---|---|
+| `_llm_json(prompt)` | `code_01_extract.py` | `str` | `list[dict]` | OpenAI 兼容 `/chat/completions` + `response_format={"type":"json_object"}`;剥 `<think>...</think>` 推理块;无 key 时 `KeyError` |
+| `extract_triples(text)` | `code_01_extract.py` | `str` | `list[{head, rel, tail}]` | 调 LLM 抽实体关系三元组;prompt 走裸 JSON |
+| `build_graph(triples_list)` | `code_01_extract.py` | `list[list[dict]]` | `dict[head] → set[(rel, tail)]` | 把每段抽出的三元组合并到 dict;用 `set` 自动去重 |
+| `save_graph(graph, path)` | `code_01_extract.py` | `(dict, Path)` | — | `json.dumps` 写 `_graph.jsonl`(每行一段) |
+| `main()` (01) | `code_01_extract.py` | — | 写 `_graph.jsonl` + 打印图大小 | 01 演示入口:走完 extract → build → save 整条离线 ETL |
+| `load_graph(path)` | `code_02_query.py` | `Path` | `dict[str, set[tuple[str, str]]]` | `jsonl` 读回 `dict[head] → set[(rel, tail)]`;纯内存,无 LLM |
+| `query_graph(graph, entity)` | `code_02_query.py` | `(dict, str)` | `list[(rel, tail)]` | 1 跳查 `dict.get(entity, set())` + `sorted()` 排 |
+| `main()` (02) | `code_02_query.py` | — | 打印实体 + 邻居 | 02 演示入口;默认 `紫光恒越` / `紫光集团` |
 
 环境变量：
 
@@ -264,7 +275,7 @@ python s10_graphrag/code_02_query.py   # 不调 LLM,只读 _graph.jsonl
 # 请先跑: python s10_graphrag/code_01_extract.py
 ```
 
-### 跨代码文件的 schema 设计取舍
+## 五、跨代码 schema 设计取舍
 
 为什么 schema 用 `(head, rel, tail)` 三元组 + `dict[head] → set[(rel, tail)]`、而不是别的？几个常见取舍的折中：
 
@@ -274,7 +285,7 @@ python s10_graphrag/code_02_query.py   # 不调 LLM,只读 _graph.jsonl
 - **`set` vs `list` 存邻接边**——MVP 用 `set`，**同一 `(rel, tail)` 多次出现自动去重**；`list` 简单但会在"同段重复抽到同一三元组"时污染边集合。代价是 `set` 不保证顺序，2.2 用 `sorted(graph.get(entity, set()))` 显式排。
 - **`build_graph` 单层 vs 多层**——MVP 走单层 dict（节点名即 key）；RAGFlow 把同一实体名跨段出现时**合并 description**(`<SEP>` 拼接，超过 12 段送 LLM 摘要压缩），并按 `entity_type` 分桶做 entity resolution。**MVP 完全不做合并**——`紫光恒越` 和 `紫光恒越技术有限公司` 是两个节点，召回时只能命中其中一个。
 
-### 跨代码文件集成
+## 六、跨代码文件集成
 
 2.1 写图（`extract_triples` → `build_graph` → `save_graph`），2.2 读图（`load_graph` → `query_graph`）。两者通过 `_graph.jsonl` 解耦——2.2 离线可重跑、调试抽取 prompt 时反复改 2.1 重抽，2.2 不需要每次重新走 LLM。**生产里也走这个模式**：2.1 离线 ETL pipeline 跑完之后可以常关，在线 service 只跑 2.2（扩展为多跳 / entity resolution），LLM 成本不会每次 query 都付一次。
 
@@ -289,7 +300,7 @@ RAGFlow 的 GraphRAG 在 `general/extractor.py` 和 `general/entity_resolution.p
 
 ---
 
-## 五、其他 / 选型与思考题
+## 选型速记
 
 ### 主流 GraphRAG 范式速览
 

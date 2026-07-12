@@ -227,7 +227,17 @@ s12_deployment-rag-1  | INFO:     Uvicorn running on http://0.0.0.0:8000
 
 ---
 
-## 三、其他 / 整体设计取舍
+## 三、核心函数一览
+
+| 函数 / 文件 | 文件 | 输入 | 输出 | 一句话解释 |
+|---|---|---|---|---|
+| `app` | `app.py` | — | `FastAPI` 实例 | FastAPI 应用,`POST /qa` 端点入口(uvicorn 启动用) |
+| `QARequest` | `app.py` | — | `pydantic.BaseModel` | 请求 schema:`{"question": str}`;类型错 / 缺字段 → 422 |
+| `_get_col()` | `app.py` | — | `chromadb.Collection` 或抛 `HTTPException(503)` | 第一次请求时 lazy-load Chroma collection;索引不存在或 collection 缺失返 503,**省得在 import 阶段崩** |
+| `qa(req)` | `app.py` | `QARequest` | `dict` (透传 s08 `answer()` 的 `{text, citations}`) | `POST /qa` handler:`_get_col → embed → hybrid_search → rerank → answer` 五步串行 |
+| `main()` | `code_01_fastapi_docker.py` | — | 启动 docker compose 或友好退出 | 启动器:`.env` gating → 索引 gating → `subprocess.run(["docker", "compose", "up", "--build"])` |
+| `Dockerfile` | `Dockerfile` | — | 镜像 (≈ 2GB) | `python:3.11-slim` + tesseract + build-essential + `pip install -r requirements.txt` + 业务代码 |
+| `docker-compose.yml` | `docker-compose.yml` | — | 1 个 `rag` 服务跑起来 | build context=项目根、port 8000、env_file=.env、mount samples / _chroma(:ro) |
 
 ### 跨代码文件的 schema 设计取舍
 
@@ -243,18 +253,7 @@ s12 的代码拆得很细，每个函数 / 配置文件都对应一种"上线动
 
 如果你的场景需要"鉴权 / rate limit / 多租户"，就在 `app.py` 加 `@app.middleware` 或 `Depends(get_api_key)`——但**保持 `POST /qa` 端点形状是 `{question} → {text, citations}` 不变**，鉴权层透明加挂，不要替换 schema。
 
-### 核心函数 / 组件一览
-
-| 函数 / 文件 | 文件 | 输入 | 输出 | 一句话解释 |
-|---|---|---|---|---|
-| `app` | `app.py` | — | `FastAPI` 实例 | FastAPI 应用,`POST /qa` 端点入口(uvicorn 启动用) |
-| `QARequest` | `app.py` | — | `pydantic.BaseModel` | 请求 schema:`{"question": str}`;类型错 / 缺字段 → 422 |
-| `_get_col()` | `app.py` | — | `chromadb.Collection` 或抛 `HTTPException(503)` | 第一次请求时 lazy-load Chroma collection;索引不存在或 collection 缺失返 503,**省得在 import 阶段崩** |
-| `qa(req)` | `app.py` | `QARequest` | `dict` (透传 s08 `answer()` 的 `{text, citations}`) | `POST /qa` handler:`_get_col → embed → hybrid_search → rerank → answer` 五步串行 |
-| `main()` | `code_01_fastapi_docker.py` | — | 启动 docker compose 或友好退出 | 启动器:`.env` gating → 索引 gating → `subprocess.run(["docker", "compose", "up", "--build"])` |
-| `Dockerfile` | `Dockerfile` | — | 镜像 (≈ 2GB) | `python:3.11-slim` + tesseract + build-essential + `pip install -r requirements.txt` + 业务代码 |
-| `docker-compose.yml` | `docker-compose.yml` | — | 1 个 `rag` 服务跑起来 | build context=项目根、port 8000、env_file=.env、mount samples / _chroma(:ro) |
-
+---
 
 ## RAGFlow 实现
 
@@ -266,7 +265,7 @@ RAGFlow 的部署在 `docker/` 目录：docker-compose 把 API 服务 + Elastics
 
 ---
 
-## 五、其他 / 选型与思考题
+## 五、选型速记
 
 ### 主流部署范式速览
 

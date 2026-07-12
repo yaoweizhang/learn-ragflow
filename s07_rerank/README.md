@@ -161,17 +161,6 @@ query='内存', alpha=0.5 (BM25 + dense 等权融合)
 - **bi-encoder 召回 + cross-encoder 精排 = 两阶段漏斗**：bi-encoder 编码一次、向量化、ANN 召回千级候选 O(log N) 廉价；cross-encoder 在小池子（50-100）上跑 O(N) 精排准但贵。组合起来既快又准。
 - **不重编码**：rerank 不重新生成向量，只是在已有候选上重打分 —— 整个精排阶段不需要 GPU 重跑 embed。
 
-### 核心函数一览
-
-| 函数 | 文件 | 输入 | 输出 | 一句话解释 |
-|---|---|---|---|---|
-| `_embed_model()` / `_embed(texts)` | `code_01_cross_encoder_rerank.py` | `list[str]` | `list[list[float]]` | `@lru_cache(maxsize=1)` 加载本地 BGE-small-zh-v1.5;`normalize_embeddings=True`(跟 s04 / s05 / s06 同款) |
-| `_cosine(a, b)` | `code_01_cross_encoder_rerank.py` | `(list[float], list[float])` | `float` | 两个已 L2 归一化向量的内积(cosine ≡ inner_product) |
-| `_reranker()` | `code_01_cross_encoder_rerank.py` | — | `FlagReranker` | `@lru_cache(maxsize=1)` 加载 `BAAI/bge-reranker-base`,`use_fp16=False`;同一进程只下载、加载一次 |
-| `rerank(query, hits, top_k=3)` | `code_01_cross_encoder_rerank.py` | `(str, list[dict], int)` | `list[{text, source, page, chunk_id, dense, bm25, score, rerank_score}]` | 把 s06 的 hits 喂给 cross-encoder 重打分,按 `rerank_score` 降序取前 k,保留 `score`(s06 混合分)供前后对比 |
-| `_hybrid_topk(docs, query, query_vec, dense_score_fn, k, alpha)` | `code_01_cross_encoder_rerank.py` | `(list, str, list, callable, int, float)` | `list[{text, source, page, chunk_id, dense, bm25, score}]` | 复制 s06 code_02 的 hybrid_topk 公式(`α * vec + (1-α) * bm25_norm`);self-contained 跑通 BM25+dense 召回 → rerank 对比 |
-| `main()` (code_01) | `code_01_cross_encoder_rerank.py` | — | 打印 BEFORE/AFTER rerank top-3 | code_01 演示入口,默认 query `"内存"`(EOFError 时兜底) |
-
 ### 它做错了什么
 
 - **必须先有 top-N 召回**：cross-encoder 不能直接对百万级文档跑（O(N) BERT forward 太贵）。生产里典型流程是 bi-encoder 召回 ~200 候选 → cross-encoder 精排 → 取 top-5 给 LLM；本节只演示精排这一步。
@@ -189,7 +178,16 @@ query='内存', alpha=0.5 (BM25 + dense 等权融合)
 
 ---
 
-## 三、其他 / 整体设计取舍
+## 三、核心函数一览
+
+| 函数 | 文件 | 输入 | 输出 | 一句话解释 |
+|---|---|---|---|---|
+| `_embed_model()` / `_embed(texts)` | `code_01_cross_encoder_rerank.py` | `list[str]` | `list[list[float]]` | `@lru_cache(maxsize=1)` 加载本地 BGE-small-zh-v1.5;`normalize_embeddings=True`(跟 s04 / s05 / s06 同款) |
+| `_cosine(a, b)` | `code_01_cross_encoder_rerank.py` | `(list[float], list[float])` | `float` | 两个已 L2 归一化向量的内积(cosine ≡ inner_product) |
+| `_reranker()` | `code_01_cross_encoder_rerank.py` | — | `FlagReranker` | `@lru_cache(maxsize=1)` 加载 `BAAI/bge-reranker-base`,`use_fp16=False`;同一进程只下载、加载一次 |
+| `rerank(query, hits, top_k=3)` | `code_01_cross_encoder_rerank.py` | `(str, list[dict], int)` | `list[{text, source, page, chunk_id, dense, bm25, score, rerank_score}]` | 把 s06 的 hits 喂给 cross-encoder 重打分,按 `rerank_score` 降序取前 k,保留 `score`(s06 混合分)供前后对比 |
+| `_hybrid_topk(docs, query, query_vec, dense_score_fn, k, alpha)` | `code_01_cross_encoder_rerank.py` | `(list, str, list, callable, int, float)` | `list[{text, source, page, chunk_id, dense, bm25, score}]` | 复制 s06 code_02 的 hybrid_topk 公式(`α * vec + (1-α) * bm25_norm`);self-contained 跑通 BM25+dense 召回 → rerank 对比 |
+| `main()` (code_01) | `code_01_cross_encoder_rerank.py` | — | 打印 BEFORE/AFTER rerank top-3 | code_01 演示入口,默认 query `"内存"`(EOFError 时兜底) |
 
 ### 跨代码文件的 schema 设计取舍
 
@@ -217,7 +215,7 @@ RAGFlow 的重排序在 `rag/llm/rerank_model.py`：抽象 `RerankModel.Base`，
 
 ---
 
-## 五、其他 / 选型与思考题
+## 五、选型速记
 
 ### 主流 rerank 策略速览
 

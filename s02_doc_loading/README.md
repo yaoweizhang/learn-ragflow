@@ -189,10 +189,18 @@ DOCX 第 1 段前 100 字: 青蓝科技股份有限公司 ...
 
 ---
 
-## 四、其他 / 整体设计取舍
+## 四、核心函数一览
 
+| 函数 | 文件 | 输入 | 输出 | 一句话解释 |
+|---|---|---|---|---|
+| `load_pdf(path)` | `code_01_basic_load.py` | `Path` | `list[{text, page, source}]` | 逐页 `PdfReader(path).pages` + `extract_text()`;非空页才进 list;`page` 从 1 起编 |
+| `load_docx(path)` | `code_01_basic_load.py` | `Path` | `list[{text, page: None, source}]` | `Document(path).paragraphs` 逐段抽,空段过滤;`page` 在 DOCX 时强制 `None`(非 0/非 -1) |
+| `main()` (01) | `code_01_basic_load.py` | — | 打印 schema + 段数 | 01 演示入口,把 `samples/` 下两份文件分别喂 `load_pdf` / `load_docx` |
+| `show_pdf_failure()` | `code_02_failure_modes.py` | — | 打印 PDF 段落数 + 长度 + 前 60 字 | 02 失败演示 a:`extract_text()` 在双栏 PDF 上把左栏底接右栏顶 |
+| `show_docx_table_loss()` | `code_02_failure_modes.py` | — | 打印 paragraphs / tables / 表格字符数 | 02 失败演示 b:`Document.paragraphs` 不含 `tables` —— 整张表被吞掉 |
+| `main()` (02) | `code_02_failure_modes.py` | — | 调用上面两个 demo + 引出工业解法 | 02 演示入口,只暴露 01 在 prod 上的损失量化,不生产新数据 |
 
-### 跨代码文件的 schema 设计取舍
+## 五、跨代码 schema 设计取舍
 
 为什么是 `{text, page, source}` 三个字段而不是别的形状？这是几个常见取舍的折中：
 
@@ -203,7 +211,7 @@ DOCX 第 1 段前 100 字: 青蓝科技股份有限公司 ...
 
 如果你的语料源需要额外的元数据（比如作者、章节标题、创建时间），就在 schema 里加字段——但**保持向后兼容**：新字段给默认值，老代码不崩。
 
-### 跨代码文件集成
+## 六、跨代码文件集成
 
 `01` 的输出（`{text, page, source}` schema）直接喂给 `02` 做失败检测；`01` 的输出同样直接喂给 s03 / s04 / s05 的整条离线管线。`02` 不生产新数据，只暴露 `01` 在 prod 上的损失量化——它的存在意义是"教学动机"，不参与主链路。
 
@@ -219,7 +227,7 @@ RAGFlow 的文档解析在 `deepdoc/parser/` 目录下：PDF 走 `pdf_parser.py`
 
 ---
 
-## 五、其他 / 选型与思考题
+## 选型速记
 
 ### 主流加载工具速览
 

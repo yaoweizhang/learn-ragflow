@@ -254,16 +254,11 @@ cosine(a, b) = dot(a, b) / (norm(a) * norm(b))
 ### 跑起来
 
 ```bash
-# 无 LLM key:只打印 prompt,验证链路正确
+# .env 里有 LLM_API_KEY 就走端到端;无 key 时 graceful-skip 只打印 prompt
 python s01_what_is_rag/code_03_augmented_llm.py
-
-# 有 key:端到端
-LLM_API_KEY=sk-xxx python s01_what_is_rag/code_03_augmented_llm.py
-
-# 可选:自定义 base / model
-LLM_BASE=https://api.openai.com/v1 LLM_MODEL=gpt-4o-mini \
-  LLM_API_KEY=sk-xxx python s01_what_is_rag/code_03_augmented_llm.py
 ```
+
+可选：自定义 base / model（在 `.env` 里设 `LLM_BASE` / `LLM_MODEL` 即可，code 顶部 `load_dotenv(override=True)` 会读到）。
 
 无 key 输出示例：
 
@@ -337,11 +332,7 @@ LLM_BASE=https://api.openai.com/v1 LLM_MODEL=gpt-4o-mini \
 
 ---
 
-## 五、其他 / 整体设计取舍
-
-环境变量：03 需要 `LLM_API_KEY`（可选 `LLM_BASE` / `LLM_MODEL`，指向任意 OpenAI 兼容服务）。无 key 时跳过真实生成，只打印 prompt 验证链路。
-
-### 核心函数一览
+## 五、核心函数一览
 
 | 函数 | 文件 | 输入 | 输出 | 一句话解释 |
 |---|---|---|---|---|
@@ -356,9 +347,13 @@ LLM_BASE=https://api.openai.com/v1 LLM_MODEL=gpt-4o-mini \
 | `main()` (02) | `code_02_vector_basics.py` | 交互输入查询 | top-3 + 分 | 02 入口 |
 | `main()` (03) | `code_03_augmented_llm.py` | — | prompt + LLM 输出 | 03 入口 |
 
-### 跨代码文件集成 / 如何扩展到工业级
+## 六、跨代码 schema 设计取舍
 
-把 3 个脚本替换成工业实现是后面 11 章的工作：
+环境变量：03 需要 `LLM_API_KEY`（可选 `LLM_BASE` / `LLM_MODEL`，指向任意 OpenAI 兼容服务）。无 key 时跳过真实生成，只打印 prompt 验证链路。
+
+三个 code 文件约定同一份 schema：`paragraphs = list[str]` 输入 → `retrieve` 返回 `list[{text, score, ...}]` 命中；02 / 03 的 `retrieve(q, paragraphs, k)` 签名完全一致——这是把"召回"封装掉的代价：**调用方不需要知道 01 是子串匹配、02 是词袋向量、03 又调一遍 02**，统一接口降低后续章节替换成本。
+
+## 七、跨代码文件集成 / 如何扩展到工业级
 
 | s01 里的环节 | 工业实现 | 教程章节 |
 |---|---|---|
@@ -392,7 +387,7 @@ RAGFlow 把 RAG 主干实现成 12 个独立模块——解析、切块、embedd
 
 ---
 
-## 六、其他 / 选型与思考题
+## 选型速记
 
 ### 主流 RAG 范式速览
 

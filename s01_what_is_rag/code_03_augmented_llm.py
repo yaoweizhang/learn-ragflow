@@ -19,7 +19,11 @@ import urllib.request
 from collections import Counter
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from docx import Document
+
+load_dotenv(override=True)
 
 WORKDIR = Path(__file__).resolve().parents[1]
 SAMPLE = WORKDIR / "samples" / "disclosure.docx"

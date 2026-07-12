@@ -151,13 +151,9 @@ vecs = embed_local(chunks)
 ```bash
 # 默认 local,免 key
 python s04_embedding/code_02_provider_routing.py
-
-# 切 openai
-EMBED_PROVIDER=openai LLM_API_KEY=sk-... python s04_embedding/code_02_provider_routing.py
-
-# 切 ollama
-EMBED_PROVIDER=ollama EMBED_BASE_URL=http://localhost:11434 python s04_embedding/code_02_provider_routing.py
 ```
+
+切换 provider / 改 base URL：在 `.env` 里设 `EMBED_PROVIDER=openai|ollama`、`LLM_API_KEY`、`EMBED_BASE_URL` 等，code 顶部 `load_dotenv(override=True)` 会读到。`EMBED_PROVIDER` 默认 `local`。
 
 输出示例（本机无 ollama / 无 key）：
 
@@ -213,10 +209,22 @@ EMBED_PROVIDER=ollama EMBED_BASE_URL=http://localhost:11434 \
 
 ---
 
-## 四、其他 / 整体设计取舍
+## 四、核心函数一览
 
+| 函数 | 文件 | 输入 | 输出 | 一句话解释 |
+|---|---|---|---|---|
+| `_local_model()` | `code_01_local_bge.py` | — | `SentenceTransformer(BAAI/bge-small-zh-v1.5)` | `@lru_cache(maxsize=1)` 加载本地 BGE-small-zh-v1.5;同进程只下载加载一次 |
+| `_embed_local(texts)` | `code_01_local_bge.py` | `list[str]` | `list[list[float]]` | 内部 helper:直接走本地 BGE `encode(..., normalize_embeddings=True)` |
+| `embed_local(texts)` | `code_01_local_bge.py` | `list[str]` | `list[list[float]]` | 公开 API:`texts → list[list[float]]`;`device` 自动选 cuda / cpu;主入口 |
+| `main()` (01) | `code_01_local_bge.py` | — | 打印句子 + 余弦相似度 | 01 演示入口;4 句中文 + cosine 矩阵 |
+| `_embed_local(texts)` | `code_02_provider_routing.py` | `list[str]` | `list[list[float]]` | 02 内部 helper:同样走本地 BGE(独立 import,不依赖 01);EMBED_PROVIDER=local 路径 |
+| `embed_openai(texts)` | `code_02_provider_routing.py` | `list[str]` | `list[list[float]]` | OpenAI 兼容 `/v1/embeddings`;`LLM_API_KEY` + `EMBED_MODEL` 控制 |
+| `embed_ollama(texts)` | `code_02_provider_routing.py` | `list[str]` | `list[list[float]]` | Ollama `/api/embeddings`;默认 `bge-m3`;走 `EMBED_BASE_URL` |
+| `route(texts)` | `code_02_provider_routing.py` | `list[str]` | `tuple(provider, list[list[float]])` | 按 `EMBED_PROVIDER` env 选后端;返回 `(provider_name, vectors)` |
+| `_openai_available()` / `_ollama_available()` | `code_02_provider_routing.py` | — | `bool` | 检测 key / endpoint 可用性;不可用时 `route()` 走 graceful fallback 提示 |
+| `main()` (02) | `code_02_provider_routing.py` | — | 打印 query + 命中的 provider + vectors | 02 演示入口;按 env 路由 + 给出 friendly hint |
 
-### 跨代码文件的 schema 设计取舍
+## 五、跨代码 schema 设计取舍
 
 为什么 `embed()` 返回 `list[list[float]]` 而不是 `np.ndarray` 或 Pydantic 模型？几个常见取舍的折中：
 
@@ -227,7 +235,7 @@ EMBED_PROVIDER=ollama EMBED_BASE_URL=http://localhost:11434 \
 
 如果你的场景需要"每次返回带元数据"（比如 `[{vec, model, dim, took_ms}, ...]`），就在外层加一个 wrapper——但**保持 `embed()` 的签名是 `list[str] → list[list[float]]`**，不要把它升成 Pydantic 那种重型接口。toy 阶段越简单越好。
 
-### 跨代码文件集成
+## 六、跨代码文件集成
 
 01 / 02 都签同一个 schema：`embed(texts: list[str]) -> list[list[float]]`。01 是本地 BGE 直跑，02 是 env-driven dispatcher 选后端。**两者不能串行**——02 不 import 01，自己处理所有后端；调用方按 `EMBED_PROVIDER` env 决定跑谁。结果集被同样的 schema 锁住，s05/s06 拿到不论来自哪个 provider 的 `list[list[float]]` 都不需要分支判断。这是把"模型选型"封装掉的价值：**后续章节按统一接口消费**，换底层只改 `code_02_provider_routing.py` 的 `_REGISTRY`。
 
@@ -242,7 +250,7 @@ RAGFlow 的 embedding 路由在 `rag/llm/embedding_model.py`：抽象出 `Embedd
 
 ---
 
-## 五、其他 / 选型与思考题
+## 选型速记
 
 ### 主流 Embedding 工具速览
 

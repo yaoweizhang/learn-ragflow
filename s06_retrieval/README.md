@@ -216,15 +216,20 @@ hybrid top-3 (with both sub-scores visible):
 
 ---
 
-## 四、其他 / 整体设计取舍
+## 四、核心函数一览
 
-离线 / 镜像环境跑 code_02：
+| 函数 | 文件 | 输入 | 输出 | 一句话解释 |
+|---|---|---|---|---|
+| `tokenize(text)` / `_split_long(text, max_chars)` / `_chunk_by_paragraph(docs, max_chars=500)` | `code_01_bm25.py` | `str` / `list[dict]` | `list[str]` / `list[dict]` | 复制 s03 chunker;中英分词 + 句界切 + 500 字符 cap |
+| `_pdf(path)` / `_docx(path)` / `_load_chunks()` | `code_01_bm25.py` | `Path` | `list[{text, page, source, chunk_id}]` | 复制 s02 loader + s03 chunker;在 01 内自包含 |
+| `BM25` (class) | `code_01_bm25.py` | `list[list[str]]` | — | 手写 BM25:`__init__(corpus)` 算 IDF + avgdl;`score(query_tokens, doc_tokens)` 算每 doc 的 BM25 分 |
+| `bm25_topk(docs, query, k=5)` | `code_01_bm25.py` | `list[dict], str, int` | `list[{chunk, bm25}]` | 用 `BM25` 给每个 chunk 打 BM25 分,降序取 top-k |
+| `main()` (01) | `code_01_bm25.py` | — | 打印 BM25 top-k | 01 演示入口:BM25-only baseline |
+| `_model()` / `_embed(texts)` / `_cosine(a, b)` | `code_02_hybrid_fusion.py` | `list[str]` / `(list, list)` | `list[list[float]]` / `float` | 复制 s04 BGE encode;cosine 用内积(已 L2 归一化) |
+| `hybrid_topk(docs, query, query_vec, dense_score_fn, k, alpha)` | `code_02_hybrid_fusion.py` | `(list, str, list, callable, int, float)` | `list[{chunk, bm25, dense, score}]` | 核心公式:`final = α * dense_norm + (1-α) * bm25_norm`;dense 注入而非硬写 |
+| `main()` (02) | `code_02_hybrid_fusion.py` | — | 打印 BM25 vs dense vs hybrid 三组 top-k | 02 演示入口;离线镜像环境 `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1` 跑 |
 
-```bash
-HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python s06_retrieval/code_02_hybrid_fusion.py
-```
-
-### 跨代码文件的 schema 设计取舍
+## 五、跨代码 schema 设计取舍
 
 为什么 fusion 公式是 `α * vec + (1-α) * bm25_norm` 而不是 RRF / concat / max？几个常见取舍的折中：
 
@@ -236,7 +241,7 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python s06_retrieval/code_02_hybrid_fusi
 
 如果你的场景需要**第三层信号**（权威文档 / 标签 boost），就把 `hybrid_topk` 扩成 `final = α·v + (1-α)·b + γ·rank_fea`，γ 是 PageRank / tag cosine 的权重——生产代码的 `sim = tkweight*tksim + vtweight*vtsim + rank_fea` 就是这个思路。
 
-### 跨代码文件集成
+## 六、跨代码文件集成
 
 01 跑 BM25（纯字面，无外部依赖），02 把 01 的 BM25 + s04 BGE 的 dense cosine 在 `hybrid_topk` 里拼成加权融合。两者通过同一份 chunk 列表对齐——01 输出 `{chunk, bm25}`，02 拿 `dense_score_fn(chunk)` 算 dense 分，两者按 `chunk_id` 配对后做加权融合，得到最终排序。**s07 拿到 s06 的输出后，直接做 rerank 精排 + chunk 拉取，不需要重算 BM25 或 dense**——这是把"sparse 算过 / dense 算过"两件事固化在 s06 输出的红利。
 
@@ -251,7 +256,7 @@ RAGFlow 的混合检索在 `rag/search.py` 的 `search()` 函数里：`FusionExp
 
 ---
 
-## 五、其他 / 选型与思考题
+## 选型速记
 
 ### 主流融合策略速览
 
