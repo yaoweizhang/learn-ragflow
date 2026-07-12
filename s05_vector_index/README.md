@@ -284,6 +284,8 @@ top-3 hits (query='应收账款'):
 
 01 写索引 → 02 读查询；两者通过 `_chroma/` 目录解耦。**没有 01 持久化的索引，02 没有任何数据可查**（因为 02 是"读"半边，不是"嵌入 + 写入"半边）。生产里也走这个模式——离线 pipeline 跑完 01 之后就停了，在线 service 只跑 02（或更上层的 s06+），持久化文件被独立 service 持有、SIGKILL 不丢数据。
 
+**整体拓扑**：(1) 01 走 `samples/ → load → chunk → embed → build_index` 写 `_chroma/` → (2) 02 启动时 `_open_collection()` 拿 collection → (3) 接收 query → (4) `_embed(query)` 算 query 向量 → (5) `col.query(query_embeddings=...)` 拿 top-k hits。**生产差异**：RAGFlow 把这层抽成 `rag/vector_store/` 接口,具体实现三选一(Elasticsearch / Infinity / OceanBase),`doc_engine` 字段从 `.env` 读决定用哪个;s05 toy 锁死 Chroma,生产换库需改 import。
+
 
 ## RAGFlow 实现
 

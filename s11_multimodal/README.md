@@ -250,7 +250,13 @@ OCR skipped: 未提供图片路径
 
 ## 五、跨代码 schema 设计取舍
 
-s11 的代码拆得很细，每个函数都对应一种"非纯文本输入"的角色:
+s11 的代码拆得很细，每个函数都对应一种"非纯文本输入"的角色。两个 code 文件的 schema 各管一头，汇到下游走同一条文本管道：
+
+- **表格抽取 schema (`list[{"page", "rows"}]`)**：`page` 是 PDF 页码(从 1 起编)、`rows` 是二维 `list[list[str]]`，**行列结构保留**(列对齐、单元格文本)。这跟 s02 的扁平 `list[{text, page, source}]` 不同：表格不能用一段 `text` 表示,否则 s04 的 BGE 拿到的就是"列与列粘连的纯文本",检索时按行召回会乱。**何时改**：表格行 ≥100、且你需要按列做 schema-aware 召回时,把 `rows` 升级成 `list[{"cells": [...], "header": [...]}]` + 单独的"行索引"字段,下游按列过滤才有可能。
+- **OCR schema (`str`)**：纯文本输出,跟 s02 的 `text` 字段**完全一致**——这是 s11 的关键设计：OCR 不引入新 schema,直接复用 s02 的下游。**何时改**：OCR 输出包含版面信息(段落 vs 标题 vs 图注)时,把字符串升级成 `list[{text, role, bbox}]`,下游分块器能按 role 选策略。
+- **双重空表过滤策略**：`pdfplumber.extract_tables()` 在"页面有表格区域但全是空白 / 只有边框"的 PDF 上返回 `[[]]`(空表),s11 的 `extract_tables` 用 `if not rows: continue` + `if not any(cell and cell.strip() for cell in row): continue` 双重过滤,只保留"真有数据"的表。**何时改**：当你的语料源大量是空白表格(纯版式文档)时,改单层过滤能减少 30%+ 的伪 chunk。
+- **不存图块坐标**：OCR / 表格抽取**不输出 bbox**——s11 的 schema 只到"内容"层,不到"位置"层。代价是 s08 引用时只能给 page + 文本,不能给 bbox;收益是 schema 简单、好序列化。**何时改**：UI 需要"点击答案跳到 PDF 坐标"时,把 `list[{"text", "page", "bbox": [x0, y0, x1, y1]}]` 加上,s05 的 Chroma metadata 多存 `bbox` 字段。
+- **上下游契约**：`code_01` 输出 `list[{"page", "rows"}]` → 调用方按行切(`for row in rows: row_text = " | ".join(row)`)→ 进 s03 chunking(s02 主线复用);`code_02` 输出 `str` → 直接进 s03 chunking(走"行/段"启发式)。两者通过**"纯文本数据流"汇入 s04-s08 主线**,下游不需要分情况处理多模态 vs 纯文本。
 
 ## 六、跨代码文件集成
 
