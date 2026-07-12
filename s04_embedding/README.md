@@ -269,8 +269,6 @@ RAGFlow 的 embedding 路由在 `rag/llm/embedding_model.py`：抽象出 `Embedd
 
 我们的 toy 方案（BGE-small-zh-v1.5）在"维度 / 是否本地 / 是否需 key"上只占第一行——能跑但不抗多语言。生产代码在生产里会选 BGE-m3 / text-embedding-3-large 之一作为 1024 / 3072 维的 default，**rerank 友好的 1024 维变体**在 MTEB 检索任务上常常不输 3072 维而省一半存储。
 
-### 选型速记
-
 - **要快、只要中文、零成本起步** → `bge-small-zh-v1.5`（本教程 demo）；
 - **要多语言、混合检索** → `bge-m3`，1024 维有 rerank-friendly 变体；
 - **要省运维、英文为主** → `text-embedding-3-small`，1536 维，OpenAI 兼容；

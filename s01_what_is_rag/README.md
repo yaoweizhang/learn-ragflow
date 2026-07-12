@@ -401,8 +401,6 @@ RAGFlow 把 RAG 主干实现成 12 个独立模块——解析、切块、embedd
 
 我们的 toy `retrieve + build_prompt + call_llm` 在复杂度上只占第一行——**Naive RAG**；RAGFlow 走完整 Modular，**多一道抽象就多一道观测点 + 一个失败模式**。教学 demo 选 MVP 因为它跑通快、依赖少；**生产请按"语料规模 / 检索质量 / 可观测性"做 tier 选型**(Naive → Advanced → Modular）。
 
-### 选型速记
-
 - **教学 / 玩具 / 文档 < 100 段** → 本章 MVP（子串 / 词袋 + cosine），零依赖、能跑通
 - **中小规模生产 / 文档 100-100k 段** → s04 BGE + s06 BM25+dense 融合 + s07 rerank + s08 prompt 模板
 - **检索质量敏感 / 命中率优先** → 高级 RAG 叠加：HyDE 查询重写 + 多路召回 + cross-encoder

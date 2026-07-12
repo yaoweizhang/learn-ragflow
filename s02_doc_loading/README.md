@@ -244,8 +244,6 @@ RAGFlow 的文档解析在 `deepdoc/parser/` 目录下：PDF 走 `pdf_parser.py`
 
 我们的 toy 方案（`pypdf` + `python-docx`）在格式覆盖上只占第一行 / 第二行——能跑，但不抗复杂版面。要往生产走，至少要在 `Unstructured` 这一行附近才有底。
 
-### 选型速记
-
 - **要快、只处理文本型 PDF** → `pypdf` / `PyMuPDF`；
 - **要多格式、结构化标签** → `Unstructured`(local）或 `LlamaParse`(API）；
 - **要 GPU 加速的版面识别** → `MinerU` / `Marker`；

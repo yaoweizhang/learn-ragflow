@@ -275,8 +275,6 @@ RAGFlow 的混合检索在 `rag/search.py` 的 `search()` 函数里：`FusionExp
 
 我们的 toy `hybrid_topk` 在信号维度上只占第一行——**两通道 + 加权**；生产代码把它扩到三通道并加了 PageRank / tag boost，s07 会叠 cross-encoder 重排序 做精排。
 
-### 选型速记
-
 - **教学 / 快速原型 / 权重可解释** → `weighted_sum`（本教程）；α 直接调，看得见每个 hit 的子分贡献；
 - **不依赖分数量纲 / 多通道** → RRF(`Σ 1/(rank_i + 60)`），Milvus `RRFRanker` 原生支持；
 - **生产 / per-query α / 多层信号** → 生产 3-layer 流水线，DB fusion + app rerank + `rank_feature`；
