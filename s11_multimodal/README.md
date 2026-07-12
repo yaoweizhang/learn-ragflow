@@ -290,8 +290,6 @@ RAGFlow 的多模态在 `deepdoc/parser/` 里复用视觉模型：表格用 `pdf
 
 我们的 toy `extract_tables` + `ocr_image` 在范式复杂度上只占第一行——**启发式画线 + 平铺 OCR**；工业方案走完整 light 路径，**多一道抽象就多一道观测点 + 一个失败模式**。教学 demo 选 MVP 因为它跑通快、依赖少、依赖全在 `pdfplumber` / `pytesseract` 里可见；**生产请按"PDF 复杂度 + 是否答带坐标问题 + 速度需求"做 tier 选型**(MVP → 加乱码检测 → light → 视觉 LLM）。
 
-### 选型速记
-
 - **教学 / 快速原型 / 干净 PDF** → 本章 MVP(`pdfplumber.extract_tables()` + `pytesseract.image_to_string`），无坐标、无乱码检测、无视觉后端切换，代码 ≤ 50 行；
 - **生产单租户 / 中等复杂度 PDF** → 加乱码检测（`_is_garbled_text`)+ word-level bbox(`image_to_data`），切 PaddleOCR 后端，代码 +50 行换 +200% 鲁棒性；
 - **生产多租户 / 复杂版式（无线表 / 跨页表 / 合并格）** → 工业 light(`TableStructureRecognizer` + 视觉后端可插拔 + 坐标回写到 ES），加 2 层抽象换"能答'第三行第二列那个数字是多少'"的能力，token 成本翻倍；

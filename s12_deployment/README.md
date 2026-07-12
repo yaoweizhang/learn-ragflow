@@ -239,7 +239,7 @@ s12_deployment-rag-1  | INFO:     Uvicorn running on http://0.0.0.0:8000
 | `Dockerfile` | `Dockerfile` | — | 镜像 (≈ 2GB) | `python:3.11-slim` + tesseract + build-essential + `pip install -r requirements.txt` + 业务代码 |
 | `docker-compose.yml` | `docker-compose.yml` | — | 1 个 `rag` 服务跑起来 | build context=项目根、port 8000、env_file=.env、mount samples / _chroma(:ro) |
 
-### 跨代码文件的 schema 设计取舍
+### 本章的设计取舍
 
 s12 的代码拆得很细，每个函数 / 配置文件都对应一种"上线动作"的角色。schema 把"启动契约"封装掉，让上层只关心 HTTP 边界：
 
@@ -265,7 +265,7 @@ RAGFlow 的部署在 `docker/` 目录：docker-compose 把 API 服务 + Elastics
 
 ---
 
-## 五、选型速记
+## 选型速记
 
 ### 主流部署范式速览
 
@@ -280,8 +280,6 @@ RAGFlow 的部署在 `docker/` 目录：docker-compose 把 API 服务 + Elastics
 | **Serverless + 托管向量库** | N/A(函数) | Pinecone / Weaviate Cloud | 调用托管 Embedding API | 云厂商自带 | 流量波动大 / 不想运维 / 创业 MVP |
 
 我们的 toy `app.py` + `Dockerfile` + `docker-compose.yml` 在范式复杂度上只占第一行——**单容器 FastAPI**；完整生产方案走多容器编排，**多一道抽象就多一道观测点 + 一个失败模式**。教学 demo 选 MVP 因为它跑通快、依赖少、依赖全在 `docker compose up --build` 这一行命令里可见；**生产请按"用户量 / 数据量 / 是否多租户 / 是否要可观测"做 tier 选型**(MVP → compose + 网关 → 多容器 → K8s）。
-
-### 选型速记
 
 - **教学 / 快速原型 / demo / 单人用** → 本章 MVP(1 容器 FastAPI + compose），5 分钟跑起来，curl 调得通，改代码重 build 慢但可接受；
 - **小团队 / 内网 demo / 早期产品** → 加 `/healthz` + nginx 网关（鉴权 + 限流）+ Prometheus 指标，3 个服务，代码 +50 行换 +200% 可用性；

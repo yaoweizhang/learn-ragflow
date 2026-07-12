@@ -189,7 +189,7 @@ query='内存', alpha=0.5 (BM25 + dense 等权融合)
 | `_hybrid_topk(docs, query, query_vec, dense_score_fn, k, alpha)` | `code_01_cross_encoder_rerank.py` | `(list, str, list, callable, int, float)` | `list[{text, source, page, chunk_id, dense, bm25, score}]` | 复制 s06 code_02 的 hybrid_topk 公式(`α * vec + (1-α) * bm25_norm`);self-contained 跑通 BM25+dense 召回 → rerank 对比 |
 | `main()` (code_01) | `code_01_cross_encoder_rerank.py` | — | 打印 BEFORE/AFTER rerank top-3 | code_01 演示入口,默认 query `"内存"`(EOFError 时兜底) |
 
-### 跨代码文件的 schema 设计取舍
+### 本章的设计取舍
 
 s07 只有一个 code 文件，但 schema 仍然是这层负责"封装掉"的关键——hits 输入输出的字段语义：
 
@@ -215,7 +215,7 @@ RAGFlow 的重排序在 `rag/llm/rerank_model.py`：抽象 `RerankModel.Base`，
 
 ---
 
-## 五、选型速记
+## 选型速记
 
 ### 主流 rerank 策略速览
 
@@ -230,8 +230,6 @@ RAGFlow 的重排序在 `rag/llm/rerank_model.py`：抽象 `RerankModel.Base`，
 | **RAGFlow 多 provider** | 1（统一归一到 [0,1]） | 高（依 provider） | 否（provider 接管） | 生产 / per-query 成本 tier |
 
 我们的 toy `rerank` 在信号维度上只占第二行——**cross-encoder 精排**；生产代码用 `RerankModel.Base` 把第二到第四行都包成同一个接口，租户按"成本 vs 精度"选 provider。
-
-### 选型速记
 
 - **教学 / 快速原型 / 离线可复现** → 本地 cross-encoder（本教程，`BAAI/bge-reranker-base`），无 API key、~1GB 一次下载、CPU 可跑；
 - **生产中文场景** → `BAAI/bge-reranker-v2-m3` 或 `bge-reranker-large`，v2-m3 多语言、large 中文更准；

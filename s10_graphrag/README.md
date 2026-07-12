@@ -317,8 +317,6 @@ RAGFlow 的 GraphRAG 在 `general/extractor.py` 和 `general/entity_resolution.p
 
 我们的 toy `extract_triples` + `query_graph` 在范式复杂度上只占第一行——**手写 JSON + 内存 dict**；RAGFlow 走完整 general 路径，**多一道抽象就多一道观测点 + 一个失败模式**。教学 demo 选 MVP 因为它跑通快、依赖少、依赖全在 prompt 里可见；**生产请按"格式正确率 / 抽取成本 / 是否答宏观问题"做 tier 选型**(MVP → 切分隔符 → RAGFlow general → Neo4j）。
 
-### 选型速记
-
 - **教学 / 快速原型 / 离线可复现** → 本章 MVP（手写 JSON prompt + 内存 dict + 1 跳 query），无并发、无 merge、无社区检测，代码 ≤ 150 行；
 - **生产单租户 / 几万 chunks** → 切 LightRAG / RAGFlow light(`<SEP>` 三段式 + 倒排索引），格式正确率 + 抽取并发度上来了，代码 +200 行换 +300% 鲁棒性；
 - **答宏观问题 / 跨实体聚合** → RAGFlow general(hierarchical Leiden + community summary），加一层抽象换"能答'文档集在讲什么'"的能力，token 成本翻倍；
