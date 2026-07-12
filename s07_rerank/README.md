@@ -6,7 +6,7 @@
 
 ## 一、章节介绍
 
-### 1.1 核心定义：什么是重排序 (Re-ranking)？
+### 1.1 核心定义：什么是重排序 (Re-ranking）？
 
 **重排序 (Re-ranking)** 是 RAG 在线链路的**第二阶段**——把第一阶段（s06）召回的 top-N 候选（~10-100 条）喂给一个**精排模型**，让模型对每个 `(query, chunk_text)` 对独立打分，再按新分取 top-k。s06 的混合召回（BM25 + dense cosine）是**双塔 (bi-encoder)**——query 和 chunk 各自独立编码再算相似度，**快但只看到向量层面的语义接近度**，没办法捕捉"查询词"和"chunk 里某个具体词"的精确匹配。重排序就是为了补这一刀：**慢一点，但看得更准**。
 
@@ -56,7 +56,7 @@ s06 / s07 的代码把所有事都写在一个文件里，但拆开看是两种*
 
 #### 真实世界的问题
 
-1. **rerank 慢的 latency cliff**——cross-encoder 是 O(n) 次 BERT forward，**每一次都对 (query, chunk) 拼好的完整序列跑一次完整 BERT**。`top_k=10` 大概 100-300ms (CPU) / 30-50ms (GPU)；`top_k=100` 直接 300ms-1s (CPU) / 100-300ms (GPU)；`top_k=1000` 直接 3-10s，**线上不可接受**。生产上的标准解法就是两阶段——先用便宜的双塔召回 ~100-200 候选，再让 cross-encoder 在小池子上精排；**绝不在 top-1000 上跑 cross-encoder**。生产代码把这条原则硬编码进 `_rerank_window`（`ceil(64/page_size) * page_size`）。
+1. **rerank 慢的 latency cliff**——cross-encoder 是 O(n) 次 BERT forward，**每一次都对 (query， chunk) 拼好的完整序列跑一次完整 BERT**。`top_k=10` 大概 100-300ms (CPU) / 30-50ms (GPU）；`top_k=100` 直接 300ms-1s (CPU) / 100-300ms (GPU）；`top_k=1000` 直接 3-10s，**线上不可接受**。生产上的标准解法就是两阶段——先用便宜的双塔召回 ~100-200 候选，再让 cross-encoder 在小池子上精排；**绝不在 top-1000 上跑 cross-encoder**。生产代码把这条原则硬编码进 `_rerank_window`（`ceil(64/page_size) * page_size`）。
 2. **rerank 模型语言错配**——`bge-reranker-base` 主要在**英文 MS-MARCO + 英文 Wikipedia** 上训，中文任务上经常"准头不对"——它会把"内存"和"RAM"按英文语料里的共现模式打分，中文特有的术语对不上。**中文场景换 `bge-reranker-v2-m3` 或 `bge-reranker-large`** 更稳；切换只需改 `_reranker()` 里那行字符串。生产代码默认就配 `bge-reranker-v2-m3` 做本地 rerank。
 3. **LLM-as-rerank 的成本 tier**——还能再叠一层：拿 rerank 后的 top-N 让 GPT-4 / Claude 做"哪个最相关"判断。生产代码把这条线抽象成 `RerankModel.Base` 的多 provider（Cohere / Jina / Voyage / Qwen / NVIDIA / 百度千帆），准但每千次调用都要花 token 钱 + 远端 HTTP 延迟。本次 MVP 不接——教学仓库只要把"cross-encoder 比 bi-encoder 准"这件事讲清楚就够了；**生产系统需要按"成本 vs 精度"做 tier 选型**（本地 BGE → 远端 BGE-v2-m3 → Cohere Rerank → GPT-4 zero-shot）。
 
@@ -72,7 +72,7 @@ s06 / s07 的代码把所有事都写在一个文件里，但拆开看是两种*
 
 ---
 
-## 二、Cross-encoder 重打分 (BGE-reranker)：[code_01_cross_encoder_rerank.py](code_01_cross_encoder_rerank.py)
+## 二、Cross-encoder 重打分 (BGE-reranker）：[code_01_cross_encoder_rerank.py](code_01_cross_encoder_rerank.py)
 
 入口：[`code_01_cross_encoder_rerank.py`](code_01_cross_encoder_rerank.py)
 
@@ -111,7 +111,7 @@ query='内存', alpha=0.5 (BM25 + dense 等权融合)
   #3 [server_whitepaper.pdf#4] rerank=0.870 vec=0.869 | 内存支持镜像、备用与纠错码（ECC）三种数据保护模式 ...
 ```
 
-注意第 1 条 vs 第 2 条：混合召回把 vec=#1 的"内存 32 × DDR4 ..."排第一（配置表，纯字面）但 cross-encoder 觉得它只有 0.644（因为正文是配置表，"内存"只是表里一行），而"2 内存"章节虽然 vec 只有 0.905，rerank 却给到 0.954。这就是 cross-encoder 比 bi-encoder 准的地方：它能看到具体词而不是被一个向量平均值糊弄。
+注意第 1 条 vs 第 2 条：混合召回把 vec=#1 的"内存 32 × DDR4 。。。"排第一（配置表，纯字面）但 cross-encoder 觉得它只有 0.644（因为正文是配置表，"内存"只是表里一行），而"2 内存"章节虽然 vec 只有 0.905，rerank 却给到 0.954。这就是 cross-encoder 比 bi-encoder 准的地方：它能看到具体词而不是被一个向量平均值糊弄。
 
 ### 实际输出
 
@@ -153,13 +153,24 @@ query='内存', alpha=0.5 (BM25 + dense 等权融合)
   #3 [server_whitepaper.pdf#4] rerank=0.527 vec=0.590 | 五、可靠性与可维护性 冗余设计：电源、风扇、Boot 盘、PCIe 控制器均支持 N+1 冗余；内存
 ```
 
-`rerank_score` 范围 [0, 1]（`FlagReranker` `normalize=True` 归一化后）；`#3 [server_whitepaper.pdf#4]` 在 BEFORE 和 AFTER 都出现但排序微调——`score=0.795`（vec=0.590 + bm25 词面命中）和 `rerank=0.527`（cross-encoder 看到它是可靠性章节里顺带提到内存）**信号不一致**：BM25 字面命中把它顶到第一，rerank 觉得它不是"内存"主题段落。**这正是 rerank 的价值**——bi-encoder 召回了对的 chunk（BEFORE 也有它），但 cross-encoder 在 token 级 attention 上看出"内存"在 #4 章节里只是顺带提一句，该把它从第一压到第三。
+`rerank_score` 范围 [0， 1]（`FlagReranker` `normalize=True` 归一化后）；`#3 [server_whitepaper.pdf#4]` 在 BEFORE 和 AFTER 都出现但排序微调——`score=0.795`（vec=0.590 + bm25 词面命中）和 `rerank=0.527`（cross-encoder 看到它是可靠性章节里顺带提到内存）**信号不一致**：BM25 字面命中把它顶到第一，rerank 觉得它不是"内存"主题段落。**这正是 rerank 的价值**——bi-encoder 召回了对的 chunk（BEFORE 也有它），但 cross-encoder 在 token 级 attention 上看出"内存"在 #4 章节里只是顺带提一句，该把它从第一压到第三。
 
 ### 它做对了什么
 
 - **cross-encoder 看到 query+chunk 联合信号**：bi-encoder 把 query 和 chunk 各自编成向量再算相似度，丢失了 token 级对齐；cross-encoder 把 `(query, chunk)` 当一个序列让 BERT 一次性 cross-attend，能直接判别"这个词是不是在响应那个查询"。
 - **bi-encoder 召回 + cross-encoder 精排 = 两阶段漏斗**：bi-encoder 编码一次、向量化、ANN 召回千级候选 O(log N) 廉价；cross-encoder 在小池子（50-100）上跑 O(N) 精排准但贵。组合起来既快又准。
 - **不重编码**：rerank 不重新生成向量，只是在已有候选上重打分 —— 整个精排阶段不需要 GPU 重跑 embed。
+
+### 核心函数一览
+
+| 函数 | 文件 | 输入 | 输出 | 一句话解释 |
+|---|---|---|---|---|
+| `_embed_model()` / `_embed(texts)` | `code_01_cross_encoder_rerank.py` | `list[str]` | `list[list[float]]` | `@lru_cache(maxsize=1)` 加载本地 BGE-small-zh-v1.5;`normalize_embeddings=True`(跟 s04 / s05 / s06 同款) |
+| `_cosine(a, b)` | `code_01_cross_encoder_rerank.py` | `(list[float], list[float])` | `float` | 两个已 L2 归一化向量的内积(cosine ≡ inner_product) |
+| `_reranker()` | `code_01_cross_encoder_rerank.py` | — | `FlagReranker` | `@lru_cache(maxsize=1)` 加载 `BAAI/bge-reranker-base`,`use_fp16=False`;同一进程只下载、加载一次 |
+| `rerank(query, hits, top_k=3)` | `code_01_cross_encoder_rerank.py` | `(str, list[dict], int)` | `list[{text, source, page, chunk_id, dense, bm25, score, rerank_score}]` | 把 s06 的 hits 喂给 cross-encoder 重打分,按 `rerank_score` 降序取前 k,保留 `score`(s06 混合分)供前后对比 |
+| `_hybrid_topk(docs, query, query_vec, dense_score_fn, k, alpha)` | `code_01_cross_encoder_rerank.py` | `(list, str, list, callable, int, float)` | `list[{text, source, page, chunk_id, dense, bm25, score}]` | 复制 s06 code_02 的 hybrid_topk 公式(`α * vec + (1-α) * bm25_norm`);self-contained 跑通 BM25+dense 召回 → rerank 对比 |
+| `main()` (code_01) | `code_01_cross_encoder_rerank.py` | — | 打印 BEFORE/AFTER rerank top-3 | code_01 演示入口,默认 query `"内存"`(EOFError 时兜底) |
 
 ### 它做错了什么
 
@@ -189,7 +200,7 @@ s07 只有一个 code 文件，但 schema 仍然是这层负责"封装掉"的关
 - **`top_k`（精排后保留几个）vs `top_n`（召回多少）**：前者是"喂给 LLM 的最终候选数"——s08 会把这 k 个 hit 拼进 prompt，**越大越费 token 但越准**；后者是"喂给 cross-encoder 的候选数"——**越大越费 latency**。生产上一般召回 50-100，精排取 3-5。本教程选 `top_k=3` 是因为 s05 / s06 的 `samples/` 只有 34 个 chunk，10 召回 3 精排已经能看出"rerank 把对的顶上去"的效果；**生产请按 query 复杂度调**。
 - **`@lru_cache(maxsize=1)` 缓存 vs 每次重载**：`FlagReranker` 加载要 ~5-10s（CPU）/ ~2-3s（GPU），rerank 一对 query-chunk 本身只要 3-5ms（CPU）/ 1-2ms（GPU）。**没有缓存，每次 rerank 都白白浪费 5s 加载**；有缓存，同一进程内 rerank 任意次只加载一次。`@lru_cache(maxsize=1)` 是 Python 标准库最简单的"单例"装饰器，跟 s04 / s05 / s06 的 `_embed_model()` 同款做法。
 - **`use_fp16=False` vs `use_fp16=True`**：`FlagReranker` 默认 fp32，精度最高但显存占用也最高（~2GB）。**GPU + 显存紧** 时改 `use_fp16=True`，推理速度 ~2x 但精度损失 ~1%。本教程选 fp32 是因为 demo 在 CPU 上跑，fp16 反而更慢；**生产 GPU 请开 fp16**。
-- **`normalize=True` vs `normalize=False`**：`FlagReranker.compute_score` 默认输出是**原始 sigmoid logits**，范围 `[0, +∞)`；设 `normalize=True` 后会被 FlagEmbedding 内部映射到 `[0,1]`（具体公式是 sigmoid + 校准），跟 s06 的 cosine ∈ [0,1] 同一个量纲。**如果不归一，print 出来的 `rerank_score` 会显示 10+ 这样的数字**，看起来吓人但其实是 logits。
+- **`normalize=True` vs `normalize=False`**：`FlagReranker.compute_score` 默认输出是**原始 sigmoid logits**，范围 `[0, +∞)`；设 `normalize=True` 后会被 FlagEmbedding 内部映射到 `[0,1]`（具体公式是 sigmoid + 校准），跟 s06 的 cosine ∈ [0，1] 同一个量纲。**如果不归一，print 出来的 `rerank_score` 会显示 10+ 这样的数字**，看起来吓人但其实是 logits。
 - **不重做 embed**：rerank 阶段只重打分，不重生成向量——意味着 `hits` 里**必须先有 `dense` 和 `bm25` 分**。生产代码把这条契约硬编码成 `RerankModel.Base.rerank(query, docs, top_k)`——上游必须保证 `docs` 已经召回过并打了基础分。
 
 如果你的场景需要"重新打分时同时打 5 路分（dense / bm25 / rerank / colbert / llm-judge）"，就把 `hits` schema 扩成 `list[dict]` 每个 dict 多塞字段——但**保持 `rerank` 函数签名只吃 `query / hits / top_k`**，不要把它升成 Pydantic 那种重型接口。toy 阶段越简单越好。
@@ -200,7 +211,7 @@ s07 只有一个 code 文件，但 schema 仍然是这层负责"封装掉"的关
 
 RAGFlow 的重排序在 `rag/llm/rerank_model.py`：抽象 `RerankModel.Base`，provider 包括 BGE-reranker / Cohere / Jina / 自部署 cross-encoder，统一签名 `rerank(query: str, docs: list[str], top_k: int) -> list[(doc, score)]`。`.env` 的 `RERANK_PROVIDER` 决定用哪个。
 
-**设计取舍**：与 embedding 路由同样的 provider 抽象，避免散弹式判断。同时 `top_k` 是 rerank 后的最终返回数（不是 cross-encoder pair 数）——cross-encoder 要对 query + N 个 doc 算 N 次相似度（O(N)），不是 O(N²)。
+**设计取舍**：与 embedding 路由同样的 provider 抽象，避免散弹式判断。同时 `top_k` 是 rerank 后的最终返回数（不是 cross-encoder pair 数）——cross-encoder 要对 query + N 个 doc 算 N 次相似度（O(N）），不是 O(N²）。
 
 详细摘录与 5-15 行 "为什么这样写" 的分析见 [`docs/reference/ragflow-notes/rerank.md`](../docs/reference/ragflow-notes/rerank.md)。
 
@@ -248,7 +259,7 @@ RAGFlow 的重排序在 `rag/llm/rerank_model.py`：抽象 `RerankModel.Base`，
 2. **为什么 s07 没有第二段 failure mode 而 s02/s03 有？**
 3. **如果改用 LLM-as-reranker，prompt 设计要点是什么？**
 
-(答案见文末「思考题答案」)
+（答案见文末「思考题答案」）
 
 ---
 
@@ -256,7 +267,7 @@ RAGFlow 的重排序在 `rag/llm/rerank_model.py`：抽象 `RerankModel.Base`，
 
 ### Q1. 如果召回了 100 个、rerank 要跑多少对？
 
-**100 对**（1 query × 100 candidates）。Cross-encoder 的 query+chunk 是 1 对 1，不是 1 对 N。100 个 chunk 就是 100 对，O(n) 不是 O(n²)。
+**100 对**（1 query × 100 candidates）。Cross-encoder 的 query+chunk 是 1 对 1，不是 1 对 N。100 个 chunk 就是 100 对，O(n) 不是 O(n²）。
 
 注意原 plan/brief 这里写的是 10000 对，那是因为把 BM25 + 向量那种双塔检索的笛卡尔积混淆进来了——cross-encoder 没有 N×N 那回事。
 
@@ -284,11 +295,11 @@ if top > 0:
 
 ### Q2. 为什么 s07 没有第二段 failure mode 而 s02/s03 有？
 
-答：s07 的失败模式不是"代码跑不通"而是"rerank 在某些边界条件下退化成 bi-encoder"——比如 (a) 召回量太小（<5）时 rerank 跟 dense 排序几乎重合，看不出差别；(b) `bge-reranker-base` 配中文 query 时精度比 `v2-m3` 低 ~10%；(c) `top_k` 大于召回量时直接返回原序。这些"边界模式"已经在 §一 用文字讲清楚，不需要单独的 failure-mode 段跑——s02（loader edge cases）/ s03（chunker 边界）是"代码逻辑分支"，s07 是"超参/模型选择"，**叙述载体不一样**。
+答：s07 的失败模式不是"代码跑不通"而是"rerank 在某些边界条件下退化成 bi-encoder"——比如 (a) 召回量太小（<5）时 rerank 跟 dense 排序几乎重合，看不出差别；（b) `bge-reranker-base` 配中文 query 时精度比 `v2-m3` 低 ~10%；（c) `top_k` 大于召回量时直接返回原序。这些"边界模式"已经在 §一 用文字讲清楚，不需要单独的 failure-mode 段跑——s02（loader edge cases）/ s03（chunker 边界）是"代码逻辑分支"，s07 是"超参/模型选择"，**叙述载体不一样**。
 
 ### Q3. 如果改用 LLM-as-reranker，prompt 设计要点是什么？
 
-三条 — (a) **候选摘要 + 编号**，不要塞完整 chunk（LLM 上下文有限）；(b) **明确输出格式**，如 `Doc: 9, Relevance: 7`、`Doc: 3, Relevance: 4`，强结构化输出便于解析；(c) **给"无关文档"留位**，提示词里写明"请不要包含与问题无关的文档"，LLM 才不会硬凑够 k 个返回。
+三条 — (a) **候选摘要 + 编号**，不要塞完整 chunk（LLM 上下文有限）；（b) **明确输出格式**，如 `Doc: 9, Relevance: 7`、`Doc: 3, Relevance: 4`，强结构化输出便于解析；（c) **给"无关文档"留位**，提示词里写明"请不要包含与问题无关的文档"，LLM 才不会硬凑够 k 个返回。
 
 ### 那为什么不直接让 LLM rerank？
 
