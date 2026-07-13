@@ -338,7 +338,7 @@ unset LLM_API_KEY && python s09_agent_tools/code_01_tool_call.py
 - **JSON 失败反馈 vs 直接报错**——MVP 的 `run_agent` 在 `json.loads` 失败时**把"原文"当 Observation 写回 messages**，让 LLM 下一轮自己修正（给 `obs = "上一次 ActionInput 不是合法 JSON,原文已回显: ... 请严格按规范输出 JSON。"`）。**不直接报错**是为了让 agent 在"模型偶尔吐错 JSON"时自愈——生产里 5-10% 的轮次会触发这种自愈路径，直接报错会让用户体验断崖式下降。
 - **graceful skip vs hard fail**——同 s08，`run_agent` 在无 `LLM_API_KEY` 时返回 "Max steps reached。" + 演示 trace 形状，**不抛异常**。pipeline 在没配 key 的环境下也能跑、只展示 agent 决策形状。生产上**应该 fail-fast**，但教学 demo 走 graceful skip 让初学者少踩坑。
 
-## 六、跨代码文件集成
+## 六、跨代码调度与契约
 
 01 跑单步（`single_shot`），02 跑多步（`run_agent` + `max_steps` 循环）。`run_agent` 通过 `importlib` 加载 01 的工具描述、LLM 客户端、检索函数——**单步-多步两层完全共用同一份底座**，02 只新增 30 行循环控制代码。把"工具定义 + LLM 调用 + 检索函数"和"循环控制"解耦的好处：换循环策略（改成 DAG / supervisor-subagent）不动底层工具描述；加新工具（加 `calculate` / `web_search`）不动循环控制。
 

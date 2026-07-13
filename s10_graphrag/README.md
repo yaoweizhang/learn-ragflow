@@ -278,7 +278,7 @@ python s10_graphrag/code_02_query.py   # 不调 LLM,只读 _graph.jsonl
 - **`set` vs `list` 存邻接边**——MVP 用 `set`，**同一 `(rel, tail)` 多次出现自动去重**；`list` 简单但会在"同段重复抽到同一三元组"时污染边集合。代价是 `set` 不保证顺序，2.2 用 `sorted(graph.get(entity, set()))` 显式排。
 - **`build_graph` 单层 vs 多层**——MVP 走单层 dict（节点名即 key）；RAGFlow 把同一实体名跨段出现时**合并 description**(`<SEP>` 拼接，超过 12 段送 LLM 摘要压缩），并按 `entity_type` 分桶做 entity resolution。**MVP 完全不做合并**——`紫光恒越` 和 `紫光恒越技术有限公司` 是两个节点，召回时只能命中其中一个。
 
-## 六、跨代码文件集成
+## 六、跨代码调度与契约
 
 2.1 写图（`extract_triples` → `build_graph` → `save_graph`），2.2 读图（`load_graph` → `query_graph`）。两者通过 `_graph.jsonl` 解耦——2.2 离线可重跑、调试抽取 prompt 时反复改 2.1 重抽，2.2 不需要每次重新走 LLM。**生产里也走这个模式**：2.1 离线 ETL pipeline 跑完之后可以常关，在线 service 只跑 2.2（扩展为多跳 / entity resolution），LLM 成本不会每次 query 都付一次。
 

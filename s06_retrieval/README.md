@@ -232,7 +232,7 @@ hybrid top-3 (with both sub-scores visible):
 
 如果你的场景需要**第三层信号**（权威文档 / 标签 boost），就把 `hybrid_topk` 扩成 `final = α·v + (1-α)·b + γ·rank_fea`，γ 是 PageRank / tag cosine 的权重——生产代码的 `sim = tkweight*tksim + vtweight*vtsim + rank_fea` 就是这个思路。
 
-## 六、跨代码文件集成
+## 六、跨代码调度与契约
 
 01 跑 BM25（纯字面，无外部依赖），02 把 01 的 BM25 + s04 BGE 的 dense cosine 在 `hybrid_topk` 里拼成加权融合。两者通过同一份 chunk 列表对齐——01 输出 `{chunk, bm25}`，02 拿 `dense_score_fn(chunk)` 算 dense 分，两者按 `chunk_id` 配对后做加权融合，得到最终排序。**s07 拿到 s06 的输出后，直接做 rerank 精排 + chunk 拉取，不需要重算 BM25 或 dense**——这是把"sparse 算过 / dense 算过"两件事固化在 s06 输出的红利。
 
