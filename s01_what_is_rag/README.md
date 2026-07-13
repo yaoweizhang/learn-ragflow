@@ -329,13 +329,15 @@ python s01_what_is_rag/code_03_augmented_llm.py
 | `main()` (02) | `code_02_vector_basics.py` | 交互输入查询 | top-3 + 分 | 02 入口 |
 | `main()` (03) | `code_03_augmented_llm.py` | — | prompt + LLM 输出 | 03 入口 |
 
-## 六、跨代码 schema 设计取舍
+## 六、跨代码协同
 
 环境变量：03 需要 `LLM_API_KEY`（可选 `LLM_BASE` / `LLM_MODEL`，指向任意 OpenAI 兼容服务）。无 key 时跳过真实生成，只打印 prompt 验证链路。
 
 三个 code 文件约定同一份 schema：`paragraphs = list[str]` 输入 → `retrieve` 返回 `list[{text, score, ...}]` 命中；02 / 03 的 `retrieve(q, paragraphs, k)` 签名完全一致——这是把"召回"封装掉的代价：**调用方不需要知道 01 是子串匹配、02 是词袋向量、03 又调一遍 02**，统一接口降低后续章节替换成本。
 
-## 七、跨代码文件集成 / 如何扩展到工业级
+## RAGFlow 实现
+
+RAGFlow 把 RAG 主干实现成 12 个独立模块——解析、切块、embedding、索引、召回、重排、prompt、生成 各自可替换。本教程的 12 章地图见 [s00 §1.4](../s00_concepts/README.md#一4-12-章对照)；RAGFlow 在每一层的工程化做法见 s02-s12 各章末的 RAGFlow 实现小节。s01 跑的是这条主干的最朴素直连版——`query → retrieve → augment → generate`，RAGFlow 的模块化设计正好对应这条主干的"每一环可独立替换"。
 
 | s01 里的环节 | 工业实现 | 教程章节 |
 |---|---|---|
@@ -360,12 +362,6 @@ python s01_what_is_rag/code_03_augmented_llm.py
 | 精排 | 无 | cross-encoder 重排序 + PageRank | s07 |
 | Prompt | 极简 `<context>` | 多语言模板 + 哨兵 + 角标 | s08 |
 | LLM | OpenAI 兼容 | Anthropic / OpenAI / Bedrock / Ollama | s08 |
-
----
-
-## RAGFlow 实现
-
-RAGFlow 把 RAG 主干实现成 12 个独立模块——解析、切块、embedding、索引、召回、重排、prompt、生成 各自可替换。本教程的 12 章地图见 [s00 §1.4](../s00_concepts/README.md#一4-12-章对照)；RAGFlow 在每一层的工程化做法见 s02-s12 各章末的 RAGFlow 实现小节。s01 跑的是这条主干的最朴素直连版——`query → retrieve → augment → generate`，RAGFlow 的模块化设计正好对应这条主干的"每一环可独立替换"。
 
 ---
 
