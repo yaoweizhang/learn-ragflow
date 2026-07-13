@@ -290,11 +290,4 @@ if top > 0:
 所以生产代码把 LLM 风格的 rerank 做成**多 provider 抽象**（Jina / Cohere / Voyage / Qwen / 本地 HF cross-encoder），让租户按预算选；cross-encoder 的"快 + 准 + 便宜"组合通常是默认推荐——我们的 MVP 也是这个选择。
 下一章 — 这一节把"召回 → 排序 → 生成 → 服务化"中的某一环跑通,留下 +1 章填下一档的实现;每加一档,缺失上层就越明显,直到 s12 把所有环节收敛到 FastAPI 服务。
 
-### troubleshooting
-
-- `ModuleNotFoundError: No module named 'FlagEmbedding'`：BGE-reranker 依赖；`pip install FlagEmbedding` 兜底；离线环境先 `pip download FlagEmbedding` 到本地、`HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1` 强制走本地缓存。
-- `OSError: [E050] Can't find model 'BAAI/bge-reranker-base'`：HuggingFace Hub 不可达；构建镜像时预下载模型到 `~/.cache/huggingface/hub/`，或 `HF_ENDPOINT=https://hf-mirror.com` 走国内镜像。**模型 ~1GB，首次下载慢**。
-- `UnicodeEncodeError: 'gbk' codec can't encode character`：Windows 控制台编码问题，跑前 `set PYTHONIOENCODING=utf-8`（s05 / s06 / s07 同问题）。
-- `rerank_score > 1` 或 `< 0`：`FlagReranker(..., normalize=False)` 默认输出是 logits 不是概率，设 `normalize=True` 让它映射到 `[0,1]`。
-- `rerank 跑 5 分钟不出结果`：`_reranker()` 没缓存住 / 每次新进程——检查 `@lru_cache(maxsize=1)` 是否还在，或者是不是被多线程调用（lru_cache 不跨进程）。
-
+> 排错事项（`ModuleNotFoundError` / OSError / `rerank_score` 取值 等）见 `c01` / `c02` 的 `### 局限与下一步`。

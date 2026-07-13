@@ -423,11 +423,4 @@ ReAct **每轮让模型先输出 Thought（思考过程）再选 Action**，func
 
 下一章 — 这一节把"召回 → 排序 → 生成 → 服务化"中的某一环跑通,留下 +1 章填下一档的实现;每加一档,缺失上层就越明显,直到 s12 把所有环节收敛到 FastAPI 服务。
 
-### troubleshooting
-
-- `openai.AuthenticationError`： `LLM_API_KEY` 没设或失效；`.env` 加 `LLM_API_KEY=sk-...` 兜底，或 `unset LLM_API_KEY` 走 graceful-skip 分支。
-- `openai.APIConnectionError`： 网络不可达；设 `LLM_BASE_URL=https://...` 走代理，或暂时 `unset LLM_API_KEY` 验证非 LLM 链路（retrieval/rerank/agent 循环）正常。
-- `UnicodeEncodeError: 'gbk' codec can't encode character`： Windows 控制台编码问题，跑前 `set PYTHONIOENCODING=utf-8`(s05-s09 同问题）。
-- `LLM 一路 retrieve 不 finish`： 撞 `max_steps=5` 兜底，见「思考题答案」第 1 题的 3 种解法（`max_steps` + prompt 软约束 + 重复 action 检测）。
-- `LLM 输出 `Action： retrieve` 但漏 ActionInput`： code_02 会把"原文"当 Observation 反馈回去让模型下一轮自愈；若连续失败，把 `TOOLS_DESC` 里的格式说明加粗（`**严格按以下格式**`）提升遵从度。
-
+> 排错事项（`AuthenticationError` / `APIConnectionError` / `Action: retrieve` 缺 `ActionInput` 等）见 `c01` / `c02` 的 `### 局限与下一步`。

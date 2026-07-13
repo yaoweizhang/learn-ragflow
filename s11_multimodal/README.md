@@ -359,14 +359,4 @@ ES 索引时给每个 chunk 多塞两个字段：`page`（页码）、`page_bbox
 
 下一章 — 这一节把"召回 → 排序 → 生成 → 服务化"中的某一环跑通,留下 +1 章填下一档的实现;每加一档,缺失上层就越明显,直到 s12 把所有环节收敛到 FastAPI 服务。
 
-### troubleshooting
-
-- **`pytesseract` 没装**：`pip install pytesseract Pillow`。
-- **`TesseractNotFoundError: tesseract is not installed or it's not in your PATH`**：`pytesseract` 只是 Python 壳，**真正的 OCR 引擎是系统二进制 `tesseract`**。
-  - Windows：从 https://github.com/UB-Mannheim/tesseract/wiki 下载安装包，安装时勾上"Chinese (Simplified)"语言包；记下安装路径（如 `C:\Program Files\Tesseract-OCR\`）；要么把它加到 PATH，要么在脚本顶部加 `pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"`。
-  - macOS：`brew install tesseract tesseract-lang`。
-  - Linux：`sudo apt install tesseract-ocr tesseract-ocr-chi-sim`。
-- **`OSError: [Errno 2] No such file or directory: 'tesseract'`**：同上，二进制没装。
-- **OCR 中文乱码 / 错字**：99% 是没装 `chi_sim` 语言包；`lang="chi_sim+eng"` 跟系统装的语言包必须对得上。
-- **`EOFError` when piped**：OCR 那步的 `input()` 在 `< /dev/null` 管道下抛 EOFError——交互模式是主用模式；想脚本化跑就直接传图片路径或改为 `argparse`(MVP 不做）。
-
+> OCR 引擎安装 (`pytesseract` / `tesseract` 二进制 / `chi_sim` 语言包 / 多 OS 路径) 等细节见 `c02` 的 `### 局限与下一步`。
