@@ -50,7 +50,7 @@ embedding 模型的 `max_seq_len` 通常是 512 token（BGE 系列）或 8192 to
 
 > 02 会跑同一套函数到真实样本上，展示哪些情况它会崩。
 
-### 这是什么
+### 概念
 
 1. `split_long_paragraph(text, max_chars)` — lookbehind 正则在 `[.。!?！？]` 之后切，把超长段落切成 ≤ max_chars 的若干块；极端情况（无标点的规格表）按字符硬切兜底；
 2. `chunk_by_paragraph(docs, max_chars=500)` — 短段整段保留为 1 块，长段调 `split_long_paragraph` 后展开多块；每块带 `chunk_id = {source}#{page}#p{n}`；
@@ -58,7 +58,7 @@ embedding 模型的 `max_seq_len` 通常是 512 token（BGE 系列）或 8192 to
 
 入口：[`code_01_basic_chunk.py`](code_01_basic_chunk.py)
 
-### 跑起来
+### 跑一遍
 
 ```bash
 python s03_chunking/code_01_basic_chunk.py
@@ -78,7 +78,7 @@ server_whitepaper.pdf#2#p2 | 三、整机规格
 组件 规格 说明 ...
 ```
 
-### 实际输出
+### 看输出
 
 **01 跑出来（实测，`samples/server_whitepaper.pdf` + `samples/disclosure.docx`）：**
 
@@ -98,14 +98,9 @@ server_whitepaper.pdf#2#p2 | 三、整机规格
 
 31 段（4 页 PDF + 27 段 DOCX）→ 34 块，**最大块 452 字符，未触发硬切兜底**。`chunk_id` 按 `{source}#{page}#p{n}` 稳定生成，可被 s04+ 直接引用。
 
-### 它做对了什么
+### 局限与下一步
 
-- **token-aware 边界**：按 `[.。!?！？]` 切而不是裸字符切，中英文段落都不会拦腰砍断句子；
-- **硬切兜底**：单句本身超过 `max_chars`（无标点规格表）按字符切，最坏情况下输出不超过 `2 * max_chars`；
-- **chunk_id 稳定可引用**：`{source}#{page}#p{n}` 形式让 s04+ 可以直接引用具体 chunk；
-- **零新依赖**：只用 `re` + `pathlib`。
-
-### 它做错了什么
+本段做对了什么 — 用 500 字 cap + 句界正则把"段落 → chunk"这件 RAG 流水线最朴素的工作跑通,句界优先 + 硬切兜底让中英文段落都不会被拦腰砍断,`{source}#{page}#p{n}` chunk_id 让 s04+ 可以稳定引用具体块。
 
 - **表格被切碎**：`pypdf.extract_text()` 输出的表格是挤在一行的长串，句界切不到、只能硬切 → 每个 chunk 只看到半张表；
 - **父子块概念缺失**：500 字封顶的扁平列表，召回后 LLM 拿不到"完整语义单位"，回答"Q3 营收多少"只能看到切碎的片段；
@@ -113,11 +108,11 @@ server_whitepaper.pdf#2#p2 | 三、整机规格
 
 02 会在 `samples/` 上把这三类失败各跑一遍。
 
-### troubleshooting
-
 - `ModuleNotFoundError: No module named 'pypdf'`：s03 复用 s02 的 loader，先把 s02 跑通。
 - 输出块数 ≤ 输入段数：每个 PDF / DOCX 段几乎都被整段保留（因为大多数段 < 500 字符）；长段才会展开成多块。如果你的样本全是 1000 字符的段，输出块数会显著大于输入段数。
 - 输出顺序不对：检查 `len(out)` 的位置——`chunk_id` 里的 `p{n}` 是输出顺序而非输入顺序，确保 `len(out)` 在 append 后递增。
+
+下一章 s04 如何解决 — 把这些 chunk 转成真语义向量,后面的问题变成"embedding 是不是够准",而不是"文本是不是切对了"。但 chunk 粒度本身决定召回上限,所以"切分 + embedding"两个旋钮必须一起调。
 
 ---
 
@@ -126,7 +121,7 @@ server_whitepaper.pdf#2#p2 | 三、整机规格
 > 01 在 toy 上能跑；放到真实 `samples/` 上会崩在哪？
 > 本脚本定位 3 类问题 + 引出工业解法。
 
-### 这是什么
+### 概念
 
 把 01 的 `chunk_by_paragraph` 喂给真实样本（`server_whitepaper.pdf` 4 页 + `disclosure.docx` 27 段），把"看不见的损失"暴露出来：
 
@@ -136,7 +131,7 @@ server_whitepaper.pdf#2#p2 | 三、整机规格
 
 入口：[`code_02_chunk_failures.py`](code_02_chunk_failures.py)
 
-### 跑起来
+### 跑一遍
 
 ```bash
 python s03_chunking/code_02_chunk_failures.py
@@ -161,7 +156,7 @@ AFTER  (cap=500 → 切成 2 块):
           第 1 块从 'NAND' 开头继续,失去 '组件 / 规格 / 说明' 列对齐语义。
 ```
 
-### 实际输出
+### 看输出
 
 **02 跑出来（实测）：**
 
@@ -196,24 +191,19 @@ BEFORE (过短的 header-only chunks,语义为零):
   id=disclosure.docx#None#p18 len=11 | '第四节 分季度财务数据'
 ```
 
-### 它做对了什么
+### 局限与下一步
 
-- **暴露问题**：每个 demo 都打印 before/after 片段，让"为什么这种切法不够"肉眼可见；
-- **解法对照**：每个失败都点名工业方案的对应模块（`_concat_downward` / `naive_merge` / `hierarchical_merge` / `attach_media_context`）；
-- **量化损失**：表格切成 2 块时第 0 块停在 mid-row "8GB"——直接给 LLM 看它能不能拼回去；
-- **零新依赖**：只 import 01 + 标准库 + `python-docx`（已装）。
-
-### 它做错了什么
+本段做对了什么 — 把 01 在真实样本上的三类典型失败(表格切碎 / 父子块缺失 / 跨段引用断裂)逐一定位 + 量化,每个失败都点名 RAGFlow 的对应工业模块(`pdf_parser.py` / `naive_merge` / `hierarchical_merge` / `attach_media_context`)。
 
 - 它是个 demo，不是 fix——没有真的把表拼回去、没有真的建父子树、没有真的回填 context；
 - 依赖 s02 中 01 的 loader（后者已丢 DOCX tables）；如果想看到表格里的季度数字，要么改 s02 loader 要么用 `python-docx` 直读；
 - 只测了 3 类失败，真实场景还有 (d) 页眉页脚污染 / (e) 多栏错位 / (f) 扫描件 OCR 缺失，那些是 s02 + s11 的事。
 
-### troubleshooting
-
 - `ModuleNotFoundError: No module named 'pypdf'`：s03 复用 s02 的 loader，先把 s02 跑通。
 - `demo_parent_child` 没找到季度数字：本样本 DOCX 表未含 Q3 字面量——这是真实样本的特征，不是代码 bug。要看表格数字改用 `python-docx` 直读。
 - 表格切碎 demo 的 chunk 数不对：规格表如果抽出来超过 500 字符会被切成 2 块，没触发则说明 `samples/server_whitepaper.pdf` 被替换了。
+
+下一章 s04 如何解决 — 切分这一关注定会留损失,真正的召回质量由 embedding 兜底;s04 的 BGE 把"同义不同字"的句段在向量空间里拉近,即便 chunk 切得不够准,真语义相似的 chunk 仍能命中。表格 / 父子块的彻底补全是 s11 多模态抽取的事。
 
 ---
 

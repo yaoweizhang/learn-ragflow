@@ -95,7 +95,7 @@ s08 的 `PROMPT` 常量是一个典型的**三段式结构**：
 把 s07 精排后的 top-3 hits 拼进 `<context>` 块，调 LLM 生成带角标的答案。
 这是"s07 给候选 → s08 给答案"的桥：精排选出最相关的 3 条，prompt 强制 LLM 引用 + 拒答，把幻觉关在笼子里。
 
-### 这是什么
+### 概念
 
 `s08_prompt_generate/code_01_prompt_template.py` 干三件事——拼 prompt、调 LLM、解引用编号。`PROMPT` 常量是一段 4 条硬约束的中文规则：（1) 只能依据 `<context>` 回答；（2) 资料里没答案就答"我不知道"（拒答兜底）；（3) 引用用 `[i]` 角标对应资料编号；（4) 中文 + 简洁直接。`<context>...</context>` 是显式定界符——把检索结果圈在"边界"里、用户问题圈在"边界"外，让 LLM 知道哪些是可信来源、哪些是要谨慎对待的输入（防 prompt 注入的第一道线）。
 
@@ -103,7 +103,7 @@ s08 的 `PROMPT` 常量是一个典型的**三段式结构**：
 
 `main()` self-contained：内联 chroma 加载 + s04 code_01 本地 BGE embed + s06 code_02 BM25+dense 混合召回 + s07 code_01 cross-encoder 精排，把 top-3 喂给 `answer()`、打印答案 + 引用。整章只有这 1 个代码文件，因为 prompt 模板和 LLM 调用本身是**同一个原子动作的两端**——拆成 2 段反而要单独跑一遍 top-3 重算，多花几秒换不到可观测性收益。
 
-### 跑起来
+### 跑一遍
 
 ```bash
 python s08_prompt_generate/code_01_prompt_template.py
@@ -140,7 +140,7 @@ A: R3630 G5 配备 **32 个 DIMM 内存插槽** [2]。
 A: 我不知道。资料中未提及公司 CEO 的姓名,仅披露了最终控制方为朱蓉娟、彭韬夫妇[1]。
 ```
 
-### 实际输出
+### 看输出
 
 把 code_01 跑在仓库自带的 `samples/` 上，`PROMPT.format(...)` 返回的最终 prompt 长这样：
 
@@ -209,20 +209,135 @@ A: [skipped: LLM_API_KEY not set]
 A: 我不知道。资料中未提及公司 CEO 的姓名,仅披露了最终控制方为朱蓉娟、彭韬夫妇[1]。
 ```
 
-### 它做对了什么
+### 局限与下一步
 
-- **`<context>...</context>` 定界符防 prompt 注入**：检索结果被显式包起来，LLM 一眼能看出"哪些是资料、哪些是用户问题"。就算用户问题里塞"忽略上面所有指令"，也越不过 `<context>` 这道栅栏——这是 RAG 系统抗 prompt 注入的**第一道线**。
-- **"我不知道"是显式 sentinel**：资料里没答案时硬约束让模型答"我不知道"而不是硬凑。temperature=0 + 显式兜底比"自由发挥"安全得多——但这只是单点防御，ragflow 的 `sufficiency_check` 把它升级成独立 LLM 调用。
-- **引用编号 + source/page 一起回填**：prompt 里要求 `[1][2]` 角标，`answer()` 返回时把每条 hit 的 `source`/`page` 一并带回——下游 UI 可以直接渲染"答案句末 [1] → 跳到 server_whitepaper.pdf 第 2 页"，**可追溯**而非仅"看起来权威"。
-- **graceful degradation**：`LLM_API_KEY` 没设时返回 `[skipped: ...]` + 仍然填好的 citations——pipeline 不崩、citation 链路不断，开发者可以本地裸跑验证 retrieval/rerank 没问题。
+本段做对了什么 — 把精排后的 top-3 hits 拼进 `<context>` 块、调 LLM 生成带 `[i]` 角标的答案,首次让"引用 + 拒答"在 prompt 层面强制落地,把幻觉关进 `<context>` 笼子里。
 
-### 它做错了什么
 
 - **没有 streaming**：LLM 输出完才一次性返回，长答案（300+ token）等几秒才出字。生产上要 `stream=True` 让 token 边生成边推到前端（TTFT < 500ms 才不卡）。
 - **没有 retry / 超时**：OpenAI 调用一旦 5xx / 超时就整个 pipeline 挂掉。生产至少要 `tenacity` 加指数退避、设 `timeout=10s`。
 - **拒答是"prompt 一行字"不是"独立判定"**：模型可以遵守也可以不遵守——temperature=0 时倾向遵守，但 prompt 长了或被前面几轮对话稀释，这条规则就衰减。ragflow 的 `sufficiency_check` 把"该不该拒答"做成 LLM 显式输出 `is_sufficient: true/false`，可观测、可分支。
 - **不挡 `<context>` 内的恶意标记**：用户问题里的 `[INST]` / `<system>` 已经被定界符挡了，但**资料本身**(PDF 抽出来的文本）如果含 `<system>` 之类的攻击向量，会直接进 prompt——应该渲染前 strip 掉。这是个真实生产坑，ragflow 走 "工具调用前的内容审查" 兜底。
 - **同 prompt 里塞引用规则不稳**：prompt 里硬塞"引用时用 [1]"省 token，但 LLM 经常**写 [1] 但引错**——rerank 顺序和 LLM 内部"哪条更相关"的判断不一致。ragflow 的解法是**双 pass**：先生成答案、再用 `citation_prompt` 跑一次补引用，把"答"和"标"拆开。
+
+
+- `openai.AuthenticationError`： `LLM_API_KEY` 没设或失效；`.env` 加 `LLM_API_KEY=sk-...` 兜底，或 `unset LLM_API_KEY` 走 graceful-skip 分支。
+- `openai.APIConnectionError`： 网络不可达；设 `LLM_BASE_URL=https://...` 走代理，或暂时 `unset LLM_API_KEY` 验证非 LLM 链路（retrieval/rerank/citations）正常。
+- `UnicodeEncodeError: 'gbk' codec can't encode character`： Windows 控制台编码问题，跑前 `set PYTHONIOENCODING=utf-8`(s05-s08 同问题）。
+- `LLM 输出 [1] 但引错 chunk`： `temperature=0` 已经大幅缓解，仍偶发可在 `answer()` 返回前 `re.findall(r'\[(\d+)\]', text)` + `c not in range(1, len(hits)+1)` 校验。
+- `PROMPT 拼接报错 KeyError: 'context'`： `PROMPT.format(context=..., question=...)` 必须两个 kwargs 都传；漏一个会报 KeyError。
+
+---
+
+## 三、核心函数一览
+
+| 函数 | 文件 | 输入 | 输出 | 一句话解释 |
+|---|---|---|---|---|
+| `PROMPT` | `code_01_prompt_template.py` | — | `str` | 4 条硬约束的 prompt 模板(只能依据 `<context>` / 没有就拒答 / 引用用 `[i]` 角标 / 中文+简洁) |
+| `_format_context(hits)` | `code_01_prompt_template.py` | `list[{text, source, page, ...}]` | `str` | 把 hits 渲染成 `[i] (source#page) text` 块,跟 prompt 里的 `[1][2]` 一一对应 |
+| `answer(question, hits)` | `code_01_prompt_template.py` | `(str, list[dict])` | `dict{text, citations}` | 调 OpenAI 兼容 LLM 生成答案,返回 `text`(剥掉 `<think>...</think>`)+ `citations`(命中的 source/page);无 `LLM_API_KEY` 时返回 `[skipped: ...]` |
+| `main()` (code_01) | `code_01_prompt_template.py` | — | 打印 top-3 + answer + citations | code_01 演示入口,self-contained(内联 chroma + s04 BGE embed + s06 hybrid + s07 rerank);默认 query `"内存"`(EOFError 时兜底) |
+
+### 本章的设计取舍
+
+s08 只有一个 code 文件，但 schema 仍然把"prompt 工程关键变量"封装成稳定契约：
+
+- **`hits` 输入字段**：每条 `{text, source, page, ...}`——s07 精排的产物，s08 只读不写；保证上游换了 rerank 实现（ColBERT / LLM-as-rerank）也不影响 s08 拼 prompt。
+- **`answer()` 输出 `{text, citations}`**：`text` 是 LLM 原始输出（剥 `<think>...</think>` 后），`citations` 是 `[{'index', 'source', 'page'}]` 列表——**跟 prompt 里的 `[1][2]` 编号一一对应**。这个 schema 让下游 UI 直接渲染"句末 [1] → 跳到 source 第 page 页"成为可能，不需要二次解析。
+- **`<context>` 定界符 vs 三反引号 vs `###` 分隔**——三者效果接近，关键是"显式 + 罕见"。s08 选 XML 标签是因为 (a) 它跟 markdown 表格 / 代码块不冲突，（b) LLM 训练数据里 `<context>...</context>` 这种成对标签的语义信号强于三反引号。生产上三选一即可，**关键是不要用裸文本**（否则 LLM 分不清"哪句是资料、哪句是问题"）。
+- **拒答写在 prompt 还是独立 LLM 调用**——s08 MVP 把"没有就答'我不知道'"塞进 prompt 同一段，实测 90%+ 拒答率；RAGFlow 拆出独立的 `sufficiency_check` LLM 调用，显式输出 `is_sufficient: false`，把"拒答"从 prompt 软约束升级成**显式 JSON 决策**——可观测、可分支、可回放。MVP 选 prompt 内嵌是因为省一次 LLM 调用，**生产建议升 sufficiency_check**（成本 +50% 但拒答可观测性 +300%）。
+- **`[i]` 角标 vs JSON `citations` 字段**——s08 的 `[i]` 角标是**自然语言内嵌引用**，优势是人类可读、LLM 生成简单；RAGFlow 的 `citation_plus` 在答案之外要求 LLM 输出结构化 `citations` 字段（JSON 数组），优势是程序可解析、UI 可直接渲染。**s08 的妥协方案**：prompt 里要 `[i]` 角标（LLM 生成阶段），`answer()` 返回时**代码侧**把 hits 的 source/page 一并填进 `citations` 列表（程序可解析阶段）——**两道防线各管一段**。
+- **`temperature=0` vs default**——s08 显式 `temperature=0` 让 LLM 走 greedy decoding，引用编号一致性显著好于 `temperature=0.7+`（实验数据：~95% 引用对 vs ~60%）。代价是答案多样性下降、生产场景如果需要"换种说法解释"得显式调 temperature。MVP 选 0 是为了 demo 引用稳定。
+- **graceful skip vs hard fail**——s08 的 `answer()` 在无 `LLM_API_KEY` 时返回 `[skipped: LLM_API_KEY not set]` + 仍然填好的 citations，**不抛异常、不退出**。pipeline 在没配 key 的环境下也能跑、只是 LLM 那一步 noop——开发本地裸跑验证 retrieval/rerank 没问题。生产上**应该 fail-fast**（无 key 直接报错，因为线上没 key 是配置事故不是预期状态），但教学 demo 走 graceful skip 让初学者少踩坑。
+
+如果你的场景需要"双 pass citation + sufficiency_check + 多语言 prompt"，就把 `answer` 函数扩成 `answer_plus(question, hits)`——但**保持 `answer` 函数签名只吃 `question / hits`**，不要把它升成 Pydantic 那种重型接口。toy 阶段越简单越好。
+
+---
+
+## RAGFlow 实现
+
+RAGFlow 的 prompt 模板在 `rag/prompts/generator.py`：多语言 + 多场景模板（中文 / 英文 / 用户自定义），每条 prompt 用 `<|COMPLETE|>` 哨兵定界，避免 LLM 自由发挥。`build_prompt()` 负责把检索 hits 渲染成 `[i] (source#page) text` + 拼进 `<context>` 标签。
+
+**设计取舍**：哨兵 + 角标是工业 prompt 模板的关键——`<|COMPLETE|>` 防止 LLM 越过 context 编故事；`[i]` 角标让前端渲染时可以挂"点击 [i] 跳到原文"功能。s08 toy 只用单条 prompt 字符串，没考虑多语言 / 哨兵 / 角标。
+
+详细摘录与 5-15 行 "为什么这样写" 的分析见 [`docs/reference/ragflow-notes/prompt_templates.md`](../docs/reference/ragflow-notes/prompt_templates.md)。
+
+---
+
+## 选型速记
+
+### 主流 prompt 策略速览
+
+下面这张表把 RAG 系统的 prompt 策略按"调用次数 / 拒答机制 / 引用机制 / token 成本"列出来：
+
+| 策略 | LLM 调用次数 | 拒答机制 | 引用机制 | token 成本 | 适用场景 |
+|---|---|---|---|---|---|
+| **单段 PROMPT** (本章 MVP) | 1 | prompt 内嵌"答'我不知道'" | prompt 内嵌 `[i]` 角标 | 1x | 教学 / 快速原型 |
+| **+ sufficiency_check** | 2 | 独立 LLM 输出 `is_sufficient: false` | prompt 内嵌 `[i]` 角标 | 2x | 生产拒答可观测 |
+| **+ multi_queries_gen** | 2-4 (含改写重检索) | sufficiency_check | prompt 内嵌 `[i]` 角标 | 2-4x | 资料不全场景 |
+| **+ citation_plus (双 pass)** | 2 (生成 + 补引) | prompt 内嵌 | 独立 LLM 给句子级 citation | 2x | 高可追溯性场景 |
+| **RAGFlow 完整流水线** | 3-5 | sufficiency_check + multi_queries_gen | citation_plus 双 pass | 3-5x | 生产 / 多租户 |
+
+我们的 toy `PROMPT` 在策略复杂度上只占第一行——**单段 PROMPT**；RAGFlow 走完整流水线，**多一道 LLM 调用就多一道观测点 + 一个失败模式**。教学 demo 选 MVP 因为它跑通快、依赖少；**生产请按"可观测性 vs 成本"做 tier 选型**(MVP → +sufficiency_check → +multi_queries_gen → 完整流水线）。
+
+- **教学 / 快速原型 / 离线可复现** → 本章 MVP （单段 PROMPT + graceful skip），无 API key 也能跑，代码 ≤ 200 行；
+- **生产拒答可观测** → + sufficiency_check，加 1 次 LLM 调用，token +100% 但拒答率从 prompt 软约束升级到 JSON 显式决策；
+- **资料不全 + 复杂 query** → + multi_queries_gen，加 1-2 次 LLM 调用 + 1-2 次重检索，token +200% 但召回质量显著提升；
+- **高可追溯性（法务 / 医疗）** → + citation_plus 双 pass，加 1 次 LLM 调用，引用准确率 +20-30% 但 token +100%；
+- **要先看清每个边界再选** → 用本章 code_01 把单段 PROMPT 和 `sufficiency_check` 各跑一次，对比"答'我不知道'的稳定性"——这是最简单的"prompt A/B"实验。
+
+### 扩展指南
+
+加一种 prompt 策略（双 pass / sufficiency_check / 拒答分支）只要三步：
+
+1. 写一个 `answer_plus(question, hits)` 或 `answer_with_sufficiency(question, hits)`，签名和 `answer` 一致，内部先调 `sufficiency_check(question, hits) -> bool`，`False` 时直接拒答不走 LLM；
+2. 在 `main()` 里按 `PROMPT_MODE` env 选 `answer` 函数；
+3. 给代码文件 README 加一段"它跟单段 PROMPT 比，赢在哪 / 输在哪"的对照（双 pass： 引用准确率 +20% / 成本 +100%）。
+
+不要在 `answer` 里写 `if mode == "single": ... elif mode == "double": ...` 之类分发——它会污染单一职责。`answer` 只懂单段 PROMPT，`main()` 懂全 prompt 模式。本章 MVP 只跑单段，但接口形状留好了。
+
+---
+
+## 思考题
+
+1. **怎么让模型不引用第 5 条而第 5 条恰好是答案？**
+2. **prompt 里的"如果资料里没有答案回答'我不知道'"真的管用吗？怎么验证？**
+3. **LLM 写的 `[1]` 和 prompt 里"第 1 条"对不上怎么办？**
+
+（答案见文末「思考题答案」）
+
+---
+
+## 思考题答案
+
+### Q1. 怎么让模型不引用第 5 条而第 5 条恰好是答案？
+
+**先想清楚为什么"恰好是答案"会被排到第 5。** 两种可能：
+
+- **召回阶段漏了**：向量+BM25 都没把第 5 条的相关 chunk 排到 top-K。治本要回到 s04-s06：① 改 chunk 切分粒度（太粗的 chunk 包含答案但被无关内容稀释相似度）；② 加 query expansion（让 BM25 命中同义词）；③ 调 embedding 模型。
+- **rerank 阶段压了**：cross-encoder 也认为第 5 条不算最相关。这种情况下"第 5 条"其实是 LLM 自己的判断，rerank 分低意味着检索系统也不觉得它"刚好"是答案。
+
+**MVP 层（不换检索）的两个解法：**
+
+1. **调 `top_k`**——这是最直接的。在 `s07_rerank.code.rerank(...)` 里把 `top_k` 调大（3 → 4 或 5），让第 5 条**进 prompt** 之后，模型反而**会**引用它。题目是"不让模型引用第 5 条"，所以反过来——把 `top_k` 调小到 3，第 5 条连 prompt 都进不去，引用就无从谈起。配套把 `s08_prompt_generate.code` 里 `rerank(..., top_k=3)` 一起改。
+2. **在 PROMPT 里硬约束"只用最相关的 N 条"**——把 `PROMPT` 的 `"{context}"` 改写为"以下只包含最相关的 3 条资料，请仅基于这 3 条回答；如有歧义，引用最直接对应的那一条"。这条指令对模型"别往第 5 条想"有引导，但**不可靠**——LLM 对编号的遵守是软约束，遇到大模型或者长 context 时仍可能误引。
+
+**根本办法是更精准的检索 + rerank**，把"答案是第 5 条"变成"答案是第 1 条"——这要求：
+
+- 检索阶段用更大的 `k=20` 召回 + 更强的 embedding（换成 BGE-M3 或 OpenAI `text-embedding-3-large`）。
+- rerank 阶段用中文优化版（BGE-reranker-v2-m3）替代 base 模型。
+- query 改写：拿用户的原始 query 先让 LLM 改写/补全成更"信息检索友好"的表述，再去搜。
+
+总结：**MVP 是"砍 top_k 把第 5 条挡在 prompt 外"；生产是"提升召回和 rerank 让第 5 条变第 1 条"。**
+
+### Q2. prompt 里的"如果资料里没有答案回答'我不知道'"真的管用吗？怎么验证？
+
+管用一部分，靠"显式约束 + temperature=0"。要严格验证，需要造一个**负样本集**（问题不在资料里），跑 N 次统计"答'我不知道'的比例"——经验上 temperature=0 + 约束靠前时 95%+ 拒答率，约束靠后或 prompt 过长时掉到 60-70%。更稳的做法是 ragflow 的 `sufficiency_check`：独立 LLM 调用判 `is_sufficient: false`，把"拒答"从 prompt 软约束升级成**显式 JSON 决策**。
+
+### Q3. LLM 写的 `[1]` 和 prompt 里"第 1 条"对不上怎么办？
+
+两种解法。① **prompt 里给 summary**——把每条 chunk 渲染成 `[1] (source#page) summary: ...`，让编号变成有语义的"代号"，LLM 引错就立刻能从 summary 看出来。② **解析后校验**——`citations = sorted(set(int(x) for x in re.findall(r'\[(\d+)\]', text)))`，任何 `c not in range(1, len(hits)+1)` 都视为无效引用。终极方案是 ragflow 双 pass：先生成答案、再用 `citation_prompt` 单独跑一遍补 / 修引用。
+下一章 — 这一节把"召回 → 排序 → 生成 → 服务化"中的某一环跑通,留下 +1 章填下一档的实现;每加一档,缺失上层就越明显,直到 s12 把所有环节收敛到 FastAPI 服务。
 
 ### troubleshooting
 

@@ -67,13 +67,13 @@ BM25 处理"原词命中"，Embedding 处理"意思命中"——s06 会把两条
 
 > 02 会基于同样的 `EMBED_PROVIDER` 字典分发思路，把 openai / ollama 串进同一套接口。
 
-### 这是什么
+### 概念
 
 `code.py` 提供一个 `embed_local(texts)` 函数，把任意字符串列表送进 `sentence-transformers` 加载的 `BAAI/bge-small-zh-v1.5`（默认模型名，可用 `EMBED_MODEL` 覆盖），模型跑完 `model.encode(..., normalize_embeddings=True)` 返回 `list[list[float]]`，每行是 512 维、长度 1 的单位向量。模型用 `@lru_cache(maxsize=1)` 缓存，第二次跑同一进程不重载。
 
 入口：[`code_01_local_bge.py`](code_01_local_bge.py)
 
-### 跑起来
+### 跑一遍
 
 ```bash
 python s04_embedding/code_01_local_bge.py
@@ -87,7 +87,7 @@ python s04_embedding/code_01_local_bge.py
 
 首次跑 local 会从 HF Hub 下载 ~100MB 模型到 `~/.cache/huggingface/hub/`；后续运行靠 `lru_cache` 直接命中内存模型，秒回。
 
-### 实际输出
+### 看输出
 
 把 `01` 跑在仓库自带的 `samples/` 上，得到的真实片段长这样（用于对照"归一化后的向量是单位球面上的点"）：
 
@@ -108,24 +108,20 @@ vecs = embed_local(chunks)
 
 下游向量库（s05）拿到这 4×512 时，**不需要知道来源是 BGE 还是 OpenAI**——它只关心"每个 chunk 对应一行固定维度的浮点数"。这就是 schema 对齐的价值：**模型差异被吸收在 Embedding 层，后续章节不用再分情况处理**——只在你**重新切回另一个模型 embed**时，s05 的索引会告诉你"模型换了，要重建"。
 
-### 它做对了什么
+### 局限与下一步
 
-- **离线 / 免 key**：不需要任何外部 API，第一行就能跑通；
-- **归一化**：所有向量落在单位球面上 → 内积 ≡ 余弦相似度，下游选点积 / L2 / cosine 哪种度量都对；
-- **模型小**：单文件 ~100MB，嵌入 4 个 chunk 在 CPU 上 < 1s，重跑靠 `lru_cache` 几乎瞬时。
-
-### 它做错了什么
+本段做对了什么 — 用 `sentence-transformers` 加载 BGE-small-zh,32 行代码里跑通"chunks → 512 维归一化向量"的最小翻译层,免 key、`lru_cache` 不重载,schema 是统一 `list[list[float]]`,s05+ 不需要分模型分情况处理。
 
 - **只对中文友好**：`bge-small-zh-v1.5` 是中文专用模型，英文 / 代码 / 长文档混合输入时向量空间会失真——生产环境应按语种切模型、把每个 provider 的维度上限显式登记，避免错配；
 - **大 batch 缺 GPU**：CPU 上一次塞 1000+ 句会跑分钟级，需要 GPU 或 ONNX 量化才快；
 - **首次依赖网络**：HF Hub 下载 100MB+，离线 / 内网环境直接报错；生产通常在构建镜像时预下载并把 `HF_HOME` 指到挂载卷。
 
-### troubleshooting
-
 - `ConnectionError` / `HF Hub unreachable`：内网 / 离线环境跑 01 会失败；构建镜像时预下载 `HF_HOME=/path/to/cache`，或 `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1` 强制走本地缓存。
 - `OSError: [E050] Can't find model 'BAAI/bge-small-zh-v1.5'`：HuggingFace Hub 不可达；构建镜像时预下载模型到 `~/.cache/huggingface/hub/`，或 `HF_ENDPOINT=https://hf-mirror.com` 走国内镜像。
 - `UnicodeEncodeError: 'gbk' codec can't encode character`：Windows 控制台编码问题，跑前 `set PYTHONIOENCODING=utf-8`(s04 / s05 / s06 同问题）。
 - 维度对不上（s05 写 Chroma 时报 `Dimension mismatch`）：多半是中途换了 `EMBED_MODEL`，旧 chunk 是 512 维、新 chunk 是 1536 维——**重 embed 一遍** 或 **新建一个 collection**。
+
+下一章 s05 如何解决 — 把这些 `list[list[float]]` 持久化到 Chroma,带上 chunk_id / text / page / source 元数据,s06 的召回才能在数十万 chunk 上跑 ANN 检索而不只是顺序扫。
 
 ---
 
@@ -134,7 +130,7 @@ vecs = embed_local(chunks)
 > 把 01 的本地 BGE 思路扩展成"env-driven dispatcher"——同一接口后挂多个后端。
 > 与 01 不同，本脚本不 import 任何前序脚本，分发层独立。
 
-### 这是什么
+### 概念
 
 `code.py` 暴露一个 `route(texts)`，按 `EMBED_PROVIDER` 环境变量选：
 
@@ -146,7 +142,7 @@ vecs = embed_local(chunks)
 
 入口：[`code_02_provider_routing.py`](code_02_provider_routing.py)
 
-### 跑起来
+### 跑一遍
 
 ```bash
 # 默认 local,免 key
@@ -163,7 +159,7 @@ provider: local, dim: 512, count: 3
 [ollama] skipped, set EMBED_BASE_URL and run `ollama serve` to enable
 ```
 
-### 实际输出
+### 看输出
 
 `02` 的预期输出（本机无 OpenAI key 且无 Ollama）：
 
@@ -188,24 +184,20 @@ EMBED_PROVIDER=ollama EMBED_BASE_URL=http://localhost:11434 \
   python s04_embedding/code_02_provider_routing.py
 ```
 
-### 它做对了什么
+### 局限与下一步
 
-- **同一接口三个后端**：调用方只 `route(texts)`，后端切换零代码改动；
-- **graceful fallback**：缺 key / ollama 没起时打印 `skipped, set env to enable`，不会让本地 demo 崩；
-- **env-only 配置**：切换 = 改一个 env 变量，不需要重新打包。
-
-### 它做错了什么
+本段做对了什么 — 把 01 的本地 BGE 思路扩成 env-driven 三后端 dispatcher(`local / openai / ollama`),`_REGISTRY` 字典让加 provider = 一行注册,graceful fallback 让 demo 机不会因为缺 key 全崩,接口形状仍锁在 `list[list[float]]`。
 
 - **没 retry / 没 rate-limit**：openai 偶发 5xx / ollama 长连接 timeout 直接抛，单元外的 retry 还得自己写——生产环境应把所有异常包成统一的 `EmbeddingError`，调用方只看一种类型就能重试或换 provider；
 - **没 batched ollama fallback**：本实现逐文本 POST，N 个句子 = N 次请求；Ollama 原生支持 `inputs=[...]` 一把提交，缺批处理在大 batch 时延迟成倍放大；
 - **本地 BGE 仍依赖联网**：第一次 `SentenceTransformer(...)` 还会触发模型下载，路由层假设离线就废了。
 
-### troubleshooting
-
 - `openai.AuthenticationError`：02 走 openai 分支时 `LLM_API_KEY` 没设或已过期；检查 `.env`。
 - `ollama._ollama_available()` 一直 False：Ollama 没起 / `EMBED_BASE_URL` 配错；先 `curl http://localhost:11434/api/tags` 探活。
 - `requests.exceptions.ConnectionError` 接 ollama：`EMBED_BASE_URL` 错或 ollama serve 没启；`ps aux | grep ollama` 验进程。
 - 网络层 timeout 没设：`requests.post(..., timeout=10)` 是 MVP 默认，但生产要 `tenacity` + 指数退避。
+
+下一章 s05 如何解决 — 把任一 provider 输出的 `list[list[float]]` 持久化到 Chroma,索引存储不再是"调一次重算一次"的 in-memory 列表,s06 召回可以遍历百万级 chunk。provider 路由与存储层的边界在此处定型:换 provider 不冲索引,换索引库不动 provider。
 
 ---
 
