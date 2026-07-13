@@ -95,16 +95,16 @@ query_graph(graph, "不存在的实体")
 
 ---
 
-## 二、LLM 抽实体关系三元组：[code_01_extract.py](code_01_extract.py)
+## 二、LLM 抽实体关系三元组：[c01_extract.py](c01_extract.py)
 
 > 把每个 chunk 喂给 LLM 让它吐 `(head, rel, tail)` 三元组，合并成图，写到 `s10_graphrag/_graph.jsonl` 供下一节离线查询。
 > 2.2 只读 JSONL，不再调 LLM。
 
-[`code_01_extract.py`](code_01_extract.py)
+[`c01_extract.py`](c01_extract.py)
 
 ### 概念
 
-`code_01_extract.py` 是一个"LLM 抽取 + 容错解析 + 内存合并 + 落盘"的小教学版 GraphRAG 抽取器：
+`c01_extract.py` 是一个"LLM 抽取 + 容错解析 + 内存合并 + 落盘"的小教学版 GraphRAG 抽取器：
 
 - `EXTRACT_PROMPT` —— 喂文字给 LLM，要求吐 JSON 数组，每项 `{head, rel, tail}`，没有就 `[]`；
 - `_llm_json(prompt)` —— 调 OpenAI 兼容接口，**对 MiniMax-M3 的三种坏输出做兜底**：剥 `<think>...</think>` 推理块、剥 ```json``` 围栏、再容忍 `dict / list` 两种 JSON 顶层结构。任一失败返 `[]`，**不抛异常**，让上游 `build_graph` 当作"这个 chunk 没抽到"继续；
@@ -116,7 +116,7 @@ query_graph(graph, "不存在的实体")
 ### 跑一遍
 
 ```bash
-python s10_graphrag/code_01_extract.py
+python s10_graphrag/c01_extract.py
 ```
 
 输出示例（MiniMax-M3 over minimaxi.com，samples = server_whitepaper.pdf + disclosure.docx，只取前 8 个 chunk）：
@@ -166,16 +166,16 @@ chunks: 8
 
 下一章 — 这一节把"召回 → 排序 → 生成 → 服务化"中的某一环跑通,留下 +1 章填下一档的实现;每加一档,缺失上层就越明显,直到 s12 把所有环节收敛到 FastAPI 服务。
 
-## 三、1 跳图查询（纯内存，无 LLM)：[code_02_query.py](code_02_query.py)
+## 三、1 跳图查询（纯内存，无 LLM)：[c02_query.py](c02_query.py)
 
 > 加载 2.1 那步落盘的 `_graph.jsonl`，在 `dict[head] → set[(rel, tail)]` 上跑 O(1) 的 1 跳邻居查询。
 > 这是 GraphRAG 的"读"半边——和 2.1 的"写"半边分开，便于离线调试。
 
-[`code_02_query.py`](code_02_query.py)
+[`c02_query.py`](c02_query.py)
 
 ### 概念
 
-`code_02_query.py` 把 2.1 写出的 JSONL 重新加载回内存的图结构，提供最朴素的 1 跳查询：
+`c02_query.py` 把 2.1 写出的 JSONL 重新加载回内存的图结构，提供最朴素的 1 跳查询：
 
 - `load_graph(path)` —— 按行读 JSONL，反向重建 `dict[head] → set[(rel, tail)]`；同时把 `tail` 也注册成节点，即便它没有出边也能被 query 命中（便于"这个实体存在但孤立"的诊断）；
 - `query_graph(graph, entity)` —— `graph.get(entity, set())`，O(1）；返回前按 `(rel, tail)` 字母序排，便于对比不同次抽取的结果；
@@ -185,10 +185,10 @@ chunks: 8
 
 ```bash
 # 1. 先跑一次抽取(生成 _graph.jsonl)
-python s10_graphrag/code_01_extract.py
+python s10_graphrag/c01_extract.py
 
 # 2. 再跑查询(可重复跑,不调 LLM)
-python s10_graphrag/code_02_query.py
+python s10_graphrag/c02_query.py
 ```
 
 实测（MiniMax-M3 抽完 8 个 chunk 后的图）：
@@ -245,14 +245,14 @@ python s10_graphrag/code_02_query.py
 
 | 函数 | 文件 | 输入 | 输出 | 一句话解释 |
 |---|---|---|---|---|
-| `_llm_json(prompt)` | `code_01_extract.py` | `str` | `list[dict]` | OpenAI 兼容 `/chat/completions` + `response_format={"type":"json_object"}`;剥 `<think>...</think>` 推理块;无 key 时 `KeyError` |
-| `extract_triples(text)` | `code_01_extract.py` | `str` | `list[{head, rel, tail}]` | 调 LLM 抽实体关系三元组;prompt 走裸 JSON |
-| `build_graph(triples_list)` | `code_01_extract.py` | `list[list[dict]]` | `dict[head] → set[(rel, tail)]` | 把每段抽出的三元组合并到 dict;用 `set` 自动去重 |
-| `save_graph(graph, path)` | `code_01_extract.py` | `(dict, Path)` | — | `json.dumps` 写 `_graph.jsonl`(每行一段) |
-| `main()` (01) | `code_01_extract.py` | — | 写 `_graph.jsonl` + 打印图大小 | 01 演示入口:走完 extract → build → save 整条离线 ETL |
-| `load_graph(path)` | `code_02_query.py` | `Path` | `dict[str, set[tuple[str, str]]]` | `jsonl` 读回 `dict[head] → set[(rel, tail)]`;纯内存,无 LLM |
-| `query_graph(graph, entity)` | `code_02_query.py` | `(dict, str)` | `list[(rel, tail)]` | 1 跳查 `dict.get(entity, set())` + `sorted()` 排 |
-| `main()` (02) | `code_02_query.py` | — | 打印实体 + 邻居 | 02 演示入口;默认 `紫光恒越` / `紫光集团` |
+| `_llm_json(prompt)` | `c01_extract.py` | `str` | `list[dict]` | OpenAI 兼容 `/chat/completions` + `response_format={"type":"json_object"}`;剥 `<think>...</think>` 推理块;无 key 时 `KeyError` |
+| `extract_triples(text)` | `c01_extract.py` | `str` | `list[{head, rel, tail}]` | 调 LLM 抽实体关系三元组;prompt 走裸 JSON |
+| `build_graph(triples_list)` | `c01_extract.py` | `list[list[dict]]` | `dict[head] → set[(rel, tail)]` | 把每段抽出的三元组合并到 dict;用 `set` 自动去重 |
+| `save_graph(graph, path)` | `c01_extract.py` | `(dict, Path)` | — | `json.dumps` 写 `_graph.jsonl`(每行一段) |
+| `main()` (01) | `c01_extract.py` | — | 写 `_graph.jsonl` + 打印图大小 | 01 演示入口:走完 extract → build → save 整条离线 ETL |
+| `load_graph(path)` | `c02_query.py` | `Path` | `dict[str, set[tuple[str, str]]]` | `jsonl` 读回 `dict[head] → set[(rel, tail)]`;纯内存,无 LLM |
+| `query_graph(graph, entity)` | `c02_query.py` | `(dict, str)` | `list[(rel, tail)]` | 1 跳查 `dict.get(entity, set())` + `sorted()` 排 |
+| `main()` (02) | `c02_query.py` | — | 打印实体 + 邻居 | 02 演示入口;默认 `紫光恒越` / `紫光集团` |
 
 环境变量：
 
@@ -263,9 +263,9 @@ python s10_graphrag/code_02_query.py
 无 key / 离线环境跑 2.2：
 
 ```bash
-python s10_graphrag/code_02_query.py   # 不调 LLM,只读 _graph.jsonl
+python s10_graphrag/c02_query.py   # 不调 LLM,只读 _graph.jsonl
 # 图为空或缺失: .../s10_graphrag/_graph.jsonl
-# 请先跑: python s10_graphrag/code_01_extract.py
+# 请先跑: python s10_graphrag/c01_extract.py
 ```
 
 ## 五、跨代码 schema 设计取舍
@@ -320,7 +320,7 @@ RAGFlow 的 GraphRAG 在 `general/extractor.py` 和 `general/entity_resolution.p
 加一种新 graph source（数据库 schema 抽取 / CSV 转 RDF / 已有 Neo4j 数据导入）或改 schema（加 entity type / 加 weight 字段）只要三步：
 
 1. **加 source**：写一个 `extract_triples_from_sql(schema_sql: str) -> list[dict]` 或 `extract_triples_from_csv(rows: list[dict]) -> list[dict]`，**返回的 triple dict 必须沿用 `{head, head_type, rel, tail, tail_type}` 五键 schema**，`build_graph()` 不改一行；**改 schema**：在 `extract_triples()` 的 `_llm_json` prompt 里把 `head_type` / `tail_type` 候选枚举扩成新类型（`公司 / 产品 / 合同 / 交易` → + `人 / 部门 / 项目`），下游 `_merge_entity()` 自动 follow；
-2. **加 source**：在 `code_01_extract.py` 的 `main()` 里按 `GRAPH_SOURCE` env 选 source（默认 `text`），不要在 `extract_triples` 里写 `if source == "sql": ...`；**改 schema**：在 `_llm_json` prompt 里扩枚举即可，`build_graph` / `query_graph` 都按 head_type / tail_type 字符串自由组合；
+2. **加 source**：在 `c01_extract.py` 的 `main()` 里按 `GRAPH_SOURCE` env 选 source（默认 `text`），不要在 `extract_triples` 里写 `if source == "sql": ...`；**改 schema**：在 `_llm_json` prompt 里扩枚举即可，`build_graph` / `query_graph` 都按 head_type / tail_type 字符串自由组合；
 3. 给代码文件 README 加一段"它跟纯文本抽取比，赢在哪 / 输在哪"的对照（SQL：结构化精确 / 依赖 DDL 文档；CSV：批量 / 缺实体类型）。
 
 不要把多 source / 多 schema 的判断塞进 `extract_triples()`——它只懂"对一段文本做 JSON 抽取"。本章 MVP 只跑纯文本 + 5 个候选 entity type，但 source 维度留好了挂 SQL / CSV 不动抽取逻辑。

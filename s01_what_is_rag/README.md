@@ -76,7 +76,7 @@ prompt 用 `<context>...</context>` 标签包裹资料，避免 prompt injection
 
 ---
 
-## 二、朴素关键词检索（子串匹配）：[code_01_naive_keyword.py](code_01_naive_keyword.py)
+## 二、朴素关键词检索（子串匹配）：[c01_naive_keyword.py](c01_naive_keyword.py)
 
 > 对应 s00 章 "什么是 RAG" 中的核心直觉：让 LLM "开卷考试"，先得有个"卷"。
 
@@ -91,12 +91,12 @@ prompt 用 `<context>...</context>` 标签包裹资料，避免 prompt injection
 
 30 行代码，零外部依赖。
 
-入口：[`code_01_naive_keyword.py`](code_01_naive_keyword.py)
+入口：[`c01_naive_keyword.py`](c01_naive_keyword.py)
 
 ### 跑一遍
 
 ```bash
-python s01_what_is_rag/code_01_naive_keyword.py
+python s01_what_is_rag/c01_naive_keyword.py
 ```
 
 输入对照（用 `samples/disclosure.docx` 实测）：
@@ -140,7 +140,7 @@ python s01_what_is_rag/code_01_naive_keyword.py
 
 ---
 
-## 三、词袋向量 + 余弦相似度：[code_02_vector_basics.py](code_02_vector_basics.py)
+## 三、词袋向量 + 余弦相似度：[c02_vector_basics.py](c02_vector_basics.py)
 
 > 词袋（bag-of-2-grams)+ 手写余弦，省去 embedding 模型下载，让 s01 自包含。
 > 后面 s04 用 BGE 真向量替代这套玩具；s05 用 Chroma 持久化索引。
@@ -154,12 +154,12 @@ python s01_what_is_rag/code_01_naive_keyword.py
 5. 余弦相似度 = "问题向量" 与 "段落向量" 的夹角；
 6. 按分排序返回 Top-3。
 
-入口：[`code_02_vector_basics.py`](code_02_vector_basics.py)
+入口：[`c02_vector_basics.py`](c02_vector_basics.py)
 
 ### 跑一遍
 
 ```bash
-python s01_what_is_rag/code_02_vector_basics.py
+python s01_what_is_rag/c02_vector_basics.py
 # 交互:输入查询(如"披露")
 ```
 
@@ -208,7 +208,7 @@ Top-3 与你的问题最相关的段落(按向量余弦排序):
 
 ---
 
-## 四、完整 RAG 链路：检索 + Prompt + LLM：[code_03_augmented_llm.py](code_03_augmented_llm.py)
+## 四、完整 RAG 链路：检索 + Prompt + LLM：[c03_augmented_llm.py](c03_augmented_llm.py)
 
 > 这一章是"s01 → RAG 全链路"的最小闭环；s02-s08 把每一环换成真工业实现。
 
@@ -235,13 +235,13 @@ Top-3 与你的问题最相关的段落(按向量余弦排序):
                                            答案
 ```
 
-入口：[`code_03_augmented_llm.py`](code_03_augmented_llm.py)
+入口：[`c03_augmented_llm.py`](c03_augmented_llm.py)
 
 ### 跑一遍
 
 ```bash
 # .env 里有 LLM_API_KEY 就走端到端;无 key 时 graceful-skip 只打印 prompt
-python s01_what_is_rag/code_03_augmented_llm.py
+python s01_what_is_rag/c03_augmented_llm.py
 ```
 
 可选：自定义 base / model（在 `.env` 里设 `LLM_BASE` / `LLM_MODEL` 即可，code 顶部 `load_dotenv(override=True)` 会读到）。
@@ -318,16 +318,16 @@ python s01_what_is_rag/code_03_augmented_llm.py
 
 | 函数 | 文件 | 输入 | 输出 | 一句话解释 |
 |---|---|---|---|---|
-| `retrieve(q, paragraphs)` | `code_01_naive_keyword.py` | 问题、段落列表 | 第一个命中段落 / `"I don't know."` | 子串匹配第一段 |
-| `vocab_for(paragraphs)` | `code_02_vector_basics.py` | 段落列表 | `{token: index}` | 2-gram 词表 |
-| `cosine(a, b)` | `code_02_vector_basics.py` | 两个等长 list[float] | float ∈ [0, 1] | 手写余弦(避免 NumPy 依赖) |
-| `retrieve(q, paragraphs, k)` | `code_02_vector_basics.py` | 问题、段落列表、k | top-k 段落 | 词袋向量 top-k |
-| `retrieve(q, paragraphs, k)` | `code_03_augmented_llm.py` | 问题、段落列表、k | top-k 段落 | 同 02 |
-| `build_prompt(question, hits)` | `code_03_augmented_llm.py` | 问题、top-k 段落 | 拼好的 prompt 字符串 | `<context>...</context>` 包裹 |
-| `call_llm(prompt)` | `code_03_augmented_llm.py` | prompt 字符串 | LLM 返回字符串 | OpenAI 兼容 `/chat/completions`;缺 key 时跳过 |
-| `main()` (01) | `code_01_naive_keyword.py` | — | 段落 + 查询输出 | 01 入口 |
-| `main()` (02) | `code_02_vector_basics.py` | 交互输入查询 | top-3 + 分 | 02 入口 |
-| `main()` (03) | `code_03_augmented_llm.py` | — | prompt + LLM 输出 | 03 入口 |
+| `retrieve(q, paragraphs)` | `c01_naive_keyword.py` | 问题、段落列表 | 第一个命中段落 / `"I don't know."` | 子串匹配第一段 |
+| `vocab_for(paragraphs)` | `c02_vector_basics.py` | 段落列表 | `{token: index}` | 2-gram 词表 |
+| `cosine(a, b)` | `c02_vector_basics.py` | 两个等长 list[float] | float ∈ [0, 1] | 手写余弦(避免 NumPy 依赖) |
+| `retrieve(q, paragraphs, k)` | `c02_vector_basics.py` | 问题、段落列表、k | top-k 段落 | 词袋向量 top-k |
+| `retrieve(q, paragraphs, k)` | `c03_augmented_llm.py` | 问题、段落列表、k | top-k 段落 | 同 02 |
+| `build_prompt(question, hits)` | `c03_augmented_llm.py` | 问题、top-k 段落 | 拼好的 prompt 字符串 | `<context>...</context>` 包裹 |
+| `call_llm(prompt)` | `c03_augmented_llm.py` | prompt 字符串 | LLM 返回字符串 | OpenAI 兼容 `/chat/completions`;缺 key 时跳过 |
+| `main()` (01) | `c01_naive_keyword.py` | — | 段落 + 查询输出 | 01 入口 |
+| `main()` (02) | `c02_vector_basics.py` | 交互输入查询 | top-3 + 分 | 02 入口 |
+| `main()` (03) | `c03_augmented_llm.py` | — | prompt + LLM 输出 | 03 入口 |
 
 ## 六、跨代码协同
 
@@ -389,7 +389,7 @@ RAGFlow 把 RAG 主干实现成 12 个独立模块——解析、切块、embedd
 
 加一层 RAG 能力（换 LLM / 加 rerank / 加 hybrid）只要三步：
 
-1. 在 `code_03_augmented_llm.py` 的 `build_prompt(hits, question)` 之后插入一个 `rerank(hits, question)` 钩子，s07 的 `rerank(query, hits, top_k=3)` 直接接进来，`hits` 还是 `[(text, source, page)]` 的统一形状，LLM 看到的就是前 3 条精排后的 context；
+1. 在 `c03_augmented_llm.py` 的 `build_prompt(hits, question)` 之后插入一个 `rerank(hits, question)` 钩子，s07 的 `rerank(query, hits, top_k=3)` 直接接进来，`hits` 还是 `[(text, source, page)]` 的统一形状，LLM 看到的就是前 3 条精排后的 context；
 2. 把 03 的 `call_llm(question, prompt)` 里的 `model=` 参数抽出来，从环境变量 `LLM_MODEL` 读（默认 `gpt-4o-mini`），切 Claude / 本地 vLLM / Qwen 都只改 env 不改代码；
 3. 把 02 的 `vocab + tfidf` 子串匹配换成 `embed_local(query)` 返回的 512 维向量，余弦检索回 `chunks_emb` 矩阵，s04 的 BGE 把它接进来，**接口形状留好了，只换实现**。
 

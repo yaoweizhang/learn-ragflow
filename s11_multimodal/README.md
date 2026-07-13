@@ -87,23 +87,23 @@ OCR 那一步的基础数据长这样——`str`（平铺）：
 
 ---
 
-## 二、表格抽取 (pdfplumber)：[code_01_table_extract.py](code_01_table_extract.py)
+## 二、表格抽取 (pdfplumber)：[c01_table_extract.py](c01_table_extract.py)
 
 > 用 pdfplumber 把 PDF 里的表格按行列原样抽出来。
 > 这是"结构化表格"这一类多模态输入的最小可解，下游 chunking 通常按行切。
 
-[`code_01_table_extract.py`](code_01_table_extract.py)
+[`c01_table_extract.py`](c01_table_extract.py)
 
 ### 概念
 
-`code_01_table_extract.py` 打开 PDF，逐页调用 `page.extract_tables()`，把"至少有一行含非空白单元格"的表收进 `out`，每条记录形如 `{"page": i, "rows": [[cell, ...], ...]}`——一个二维数组，第一行通常是表头、后面是数据行。
+`c01_table_extract.py` 打开 PDF，逐页调用 `page.extract_tables()`，把"至少有一行含非空白单元格"的表收进 `out`，每条记录形如 `{"page": i, "rows": [[cell, ...], ...]}`——一个二维数组，第一行通常是表头、后面是数据行。
 
 `pdfplumber.extract_tables()` 是启发式画线算法：对**带边框 / 带网格线**的规整表格（白皮书规格表、CSV-like 表）很顶；碰到无线表格、跨页表、合并单元格就掉链子。本节重点是"先把基本盘跑通"——MVP 的核心产物就是 list of dicts，下游 chunking / embedding 直接吃。
 
 ### 跑一遍
 
 ```bash
-python s11_multimodal/code_01_table_extract.py
+python s11_multimodal/c01_table_extract.py
 ```
 
 输出示例（`samples/server_whitepaper.pdf`，`pdfplumber` 0.10+）：
@@ -152,16 +152,16 @@ PDF 表格数: 1
 
 下一章 — 这一节把"召回 → 排序 → 生成 → 服务化"中的某一环跑通,留下 +1 章填下一档的实现;每加一档,缺失上层就越明显,直到 s12 把所有环节收敛到 FastAPI 服务。
 
-## 三、OCR (pytesseract)：[code_02_ocr.py](code_02_ocr.py)
+## 三、OCR (pytesseract)：[c02_ocr.py](c02_ocr.py)
 
 > 用 pytesseract + Pillow 把图片里的字（中英混排）抽成字符串。
 > 这是"图像里的字"这一类多模态输入的最小可解——扫描件 / 图片型 PDF 的兜底。
 
-[`code_02_ocr.py`](code_02_ocr.py)
+[`c02_ocr.py`](c02_ocr.py)
 
 ### 概念
 
-`code_02_ocr.py` 用 Pillow 打开图片，调 pytesseract 转交**系统 tesseract 二进制**做识别，返回字符串。`lang="chi_sim+eng"` 同时支持简体中文 + 英文——够覆盖绝大多数中文 RAG 场景。
+`c02_ocr.py` 用 Pillow 打开图片，调 pytesseract 转交**系统 tesseract 二进制**做识别，返回字符串。`lang="chi_sim+eng"` 同时支持简体中文 + 英文——够覆盖绝大多数中文 RAG 场景。
 
 pytesseract 只是 Python 壳——**真正的 OCR 引擎是系统二进制 `tesseract`**。装包忘了装二进制、或装了二进制没装 `chi_sim` 语言包，是 99% 的踩坑来源。
 
@@ -177,7 +177,7 @@ pip install pytesseract Pillow
 #    Linux:   sudo apt install tesseract-ocr tesseract-ocr-chi-sim
 
 # 3. 跑脚本(默认无图,按回车跳过;想跑就输入图片绝对路径)
-python s11_multimodal/code_02_ocr.py
+python s11_multimodal/c02_ocr.py
 ```
 
 输出示例（中文扫描件 + `chi_sim+eng`）：
@@ -235,9 +235,9 @@ OCR skipped: 未提供图片路径
 
 | 函数 | 文件 | 输入 | 输出 | 一句话解释 |
 |---|---|---|---|---|
-| `extract_tables(pdf_path)` | `code_01_table_extract.py` | `Path` | `list[{"page", "rows"}]` | 逐页 `pdfplumber.extract_tables()` + 双重空表过滤(表非空 + 至少一行有非空白 cell) |
-| `main()` (表格抽取) | `code_01_table_extract.py` | — | 打印表数 + 前 2 张表前 3 行 | 表格抽取演示入口(基于 `samples/server_whitepaper.pdf`) |
-| `main()` (OCR) | `code_02_ocr.py` | 交互输入图片路径 | 字符串 OR 三类跳过提示 | OCR 演示入口:缺包 / 缺二进制 / 缺图三类异常分别 catch |
+| `extract_tables(pdf_path)` | `c01_table_extract.py` | `Path` | `list[{"page", "rows"}]` | 逐页 `pdfplumber.extract_tables()` + 双重空表过滤(表非空 + 至少一行有非空白 cell) |
+| `main()` (表格抽取) | `c01_table_extract.py` | — | 打印表数 + 前 2 张表前 3 行 | 表格抽取演示入口(基于 `samples/server_whitepaper.pdf`) |
+| `main()` (OCR) | `c02_ocr.py` | 交互输入图片路径 | 字符串 OR 三类跳过提示 | OCR 演示入口:缺包 / 缺二进制 / 缺图三类异常分别 catch |
 
 环境变量：无 key / 无 LLM / 无网络——本章纯本地计算（表格抽取 CPU-only；OCR 那步调本地系统二进制）。
 
@@ -290,7 +290,7 @@ RAGFlow 的多模态在 `deepdoc/parser/` 里复用视觉模型：表格用 `pdf
 加一种新 modality（音频 → 文本 / 视频关键帧 → 文本）只要三步：
 
 1. 写一个 `transcribe_audio(path: Path) -> list[dict]`（用 `whisper` / `faster-whisper`，返回 `[{text, start, end, source}]`）或 `extract_video_frames(path, fps=1) -> list[dict]`（用 `cv2` 抽帧后喂给 `ocr_image`），**返回 dict 形状必须沿用 `{text, source, page/timestamp}`**，下游 s03 chunker / s04 embedder 不改一行；
-2. 在 `code_01_table_extract.py` 的 `main()` 里加 `if AUDIO_PATH: transcribe_audio(AUDIO_PATH)` / `if VIDEO_PATH: extract_video_frames(VIDEO_PATH)` 分支，**不要**在 `extract_tables` 里写 `if path.suffix == '.mp3': ...`——污染职责；
+2. 在 `c01_table_extract.py` 的 `main()` 里加 `if AUDIO_PATH: transcribe_audio(AUDIO_PATH)` / `if VIDEO_PATH: extract_video_frames(VIDEO_PATH)` 分支，**不要**在 `extract_tables` 里写 `if path.suffix == '.mp3': ...`——污染职责；
 3. 给代码文件 README 加一段"它跟 PDF 表格抽取比，赢在哪 / 输在哪"的对照（音频：会议纪要 / 时间戳对齐难；视频关键帧：监控 / 视频太大 fps 难选）。
 
 不要把音频 / 视频逻辑塞进 `extract_tables` 或 `ocr_image`——它俩只懂"PDF 页面 + 图像"。本章 MVP 只跑 PDF 表格 + OCR，但 modality 维度留好了挂音频 / 视频不动核心逻辑。

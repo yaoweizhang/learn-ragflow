@@ -46,7 +46,7 @@
 
 ---
 
-## 二、最小可跑加载：PDF + DOCX → 统一 schema：[code_01_basic_load.py](code_01_basic_load.py)
+## 二、最小可跑加载：PDF + DOCX → 统一 schema：[c01_basic_load.py](c01_basic_load.py)
 
 > 02 会跑同一套函数到真实样本上，演示哪些情况它会崩。
 
@@ -56,12 +56,12 @@
 2. `load_docx(path)` — `python-docx` 按 `paragraphs` 顺序读，仅保留非空段；
 3. 输出统一 `{text, page, source}` schema，page 在 DOCX 时为 `None`。
 
-入口：[`code_01_basic_load.py`](code_01_basic_load.py)
+入口：[`c01_basic_load.py`](c01_basic_load.py)
 
 ### 跑一遍
 
 ```bash
-python s02_doc_loading/code_01_basic_load.py
+python s02_doc_loading/c01_basic_load.py
 ```
 
 输出：
@@ -110,7 +110,7 @@ DOCX 第 1 段前 100 字: 青蓝科技股份有限公司 ...
 
 ---
 
-## 三、真实样本上的失败模式：[code_02_failure_modes.py](code_02_failure_modes.py)
+## 三、真实样本上的失败模式：[c02_failure_modes.py](c02_failure_modes.py)
 
 > 01 在 toy 上能跑；放到真实 `samples/` 上会崩在哪？
 > 本脚本定位问题 + 引出 ragflow 的工业解法。
@@ -122,12 +122,12 @@ DOCX 第 1 段前 100 字: 青蓝科技股份有限公司 ...
 1. **PDF 多栏错位**——`pypdf.extract_text()` 在双栏 PDF 上按字符位置扫，左右栏会交错；
 2. **DOCX 表格丢失**——`python-docx.Document.paragraphs` 不含 `Document.tables`，表内所有文字静默丢弃。
 
-入口：[`code_02_failure_modes.py`](code_02_failure_modes.py)
+入口：[`c02_failure_modes.py`](c02_failure_modes.py)
 
 ### 跑一遍
 
 ```bash
-python s02_doc_loading/code_02_failure_modes.py
+python s02_doc_loading/c02_failure_modes.py
 ```
 
 输出片段：
@@ -187,12 +187,12 @@ DOCX 第 1 段前 100 字: 青蓝科技股份有限公司 ...
 
 | 函数 | 文件 | 输入 | 输出 | 一句话解释 |
 |---|---|---|---|---|
-| `load_pdf(path)` | `code_01_basic_load.py` | `Path` | `list[{text, page, source}]` | 逐页 `PdfReader(path).pages` + `extract_text()`;非空页才进 list;`page` 从 1 起编 |
-| `load_docx(path)` | `code_01_basic_load.py` | `Path` | `list[{text, page: None, source}]` | `Document(path).paragraphs` 逐段抽,空段过滤;`page` 在 DOCX 时强制 `None`(非 0/非 -1) |
-| `main()` (01) | `code_01_basic_load.py` | — | 打印 schema + 段数 | 01 演示入口,把 `samples/` 下两份文件分别喂 `load_pdf` / `load_docx` |
-| `show_pdf_failure()` | `code_02_failure_modes.py` | — | 打印 PDF 段落数 + 长度 + 前 60 字 | 02 失败演示 a:`extract_text()` 在双栏 PDF 上把左栏底接右栏顶 |
-| `show_docx_table_loss()` | `code_02_failure_modes.py` | — | 打印 paragraphs / tables / 表格字符数 | 02 失败演示 b:`Document.paragraphs` 不含 `tables` —— 整张表被吞掉 |
-| `main()` (02) | `code_02_failure_modes.py` | — | 调用上面两个 demo + 引出工业解法 | 02 演示入口,只暴露 01 在 prod 上的损失量化,不生产新数据 |
+| `load_pdf(path)` | `c01_basic_load.py` | `Path` | `list[{text, page, source}]` | 逐页 `PdfReader(path).pages` + `extract_text()`;非空页才进 list;`page` 从 1 起编 |
+| `load_docx(path)` | `c01_basic_load.py` | `Path` | `list[{text, page: None, source}]` | `Document(path).paragraphs` 逐段抽,空段过滤;`page` 在 DOCX 时强制 `None`(非 0/非 -1) |
+| `main()` (01) | `c01_basic_load.py` | — | 打印 schema + 段数 | 01 演示入口,把 `samples/` 下两份文件分别喂 `load_pdf` / `load_docx` |
+| `show_pdf_failure()` | `c02_failure_modes.py` | — | 打印 PDF 段落数 + 长度 + 前 60 字 | 02 失败演示 a:`extract_text()` 在双栏 PDF 上把左栏底接右栏顶 |
+| `show_docx_table_loss()` | `c02_failure_modes.py` | — | 打印 paragraphs / tables / 表格字符数 | 02 失败演示 b:`Document.paragraphs` 不含 `tables` —— 整张表被吞掉 |
+| `main()` (02) | `c02_failure_modes.py` | — | 调用上面两个 demo + 引出工业解法 | 02 演示入口,只暴露 01 在 prod 上的损失量化,不生产新数据 |
 
 ## 五、跨代码 schema 设计取舍
 
@@ -248,7 +248,7 @@ RAGFlow 的文档解析在 `deepdoc/parser/` 目录下：PDF 走 `pdf_parser.py`
 加一种新格式（。pptx / 。html / 。md）或加一层 OCR 兜底只要三步：
 
 1. 写一个 `load_pptx(path) -> list[dict]` / `load_html(path) -> list[dict]`，**返回的 dict 必须沿用 `{text, page, source}` 三键 schema**，下游 chunker / embedder 不改一行；
-2. 在 `code_01_basic_load.py` 的 `main()` 里按 `path.suffix` 分发到对应 loader，**不要**在 `load_pdf` / `load_docx` 里写 `if suffix == '.pptx': ...`——污染单一职责；
+2. 在 `c01_basic_load.py` 的 `main()` 里按 `path.suffix` 分发到对应 loader，**不要**在 `load_pdf` / `load_docx` 里写 `if suffix == '.pptx': ...`——污染单一职责；
 3. 扫描件 PDF 兜底：在 `load_pdf` 里加 `if not text.strip(): return ocr_fallback(path)`，`ocr_fallback` 调到 s11 的 `ocr_image` 实现。
 
 不要在 `load_pdf` 里塞 OCR 逻辑——它只懂 pypdf 文本提取，OCR 是另一个职责层。本章 MVP 只跑 PDF + DOCX，但 loader 形状已经预留到 6 个 suffix 都能挂上去。
