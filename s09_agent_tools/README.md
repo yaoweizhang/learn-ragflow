@@ -342,14 +342,13 @@ unset LLM_API_KEY && python s09_agent_tools/code_01_tool_call.py
 
 01 跑单步（`single_shot`），02 跑多步（`run_agent` + `max_steps` 循环）。`run_agent` 通过 `importlib` 加载 01 的工具描述、LLM 客户端、检索函数——**单步-多步两层完全共用同一份底座**，02 只新增 30 行循环控制代码。把"工具定义 + LLM 调用 + 检索函数"和"循环控制"解耦的好处：换循环策略（改成 DAG / supervisor-subagent）不动底层工具描述；加新工具（加 `calculate` / `web_search`）不动循环控制。
 
-**整体拓扑**：(1) 01 把 `TOOLS_DESC`(工具描述 + 输入 schema) + `_llm()`(LLM 客户端) + `_retrieve()`(s04+s06+s07 串联的检索)封装在一个文件里 → (2) 02 通过 `importlib` 加载 01 的这三块,只新增循环控制(`while step < max_steps: llm → parse → execute → observation → step += 1`) → (3) trace 输出 `{step, thought, action, action_input, observation}` 给调试器/UI。**生产差异**：RAGFlow 的 Agent 走 Canvas DAG 编排(`agent/` 目录下可视化拖拽节点、加边、调权重),可以根据 query 类型走不同路径(FAQ / RAG / 工具调用);s09 toy 是单线 ReAct 循环,所有 query 都走同一条管线。
-
-
 ## RAGFlow 实现
 
 RAGFlow 的 Agent 在 `agent/` 目录下用 Canvas DAG 编排：每个节点是一个 tool 或 LLM 调用，节点之间用 `bind_tools()` 绑定依赖。Canvas 不强制按 linear 顺序执行，可以根据 query 类型走不同路径（FAQ / RAG / 工具调用）。
 
 **设计取舍**：Canvas 把"按 query 走不同路径"做成可视化 DAG，而不是 hard-coded 流程。开发者可以在 UI 里拖拽节点、加边、调权重，不改代码就能调整 agent 行为。s09 toy 的 ReAct 循环是单线直连版，Canvas 是它的可视化升级。
+
+**整体拓扑**：(1) 01 把 `TOOLS_DESC`(工具描述 + 输入 schema) + `_llm()`(LLM 客户端) + `_retrieve()`(s04+s06+s07 串联的检索)封装在一个文件里 → (2) 02 通过 `importlib` 加载 01 的这三块,只新增循环控制(`while step < max_steps: llm → parse → execute → observation → step += 1`) → (3) trace 输出 `{step, thought, action, action_input, observation}` 给调试器/UI。**生产差异**：RAGFlow 的 Agent 走 Canvas DAG 编排(`agent/` 目录下可视化拖拽节点、加边、调权重),可以根据 query 类型走不同路径(FAQ / RAG / 工具调用);s09 toy 是单线 ReAct 循环,所有 query 都走同一条管线。
 
 详细摘录与 5-15 行 "为什么这样写" 的分析见 [`docs/reference/ragflow-notes/agent_tools.md`](../docs/reference/ragflow-notes/agent_tools.md)。
 

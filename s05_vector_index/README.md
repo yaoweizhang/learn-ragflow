@@ -274,14 +274,13 @@ top-3 hits (query='应收账款'):
 
 01 写索引 → 02 读查询；两者通过 `_chroma/` 目录解耦。**没有 01 持久化的索引，02 没有任何数据可查**（因为 02 是"读"半边，不是"嵌入 + 写入"半边）。生产里也走这个模式——离线 pipeline 跑完 01 之后就停了，在线 service 只跑 02（或更上层的 s06+），持久化文件被独立 service 持有、SIGKILL 不丢数据。
 
-**整体拓扑**：(1) 01 走 `samples/ → load → chunk → embed → build_index` 写 `_chroma/` → (2) 02 启动时 `_open_collection()` 拿 collection → (3) 接收 query → (4) `_embed(query)` 算 query 向量 → (5) `col.query(query_embeddings=...)` 拿 top-k hits。**生产差异**：RAGFlow 把这层抽成 `rag/vector_store/` 接口,具体实现三选一(Elasticsearch / Infinity / OceanBase),`doc_engine` 字段从 `.env` 读决定用哪个;s05 toy 锁死 Chroma,生产换库需改 import。
-
-
 ## RAGFlow 实现
 
 RAGFlow 的向量索引层是抽象接口 `rag/vector_store/`，具体实现分三种：`Elasticsearch`（生产首选，支持完整 metadata 过滤）、`Infinity`（自研数据库，向量 + 全文 + 结构化混合查询）、`OceanBase`（阿里分布式数据库）。`doc_engine` 字段从 `.env` 读决定用哪个。
 
 **设计取舍**：不绑死单一向量库；让用户按"团队技术栈 + 文档规模 + 是否需要全文混查"三选一。Chroma 这种单机玩具不进生产候选。
+
+**整体拓扑**：(1) 01 走 `samples/ → load → chunk → embed → build_index` 写 `_chroma/` → (2) 02 启动时 `_open_collection()` 拿 collection → (3) 接收 query → (4) `_embed(query)` 算 query 向量 → (5) `col.query(query_embeddings=...)` 拿 top-k hits。**生产差异**：RAGFlow 把这层抽成 `rag/vector_store/` 接口,具体实现三选一(Elasticsearch / Infinity / OceanBase),`doc_engine` 字段从 `.env` 读决定用哪个;s05 toy 锁死 Chroma,生产换库需改 import。
 
 详细摘录与 5-15 行 "为什么这样写" 的分析见 [`docs/reference/ragflow-notes/vector_indexing.md`](../docs/reference/ragflow-notes/vector_indexing.md)。
 

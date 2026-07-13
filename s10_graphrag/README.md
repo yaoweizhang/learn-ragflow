@@ -282,14 +282,13 @@ python s10_graphrag/code_02_query.py   # 不调 LLM,只读 _graph.jsonl
 
 2.1 写图（`extract_triples` → `build_graph` → `save_graph`），2.2 读图（`load_graph` → `query_graph`）。两者通过 `_graph.jsonl` 解耦——2.2 离线可重跑、调试抽取 prompt 时反复改 2.1 重抽，2.2 不需要每次重新走 LLM。**生产里也走这个模式**：2.1 离线 ETL pipeline 跑完之后可以常关，在线 service 只跑 2.2（扩展为多跳 / entity resolution），LLM 成本不会每次 query 都付一次。
 
-**整体拓扑**：(1) 2.1 走 `samples/ → 段落切分 → LLM 抽 (head, rel, tail) 三元组 → build_graph(dict) → save_graph(_graph.jsonl)` → (2) 2.2 离线读 `_graph.jsonl` → (3) 接收 entity query → (4) `dict.get(entity, set())` O(1) 拿 1 跳邻居 → (5) `sorted()` 排后返回。**生产差异**：RAGFlow 在 `general/extractor.py`(抽) + `general/entity_resolution.py`(合并) 两阶段管线,先 light path 抽、再 entity resolution 合并同名实体(`紫光恒越` vs `紫光恒越技术有限公司`);s10 toy 完全不做合并,同名异写是两个独立节点。
-
-
 ## RAGFlow 实现
 
 RAGFlow 的 GraphRAG 在 `general/extractor.py` 和 `general/entity_resolution.py` 两步：先用 LLM 抽 `(head, rel, tail)` 三元组（light path），再做 entity resolution 把同名实体合并（两阶段管线）。query 时 `dict[head] → set[(rel, tail)]` 1 跳查表。
 
 **设计取舍**：两阶段比"一次性抽 + 合并"稳——LLM 在 light path 阶段专心抽，entity resolution 阶段用规则 / 相似度合并同名实体。错误率比一次性方案低 30-50%。
+
+**整体拓扑**：(1) 2.1 走 `samples/ → 段落切分 → LLM 抽 (head, rel, tail) 三元组 → build_graph(dict) → save_graph(_graph.jsonl)` → (2) 2.2 离线读 `_graph.jsonl` → (3) 接收 entity query → (4) `dict.get(entity, set())` O(1) 拿 1 跳邻居 → (5) `sorted()` 排后返回。**生产差异**：RAGFlow 在 `general/extractor.py`(抽) + `general/entity_resolution.py`(合并) 两阶段管线,先 light path 抽、再 entity resolution 合并同名实体(`紫光恒越` vs `紫光恒越技术有限公司`);s10 toy 完全不做合并,同名异写是两个独立节点。
 
 详细摘录与 5-15 行 "为什么这样写" 的分析见 [`docs/reference/ragflow-notes/graph_extraction.md`](../docs/reference/ragflow-notes/graph_extraction.md)。
 

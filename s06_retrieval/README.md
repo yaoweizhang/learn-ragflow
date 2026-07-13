@@ -236,14 +236,13 @@ hybrid top-3 (with both sub-scores visible):
 
 01 跑 BM25（纯字面，无外部依赖），02 把 01 的 BM25 + s04 BGE 的 dense cosine 在 `hybrid_topk` 里拼成加权融合。两者通过同一份 chunk 列表对齐——01 输出 `{chunk, bm25}`，02 拿 `dense_score_fn(chunk)` 算 dense 分，两者按 `chunk_id` 配对后做加权融合，得到最终排序。**s07 拿到 s06 的输出后，直接做 rerank 精排 + chunk 拉取，不需要重算 BM25 或 dense**——这是把"sparse 算过 / dense 算过"两件事固化在 s06 输出的红利。
 
-**整体拓扑**：(1) 01 走 `samples/ → load → chunk → BM25(corpus)` 拿 BM25 分 → (2) 02 拿 query → `s04._embed(query)` 拿 query 向量 → (3) `hybrid_topk(docs, query, query_vec, dense_score_fn, k, alpha)` 按 `α * dense + (1-α) * bm25_norm` 加权融合 → (4) 输出 `{chunk, bm25, dense, score}` 列表给 s07 精排。**生产差异**：RAGFlow 把 α 提到运行时 per-query 调(事实型偏 BM25、概念型偏 dense),s06 toy 写死 `α=0.95`(术语型密集场景);另外 RAGFlow 加第三层 PageRank / tag boost 信号(`sim = tkweight*tksim + vtweight*vtsim + rank_fea`),s06 只两层。
-
-
 ## RAGFlow 实现
 
 RAGFlow 的混合检索在 `rag/search.py` 的 `search()` 函数里：`FusionExpr` 类负责"BM25 + dense 加权融合"，公式是 `alpha * vec_score + (1 - alpha) * bm25_score`，alpha 可按 query 类型动态调（事实型偏 BM25，概念型偏 dense）。
 
 **设计取舍**：RAGFlow 把"alpha 调度"提到运行时（per-query 调），不是写死。这跟 s06 toy 的 `alpha=0.5` 固定值差一档——alpha 应该在 query routing 阶段根据 query 类别（factual / conceptual / multi-hop）选不同值。
+
+**整体拓扑**：(1) 01 走 `samples/ → load → chunk → BM25(corpus)` 拿 BM25 分 → (2) 02 拿 query → `s04._embed(query)` 拿 query 向量 → (3) `hybrid_topk(docs, query, query_vec, dense_score_fn, k, alpha)` 按 `α * dense + (1-α) * bm25_norm` 加权融合 → (4) 输出 `{chunk, bm25, dense, score}` 列表给 s07 精排。**生产差异**：RAGFlow 把 α 提到运行时 per-query 调(事实型偏 BM25、概念型偏 dense),s06 toy 写死 `α=0.95`(术语型密集场景);另外 RAGFlow 加第三层 PageRank / tag boost 信号(`sim = tkweight*tksim + vtweight*vtsim + rank_fea`),s06 只两层。
 
 详细摘录与 5-15 行 "为什么这样写" 的分析见 [`docs/reference/ragflow-notes/hybrid_retrieval.md`](../docs/reference/ragflow-notes/hybrid_retrieval.md)。
 

@@ -231,14 +231,13 @@ EMBED_PROVIDER=ollama EMBED_BASE_URL=http://localhost:11434 \
 
 01 / 02 都签同一个 schema：`embed(texts: list[str]) -> list[list[float]]`。01 是本地 BGE 直跑，02 是 env-driven dispatcher 选后端。**两者不能串行**——02 不 import 01，自己处理所有后端；调用方按 `EMBED_PROVIDER` env 决定跑谁。结果集被同样的 schema 锁住，s05/s06 拿到不论来自哪个 provider 的 `list[list[float]]` 都不需要分支判断。这是把"模型选型"封装掉的价值：**后续章节按统一接口消费**，换底层只改 `code_02_provider_routing.py` 的 `_REGISTRY`。
 
-**整体拓扑**：(1) 调用方持 `list[str]` → (2) 读 `EMBED_PROVIDER` env → (3) `code_02_provider_routing.route()` 选 01(本地 BGE)/ 02(OpenAI) / Ollama 后端 → (4) 拿到统一形状 `list[list[float]]` → (5) 下游 s05 写 Chroma 索引 / s06 做 dense cosine。**生产差异**：RAGFlow 把这段抽成 `EmbeddingModel.Base` 抽象类 + `EMBEDDING_FACTORY` 注册表,新接一个 provider(比如 Cohere)只需写一个 `CohereEmbed` 类 + 一行注册,s04 toy 走 dict-based dispatch 已经够 MVP。
-
-
 ## RAGFlow 实现
 
 RAGFlow 的 embedding 路由在 `rag/llm/embedding_model.py`：抽象出 `EmbeddingModel.Base` 接口，本地 BGE / OpenAI / Cohere / Voyage / 自部署 都走统一签名 `embed(texts: list[str]) -> list[list[float]]`。`provider` 字段从 `.env` 的 `EMBED_PROVIDER` 读，调度时按 provider 实例化对应类。
 
 **设计取舍**：provider 抽象避免"业务代码里 if/elif provider = 'openai' 。。。" 的散弹式判断；新接一个 provider 只需要写一个 `OpenAIEmbed` 类 + 在 `EMBEDDING_FACTORY` 注册一行。
+
+**整体拓扑**：(1) 调用方持 `list[str]` → (2) 读 `EMBED_PROVIDER` env → (3) `code_02_provider_routing.route()` 选 01(本地 BGE)/ 02(OpenAI) / Ollama 后端 → (4) 拿到统一形状 `list[list[float]]` → (5) 下游 s05 写 Chroma 索引 / s06 做 dense cosine。**生产差异**：RAGFlow 把这段抽成 `EmbeddingModel.Base` 抽象类 + `EMBEDDING_FACTORY` 注册表,新接一个 provider(比如 Cohere)只需写一个 `CohereEmbed` 类 + 一行注册,s04 toy 走 dict-based dispatch 已经够 MVP。
 
 详细摘录与 5-15 行 "为什么这样写" 的分析见 [`docs/reference/ragflow-notes/embedding_routing.md`](../docs/reference/ragflow-notes/embedding_routing.md)。
 
