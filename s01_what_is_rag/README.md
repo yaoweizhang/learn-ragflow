@@ -80,7 +80,7 @@ prompt 用 `<context>...</context>` 标签包裹资料，避免 prompt injection
 
 > 对应 s00 章 "什么是 RAG" 中的核心直觉：让 LLM "开卷考试"，先得有个"卷"。
 
-### 概念
+### 2.1 子串匹配的 30 行最小实现
 
 最朴素的检索策略：
 
@@ -93,7 +93,7 @@ prompt 用 `<context>...</context>` 标签包裹资料，避免 prompt injection
 
 入口：[`c01_naive_keyword.py`](c01_naive_keyword.py)
 
-### 跑一遍
+### 2.2 跑 01 看「披露」命中 /「外星人」拒答
 
 ```bash
 python s01_what_is_rag/c01_naive_keyword.py
@@ -106,7 +106,7 @@ python s01_what_is_rag/c01_naive_keyword.py
 | `披露` | `相关信息披露详见财务报表附注三(二十五)、五 (二)1 及十五(二)。` |
 | `外星人` | `I don't know.` |
 
-### 看输出
+### 2.3 实测 01 的命中 + 拒答输出
 
 **01 跑出来（实测，`samples/disclosure.docx`）：**
 
@@ -120,7 +120,7 @@ python s01_what_is_rag/c01_naive_keyword.py
 
 "披露"命中说明子串匹配能召回字面相关的段落；"外星人"返回 `I don't know.` 说明零命中时不让 LLM 编——为后续章节埋下"拒答"的种子。
 
-### 局限与下一步（这就是后面章节要解决的）
+### 2.4 找不到同义词 / 命中不等价答案（这就是后面章节要解决的）
 
 本段做对了什么 — 用 30 行 python-docx + 子串匹配跑通 RAG 闭环最小形状，零外部依赖。
 
@@ -145,7 +145,7 @@ python s01_what_is_rag/c01_naive_keyword.py
 > 词袋（bag-of-2-grams)+ 手写余弦，省去 embedding 模型下载，让 s01 自包含。
 > 后面 s04 用 BGE 真向量替代这套玩具；s05 用 Chroma 持久化索引。
 
-### 概念
+### 3.1 2-gram 词袋 + 手写余弦排序
 
 1. 把每段切成 2-gram（中文每 2 字 1 个 token）；
 2. 全部 token 组成词表 `vocab: {token: index}`；
@@ -156,7 +156,7 @@ python s01_what_is_rag/c01_naive_keyword.py
 
 入口：[`c02_vector_basics.py`](c02_vector_basics.py)
 
-### 跑一遍
+### 3.2 跑 02 交互输入查 top-3
 
 ```bash
 python s01_what_is_rag/c02_vector_basics.py
@@ -173,7 +173,7 @@ Top-3 与你的问题最相关的段落(按向量余弦排序):
     ...
 ```
 
-### 看输出
+### 3.3 实测 02 的 top-3 + 余弦分输出
 
 **02 跑出来（实测，`samples/disclosure.docx`，交互输入"披露"）：**
 
@@ -189,7 +189,7 @@ Top-3 与你的问题最相关的段落(按向量余弦排序):
 
 **跟 01 的差别**：01 只返第一段（无评分），02 返 Top-3 + 余弦分（有排序）。`[1]` 永远是分数最高那一段，即便它是"披露"字面量最密集的那段也不一定是真答案——这正是 03 + s07 要解决的问题。
 
-### 局限与下一步（这就是后面章节要解决的）
+### 3.4 词袋维度爆炸 / 丢语义 / 丢上下文（这就是后面章节要解决的）
 
 本段做对了什么 — 用 2-gram 词袋 + 手写余弦把"任意段落相对查询的可量化相关度"算出来了,并按 Top-3 排序,无 NumPy 依赖,让 RAG 检索这一步有"分"。
 
