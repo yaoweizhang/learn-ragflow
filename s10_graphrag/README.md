@@ -129,7 +129,7 @@ chunks: 8
 
 不同次跑节点 / 边数会小幅抖动（LLM 在 temperature=0 下对长 prompt 仍有少量随机性；chunk 0/1/2 是封面 + 目录，信息密度低，模型决定抽不抽也有差异）——这是 LLM 抽取的固有现象，不是 bug。
 
-### 看输出
+### 2.3 落盘 `_graph.jsonl` 的样例与节点边数
 
 把 2.1 跑在仓库自带的 `samples/` 上，落盘的 `_graph.jsonl` 长这样（实测，`MiniMax-M3 over minimaxi.com`，samples = `server_whitepaper.pdf` + `disclosure.docx`，只取前 8 个 chunk）：
 
@@ -143,7 +143,7 @@ chunks: 8
 
 节点 / 边数抖动属于 LLM 抽取的固有现象——生产做法（`temperature=0` + retry + LLM cache）见 `docs/reference/ragflow-notes/graph_extraction.md` §2。
 
-### 局限与下一步
+### 2.4 抽取的局限：实体对齐 / 并发 / 合并策略
 
 本段做对了什么 — 用 LLM 把非结构化文本里的实体关系抽成 (head, rel, tail) 三元组,落盘成可查询的图节点/边。
 
@@ -173,7 +173,7 @@ chunks: 8
 
 [`c02_query.py`](c02_query.py)
 
-### 概念
+### 3.1 加载 JSONL + O(1) 邻居查询
 
 `c02_query.py` 把 2.1 写出的 JSONL 重新加载回内存的图结构，提供最朴素的 1 跳查询：
 
@@ -181,7 +181,7 @@ chunks: 8
 - `query_graph(graph, entity)` —— `graph.get(entity, set())`，O(1）；返回前按 `(rel, tail)` 字母序排，便于对比不同次抽取的结果；
 - `main()` —— 加载 → 打印节点 / 边数 → 循环输入实体 → 打印 1 跳邻居，直到空行退出。**完全不调 LLM**，只要 `_graph.jsonl` 存在就跑得起。
 
-### 跑一遍
+### 3.2 查询的执行命令（不调 LLM）
 
 ```bash
 # 1. 先跑一次抽取(生成 _graph.jsonl)
@@ -204,11 +204,11 @@ python s10_graphrag/c02_query.py
 查哪个实体 (回车退出):
 ```
 
-### 看输出
+### 3.3 "读/写 拆开"的好处与 trace 含义
 
-跟 2.1 拆开的好处：**2.2 离线 / 零成本 / 可重跑**，调试抽取 prompt 时反复改 2.1 重抽，2.2 不用每次重新走 LLM；同 `_graph.jsonl` 跑 N 次结果完全一致，适合做"prompt 改了之后，看 query 输出有没有变"的回归对照。具体 trace（节点 / 边数 + 两次 query + 退出）见上节 `### 跑一遍`。
+跟 2.1 拆开的好处：**2.2 离线 / 零成本 / 可重跑**，调试抽取 prompt 时反复改 2.1 重抽，2.2 不用每次重新走 LLM；同 `_graph.jsonl` 跑 N 次结果完全一致，适合做"prompt 改了之后，看 query 输出有没有变"的回归对照。具体 trace（节点 / 边数 + 两次 query + 退出）见上节 `### 3.2`。
 
-### 局限与下一步
+### 3.4 1 跳查询的局限：多跳 / 对齐 / 方向
 
 本段做对了什么 — 把离线抽好的图在线做 O(1) 邻居查询,无需再付一次 LLM 成本,适合反复调试抽取 prompt 的回归对照。
 
