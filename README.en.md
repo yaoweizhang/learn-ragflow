@@ -27,7 +27,7 @@ cd learn-ragflow
 pip install -r requirements.txt
 cp .env.example .env       # then edit .env and set LLM_API_KEY / LLM_BASE_URL / LLM_MODEL
 # Chapter 0 (preface) is prose-only — read s00_concepts/README.md to build the RAG mental model
-python s01_what_is_rag/code_01_naive_keyword.py
+python s01_what_is_rag/c01_naive_keyword.py
 ```
 
 Requires Python 3.10+ and at least 8 GB RAM (16 GB recommended for BGE embeddings). GPU optional.
@@ -244,9 +244,9 @@ learn-ragflow/
 │   └── README.md
 ├── s01_what_is_rag/             # Chapter 1
 │   ├── README.md
-│   ├── code_01_naive_keyword.py
-│   ├── code_02_vector_basics.py
-│   └── code_03_augmented_llm.py
+│   ├── c01_naive_keyword.py
+│   ├── c02_vector_basics.py
+│   └── c03_augmented_llm.py
 ├── s02_doc_loading/             # Chapter 2
 ├── ...
 └── s12_deployment/              # Chapter 12

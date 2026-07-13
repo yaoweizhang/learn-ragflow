@@ -179,7 +179,7 @@ pip install -r requirements.txt
 cp .env.example .env              # 编辑 .env，填入 LLM_API_KEY / LLM_BASE_URL / LLM_MODEL
 source env.sh                     # 可选：HF_ENDPOINT=https://hf-mirror.com + LD_PRELOAD 修正
 # 第 0 章（序言）建议先读 README.md 建立 RAG 心智模型
-python s01_what_is_rag/code_01_naive_keyword.py         # 第 1 章 unit 1：朴素检索
+python s01_what_is_rag/c01_naive_keyword.py         # 第 1 章 unit 1：朴素检索
 ```
 
 LLM 端点默认配置 OpenAI 兼容协议（`LLM_BASE_URL` + `LLM_MODEL`），用户可指向任意 OpenAI 兼容服务（OpenAI / DeepSeek / 智谱 / MiniMax / vLLM 自部署等）。`LLM_MODEL` 填你所用服务实际支持的 chat 模型名即可。
@@ -217,9 +217,9 @@ learn-ragflow/
 │   └── README.md
 ├── s01_what_is_rag/              # ← 章节 1：1 个 README + 3 个 code_NN_<topic>.py
 │   ├── README.md
-│   ├── code_01_naive_keyword.py
-│   ├── code_02_vector_basics.py
-│   └── code_03_augmented_llm.py
+│   ├── c01_naive_keyword.py
+│   ├── c02_vector_basics.py
+│   └── c03_augmented_llm.py
 ├── s02_doc_loading/              # ← 章节 2-12：同 s01 形状
 ├── s03_chunking/
 ├── s04_embedding/
