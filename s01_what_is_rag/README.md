@@ -211,7 +211,7 @@ Top-3 与你的问题最相关的段落(按向量余弦排序):
 
 > 这一章是"s01 → RAG 全链路"的最小闭环；s02-s08 把每一环换成真工业实现。
 
-### 概念
+### 4.1 retrieve → build_prompt → call_llm 三段闭环
 
 三段代码：
 
@@ -236,7 +236,7 @@ Top-3 与你的问题最相关的段落(按向量余弦排序):
 
 入口：[`c03_augmented_llm.py`](c03_augmented_llm.py)
 
-### 跑一遍
+### 4.2 跑 03 无 key 时只打 prompt
 
 ```bash
 # .env 里有 LLM_API_KEY 就走端到端;无 key 时 graceful-skip 只打印 prompt
@@ -268,7 +268,7 @@ python s01_what_is_rag/c03_augmented_llm.py
 [llm] LLM_API_KEY 未设置,跳过真实生成...
 ```
 
-### 看输出
+### 4.3 实测 03 的 retrieve + prompt 拼接输出
 
 **03 跑出来（实测，无 key）：**
 
@@ -295,7 +295,7 @@ python s01_what_is_rag/c03_augmented_llm.py
 
 有 key 时 `call_llm` 会真发请求，LLM 输出接在 `回答:` 后；无 key 时只打印 prompt 形状，让你确认"检索 + 拼 prompt"链路正确但 LLM 步骤被优雅跳过。
 
-### 局限与下一步（这就是后面章节要解决的）
+### 4.4 prompt 极简 / 无 rerank / 无 hybrid 召回（这就是后面章节要解决的）
 
 本段做对了什么 — 用 60 行内代码把 `retrieve → build_prompt → call_llm` 这条 RAG 三动词闭环跑通,prompt 里硬约束"资料外回答「我不知道」"+`<context>` 边界,把第三章教学 demo 的 hallucination 风险压在 prompt 工程可达的范围内。
 
