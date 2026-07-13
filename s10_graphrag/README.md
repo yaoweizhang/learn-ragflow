@@ -102,7 +102,7 @@ query_graph(graph, "不存在的实体")
 
 [`c01_extract.py`](c01_extract.py)
 
-### 概念
+### 2.1 LLM 抽取 + JSON 容错 + 内存合并 + 落盘
 
 `c01_extract.py` 是一个"LLM 抽取 + 容错解析 + 内存合并 + 落盘"的小教学版 GraphRAG 抽取器：
 
@@ -113,7 +113,7 @@ query_graph(graph, "不存在的实体")
 - `save_graph(graph, path)` —— 落盘到 JSONL，每行一个 triple（便于追加 / 复查 / 不加载整图就能 grep）；
 - `main()` —— **self-contained**：内联 pypdf + python-docx + 简化版 chunking（双换行分段 + 500 字 cap + 取前 8 段），跑固定输入，打印节点 / 边数，落盘。
 
-### 跑一遍
+### 2.2 抽取-落盘的执行命令
 
 ```bash
 python s10_graphrag/c01_extract.py

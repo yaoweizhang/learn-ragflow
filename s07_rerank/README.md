@@ -6,7 +6,7 @@
 
 ## 一、章节介绍
 
-### 1.1 核心定义：什么是重排序 (Re-ranking）？
+### 1.1 核心定义：什么是重排序 (Re-ranking)？cross-encoder vs bi-encoder
 
 **重排序 (Re-ranking)** 是 RAG 在线链路的**第二阶段**——把第一阶段（s06）召回的 top-N 候选（~10-100 条）喂给一个**精排模型**，让模型对每个 `(query, chunk_text)` 对独立打分，再按新分取 top-k。s06 的混合召回（BM25 + dense cosine）是**双塔 (bi-encoder)**——query 和 chunk 各自独立编码再算相似度，**快但只看到向量层面的语义接近度**，没办法捕捉"查询词"和"chunk 里某个具体词"的精确匹配。重排序就是为了补这一刀：**慢一点，但看得更准**。
 
@@ -50,7 +50,7 @@ s06 / s07 的代码把所有事都写在一个文件里，但拆开看是两种*
 
 本章 MVP 只用第二行——**BGE-reranker 本地 cross-encoder**。ColBERT / RankLLM 留作扩展，生产代码把这四类统一抽象成 `RerankModel.Base` 的多 provider（Jina / Cohere / Voyage / Qwen / 本地 HF）。
 
-### 1.2 真实世界的问题
+### 1.2 真实世界的问题：latency cliff / 语言错配 / LLM-as-rerank 成本 tier
 
 `rerank(query, hits, top_k=3)` 调起来不到 20 行——`_reranker()` 一次、`compute_score` 一次、按分排序取前 k。看起来不值得单独一章。但把它扔进真实样本就会发现，**"bi-encoder 召回了对的 chunk"和"排序把对的 chunk 顶到第一"之间隔着一道悬崖**——这道悬崖由几类典型问题堆起来。
 
@@ -79,7 +79,7 @@ s06 / s07 的代码把所有事都写在一个文件里，但拆开看是两种*
 把 s06 召回的 top-N 候选再过一道 cross-encoder，按"query+chunk 拼起来看"的相关性重排序。
 这是 bi-encoder（双塔）召回之后的两阶段精排：精排贵但只对小池子跑，所以准。
 
-### 概念
+### 2.1 代码干了什么：FlagReranker + query+chunk 拼对 + rerank() + BEFORE/AFTER 对比
 
 `code.py` 把 s06 混合召回吐出的 top-N（默认 N=10）候选，跟原始 query 拼成 `[query, chunk_text]` 对，喂给 `FlagReranker("BAAI/bge-reranker-base")` ——一个 BERT 类 cross-encoder 模型。它对每对 `(query, chunk)` 做一次完整 forward，让 BERT 的 self-attention 同时看到两端、做 token 级 cross-attention，输出一个归一化到 `[0,1]` 的相关性分。我们按这个分降序取 top-3。
 
@@ -87,7 +87,7 @@ s06 / s07 的代码把所有事都写在一个文件里，但拆开看是两种*
 
 `main()` 跑一个完整的对比：BEFORE 是 s06 混合召回的 top-3（按 `alpha*vec + (1-alpha)*bm25_norm` 排），AFTER 是 cross-encoder 精排后的 top-3 —— 你会看到排序变化，因为 cross-encoder 看到的"查询词 vs 文档词"的精确匹配信号，比双塔向量平均值敏锐得多。
 
-### 跑一遍
+### 2.2 跑一遍：单条命令与首次 ~1GB 模型下载 + BEFORE/AFTER 输出
 
 ```bash
 python s07_rerank/c01_cross_encoder_rerank.py
@@ -113,7 +113,7 @@ query='内存', alpha=0.5 (BM25 + dense 等权融合)
 
 注意第 1 条 vs 第 2 条：混合召回把 vec=#1 的"内存 32 × DDR4 。。。"排第一（配置表，纯字面）但 cross-encoder 觉得它只有 0.644（因为正文是配置表，"内存"只是表里一行），而"2 内存"章节虽然 vec 只有 0.905，rerank 却给到 0.954。这就是 cross-encoder 比 bi-encoder 准的地方：它能看到具体词而不是被一个向量平均值糊弄。
 
-### 看输出
+### 2.3 实测输出：rerank 返回结构 + 关键现象 rerank 分 ≠ vec 分
 
 把 code_01 跑在仓库自带的 `samples/` 上，`rerank` 返回的命中结构长这样：
 
@@ -155,7 +155,7 @@ query='内存', alpha=0.5 (BM25 + dense 等权融合)
 
 `rerank_score` 范围 [0， 1]（`FlagReranker` `normalize=True` 归一化后）；`#3 [server_whitepaper.pdf#4]` 在 BEFORE 和 AFTER 都出现但排序微调——`score=0.795`（vec=0.590 + bm25 词面命中）和 `rerank=0.527`（cross-encoder 看到它是可靠性章节里顺带提到内存）**信号不一致**：BM25 字面命中把它顶到第一，rerank 觉得它不是"内存"主题段落。**这正是 rerank 的价值**——bi-encoder 召回了对的 chunk（BEFORE 也有它），但 cross-encoder 在 token 级 attention 上看出"内存"在 #4 章节里只是顺带提一句，该把它从第一压到第三。
 
-### 局限与下一步
+### 2.4 局限与下一步：必须先有 top-N、模型 ~1GB、O(N) per-pair 成本、小池子天花板
 
 本段做对了什么 — 用 BGE-reranker-base cross-encoder 把 s06 召回的 top-N 做 token 级精排,在 bi-encoder 的"向量平均"糊弄之上补一层"query+chunk 同看"的精确打分,排序变化肉眼可见。
 
