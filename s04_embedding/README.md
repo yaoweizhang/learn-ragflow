@@ -216,7 +216,7 @@ EMBED_PROVIDER=ollama EMBED_BASE_URL=http://localhost:11434 \
 | `_openai_available()` / `_ollama_available()` | `code_02_provider_routing.py` | — | `bool` | 检测 key / endpoint 可用性;不可用时 `route()` 走 graceful fallback 提示 |
 | `main()` (02) | `code_02_provider_routing.py` | — | 打印 query + 命中的 provider + vectors | 02 演示入口;按 env 路由 + 给出 friendly hint |
 
-## 五、跨代码 schema 设计取舍
+## 五、跨代码协同
 
 为什么 `embed()` 返回 `list[list[float]]` 而不是 `np.ndarray` 或 Pydantic 模型？几个常见取舍的折中：
 
@@ -226,8 +226,6 @@ EMBED_PROVIDER=ollama EMBED_BASE_URL=http://localhost:11434 \
 - **归一化是默认开启不是可选**：01 / 02 都强制 `normalize_embeddings=True`，理由见下方"思考题答案"的三条（内积 = 余弦、距离度量统一、和训练目标对齐）。想要"未归一化"向量的场景是少数，按需改 `_embed_local` 一行即可。
 
 如果你的场景需要"每次返回带元数据"（比如 `[{vec, model, dim, took_ms}, ...]`），就在外层加一个 wrapper——但**保持 `embed()` 的签名是 `list[str] → list[list[float]]`**，不要把它升成 Pydantic 那种重型接口。toy 阶段越简单越好。
-
-## 六、跨代码文件集成
 
 01 / 02 都签同一个 schema：`embed(texts: list[str]) -> list[list[float]]`。01 是本地 BGE 直跑，02 是 env-driven dispatcher 选后端。**两者不能串行**——02 不 import 01，自己处理所有后端；调用方按 `EMBED_PROVIDER` env 决定跑谁。结果集被同样的 schema 锁住，s05/s06 拿到不论来自哪个 provider 的 `list[list[float]]` 都不需要分支判断。这是把"模型选型"封装掉的价值：**后续章节按统一接口消费**，换底层只改 `code_02_provider_routing.py` 的 `_REGISTRY`。
 
