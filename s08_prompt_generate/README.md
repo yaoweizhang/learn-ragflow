@@ -95,7 +95,7 @@ s08 的 `PROMPT` 常量是一个典型的**三段式结构**：
 把 s07 精排后的 top-3 hits 拼进 `<context>` 块，调 LLM 生成带角标的答案。
 这是"s07 给候选 → s08 给答案"的桥：精排选出最相关的 3 条，prompt 强制 LLM 引用 + 拒答，把幻觉关在笼子里。
 
-### 2.1 代码干了什么：PROMPT 4 条硬约束 + `_format_context` + `answer()` + graceful skip
+### 2.1 PROMPT 4 条硬约束 + `_format_context` + `answer()` + graceful skip
 
 `s08_prompt_generate/c01_prompt_template.py` 干三件事——拼 prompt、调 LLM、解引用编号。`PROMPT` 常量是一段 4 条硬约束的中文规则：（1) 只能依据 `<context>` 回答；（2) 资料里没答案就答"我不知道"（拒答兜底）；（3) 引用用 `[i]` 角标对应资料编号；（4) 中文 + 简洁直接。`<context>...</context>` 是显式定界符——把检索结果圈在"边界"里、用户问题圈在"边界"外，让 LLM 知道哪些是可信来源、哪些是要谨慎对待的输入（防 prompt 注入的第一道线）。
 
@@ -103,7 +103,7 @@ s08 的 `PROMPT` 常量是一个典型的**三段式结构**：
 
 `main()` self-contained：内联 chroma 加载 + s04 code_01 本地 BGE embed + s06 code_02 BM25+dense 混合召回 + s07 code_01 cross-encoder 精排，把 top-3 喂给 `answer()`、打印答案 + 引用。整章只有这 1 个代码文件，因为 prompt 模板和 LLM 调用本身是**同一个原子动作的两端**——拆成 2 段反而要单独跑一遍 top-3 重算，多花几秒换不到可观测性收益。
 
-### 2.2 跑一遍：单条命令 + 无 key / 有 key 输出示例 + 拒答对照
+### 2.2 单条命令 + 无 key / 有 key 输出示例 + 拒答对照
 
 ```bash
 python s08_prompt_generate/c01_prompt_template.py
@@ -140,7 +140,7 @@ A: R3630 G5 配备 **32 个 DIMM 内存插槽** [2]。
 A: 我不知道。资料中未提及公司 CEO 的姓名,仅披露了最终控制方为朱蓉娟、彭韬夫妇[1]。
 ```
 
-### 2.3 实测输出：PROMPT.format 渲染 + 编号对齐 + 含/不含 key 两种分支
+### 2.3 PROMPT.format 渲染 + 编号对齐 + 含/不含 key 两种分支
 
 把 code_01 跑在仓库自带的 `samples/` 上，`PROMPT.format(...)` 返回的最终 prompt 长这样：
 
@@ -209,7 +209,7 @@ A: [skipped: LLM_API_KEY not set]
 A: 我不知道。资料中未提及公司 CEO 的姓名,仅披露了最终控制方为朱蓉娟、彭韬夫妇[1]。
 ```
 
-### 2.4 局限与下一步：无 streaming、无 retry、拒答软约束、不挡 context 恶意、引用不稳
+### 2.4 无 streaming、无 retry、拒答软约束、不挡 context 恶意、引用不稳
 
 本段做对了什么 — 把精排后的 top-3 hits 拼进 `<context>` 块、调 LLM 生成带 `[i]` 角标的答案,首次让"引用 + 拒答"在 prompt 层面强制落地,把幻觉关进 `<context>` 笼子里。
 

@@ -79,7 +79,7 @@ s06 / s07 的代码把所有事都写在一个文件里，但拆开看是两种*
 把 s06 召回的 top-N 候选再过一道 cross-encoder，按"query+chunk 拼起来看"的相关性重排序。
 这是 bi-encoder（双塔）召回之后的两阶段精排：精排贵但只对小池子跑，所以准。
 
-### 2.1 代码干了什么：FlagReranker + query+chunk 拼对 + rerank() + BEFORE/AFTER 对比
+### 2.1 FlagReranker + query+chunk 拼对 + rerank() + BEFORE/AFTER 对比
 
 `code.py` 把 s06 混合召回吐出的 top-N（默认 N=10）候选，跟原始 query 拼成 `[query, chunk_text]` 对，喂给 `FlagReranker("BAAI/bge-reranker-base")` ——一个 BERT 类 cross-encoder 模型。它对每对 `(query, chunk)` 做一次完整 forward，让 BERT 的 self-attention 同时看到两端、做 token 级 cross-attention，输出一个归一化到 `[0,1]` 的相关性分。我们按这个分降序取 top-3。
 
@@ -87,7 +87,7 @@ s06 / s07 的代码把所有事都写在一个文件里，但拆开看是两种*
 
 `main()` 跑一个完整的对比：BEFORE 是 s06 混合召回的 top-3（按 `alpha*vec + (1-alpha)*bm25_norm` 排），AFTER 是 cross-encoder 精排后的 top-3 —— 你会看到排序变化，因为 cross-encoder 看到的"查询词 vs 文档词"的精确匹配信号，比双塔向量平均值敏锐得多。
 
-### 2.2 跑一遍：单条命令与首次 ~1GB 模型下载 + BEFORE/AFTER 输出
+### 2.2 单条命令与首次 ~1GB 模型下载 + BEFORE/AFTER 输出
 
 ```bash
 python s07_rerank/c01_cross_encoder_rerank.py
@@ -113,7 +113,7 @@ query='内存', alpha=0.5 (BM25 + dense 等权融合)
 
 注意第 1 条 vs 第 2 条：混合召回把 vec=#1 的"内存 32 × DDR4 。。。"排第一（配置表，纯字面）但 cross-encoder 觉得它只有 0.644（因为正文是配置表，"内存"只是表里一行），而"2 内存"章节虽然 vec 只有 0.905，rerank 却给到 0.954。这就是 cross-encoder 比 bi-encoder 准的地方：它能看到具体词而不是被一个向量平均值糊弄。
 
-### 2.3 实测输出：rerank 返回结构 + 关键现象 rerank 分 ≠ vec 分
+### 2.3 rerank 返回结构 + 关键现象 rerank 分 ≠ vec 分
 
 把 code_01 跑在仓库自带的 `samples/` 上，`rerank` 返回的命中结构长这样：
 
@@ -155,7 +155,7 @@ query='内存', alpha=0.5 (BM25 + dense 等权融合)
 
 `rerank_score` 范围 [0， 1]（`FlagReranker` `normalize=True` 归一化后）；`#3 [server_whitepaper.pdf#4]` 在 BEFORE 和 AFTER 都出现但排序微调——`score=0.795`（vec=0.590 + bm25 词面命中）和 `rerank=0.527`（cross-encoder 看到它是可靠性章节里顺带提到内存）**信号不一致**：BM25 字面命中把它顶到第一，rerank 觉得它不是"内存"主题段落。**这正是 rerank 的价值**——bi-encoder 召回了对的 chunk（BEFORE 也有它），但 cross-encoder 在 token 级 attention 上看出"内存"在 #4 章节里只是顺带提一句，该把它从第一压到第三。
 
-### 2.4 局限与下一步：必须先有 top-N、模型 ~1GB、O(N) per-pair 成本、小池子天花板
+### 2.4 必须先有 top-N、模型 ~1GB、O(N) per-pair 成本、小池子天花板
 
 本段做对了什么 — 用 BGE-reranker-base cross-encoder 把 s06 召回的 top-N 做 token 级精排,在 bi-encoder 的"向量平均"糊弄之上补一层"query+chunk 同看"的精确打分,排序变化肉眼可见。
 
