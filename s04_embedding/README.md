@@ -67,13 +67,13 @@ BM25 处理"原词命中"，Embedding 处理"意思命中"——s06 会把两条
 
 > 02 会基于同样的 `EMBED_PROVIDER` 字典分发思路，把 openai / ollama 串进同一套接口。
 
-### 概念
+### 2.1 `embed_local` 加载 BGE-small-zh-v1.5 跑 `normalize_embeddings=True` 出 512 维
 
 `code.py` 提供一个 `embed_local(texts)` 函数，把任意字符串列表送进 `sentence-transformers` 加载的 `BAAI/bge-small-zh-v1.5`（默认模型名，可用 `EMBED_MODEL` 覆盖），模型跑完 `model.encode(..., normalize_embeddings=True)` 返回 `list[list[float]]`，每行是 512 维、长度 1 的单位向量。模型用 `@lru_cache(maxsize=1)` 缓存，第二次跑同一进程不重载。
 
 入口：[`c01_local_bge.py`](c01_local_bge.py)
 
-### 跑一遍
+### 2.2 跑 01：4 chunks → 4×512 / 首次 ~100MB HF 下载
 
 ```bash
 python s04_embedding/c01_local_bge.py
@@ -87,7 +87,7 @@ python s04_embedding/c01_local_bge.py
 
 首次跑 local 会从 HF Hub 下载 ~100MB 模型到 `~/.cache/huggingface/hub/`；后续运行靠 `lru_cache` 直接命中内存模型，秒回。
 
-### 看输出
+### 2.3 实测 01 在 samples 上 vecs 形状 + 跨模型 schema 对齐
 
 把 `c01` 跑在仓库自带的 `samples/` 上，得到的真实片段长这样（用于对照"归一化后的向量是单位球面上的点"）：
 
@@ -108,7 +108,7 @@ vecs = embed_local(chunks)
 
 下游向量库（s05）拿到这 4×512 时，**不需要知道来源是 BGE 还是 OpenAI**——它只关心"每个 chunk 对应一行固定维度的浮点数"。这就是 schema 对齐的价值：**模型差异被吸收在 Embedding 层，后续章节不用再分情况处理**——只在你**重新切回另一个模型 embed**时，s05 的索引会告诉你"模型换了，要重建"。
 
-### 局限与下一步
+### 2.4 仅中文友好 / 大 batch 缺 GPU / 首跑依赖网络
 
 本段做对了什么 — 用 `sentence-transformers` 加载 BGE-small-zh,32 行代码里跑通"chunks → 512 维归一化向量"的最小翻译层,免 key、`lru_cache` 不重载,schema 是统一 `list[list[float]]`,s05+ 不需要分模型分情况处理。
 
@@ -130,7 +130,7 @@ vecs = embed_local(chunks)
 > 把 01 的本地 BGE 思路扩展成"env-driven dispatcher"——同一接口后挂多个后端。
 > 与 01 不同，本脚本不 import 任何前序脚本，分发层独立。
 
-### 概念
+### 3.1 `_REGISTRY` 字典 + local/openai/ollama env-driven dispatcher
 
 `code.py` 暴露一个 `route(texts)`，按 `EMBED_PROVIDER` 环境变量选：
 
@@ -142,7 +142,7 @@ vecs = embed_local(chunks)
 
 入口：[`c02_provider_routing.py`](c02_provider_routing.py)
 
-### 跑一遍
+### 3.2 跑 02：默认 local，缺 key 时 graceful-skip
 
 ```bash
 # 默认 local,免 key
@@ -159,7 +159,7 @@ provider: local, dim: 512, count: 3
 [ollama] skipped, set EMBED_BASE_URL and run `ollama serve` to enable
 ```
 
-### 看输出
+### 3.3 实测 02 的 provider: local / [openai] skipped / [ollama] skipped
 
 第二、三行的 "skipped" 是 **graceful fallback**——02 故意不抛异常，让你能在 demo 机器上跑通整条 demo 链，缺哪个后端就只缺哪个。设上 `LLM_API_KEY` 之后 `embed_openai` 才会真发请求，输出从 `skipped` 变成 `[openai] ok: provider=openai, dim=1536`。具体预期输出（`provider: local, dim: 512, count: 3` / `[openai] skipped` / `[ollama] skipped`）见上节 `### 跑一遍`。
 
@@ -176,7 +176,7 @@ EMBED_PROVIDER=ollama EMBED_BASE_URL=http://localhost:11434 \
   python s04_embedding/c02_provider_routing.py
 ```
 
-### 局限与下一步
+### 3.4 没 retry / 没 batched ollama / 本地 BGE 仍要联网
 
 本段做对了什么 — 把 01 的本地 BGE 思路扩成 env-driven 三后端 dispatcher(`local / openai / ollama`),`_REGISTRY` 字典让加 provider = 一行注册,graceful fallback 让 demo 机不会因为缺 key 全崩,接口形状仍锁在 `list[list[float]]`。
 

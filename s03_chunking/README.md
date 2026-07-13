@@ -50,7 +50,7 @@ embedding 模型的 `max_seq_len` 通常是 512 token（BGE 系列）或 8192 to
 
 > 02 会跑同一套函数到真实样本上，展示哪些情况它会崩。
 
-### 概念
+### 2.1 `split_long_paragraph` + `chunk_by_paragraph` + `{source}#{page}#p{n}` chunk_id
 
 1. `split_long_paragraph(text, max_chars)` — lookbehind 正则在 `[.。!?！？]` 之后切，把超长段落切成 ≤ max_chars 的若干块；极端情况（无标点的规格表）按字符硬切兜底；
 2. `chunk_by_paragraph(docs, max_chars=500)` — 短段整段保留为 1 块，长段调 `split_long_paragraph` 后展开多块；每块带 `chunk_id = {source}#{page}#p{n}`；
@@ -58,7 +58,7 @@ embedding 模型的 `max_seq_len` 通常是 512 token（BGE 系列）或 8192 to
 
 入口：[`c01_basic_chunk.py`](c01_basic_chunk.py)
 
-### 跑一遍
+### 2.2 跑 01：31 段 → 34 块 / 最大 452 字符
 
 ```bash
 python s03_chunking/c01_basic_chunk.py
@@ -78,11 +78,11 @@ server_whitepaper.pdf#2#p2 | 三、整机规格
 组件 规格 说明 ...
 ```
 
-### 看输出
+### 2.3 实测 01 在 samples 上未触发硬切 + chunk_id 稳定生成
 
 把它跑在仓库自带的 `samples/server_whitepaper.pdf` + `samples/disclosure.docx` 上 — 实测 31 段（4 页 PDF + 27 段 DOCX）→ 34 块，**最大块 452 字符，未触发硬切兜底**。`chunk_id` 按 `{source}#{page}#p{n}` 稳定生成，可被 s04+ 直接引用。具体输入段落 → 输出块的 sample 块内容见上节 `### 跑一遍`。
 
-### 局限与下一步
+### 2.4 chunk 粒度决定召回上限 + s04 才上真语义
 
 本段做对了什么 — 用 500 字 cap + 句界正则把"段落 → chunk"这件 RAG 流水线最朴素的工作跑通,句界优先 + 硬切兜底让中英文段落都不会被拦腰砍断,`{source}#{page}#p{n}` chunk_id 让 s04+ 可以稳定引用具体块。
 
@@ -101,7 +101,7 @@ server_whitepaper.pdf#2#p2 | 三、整机规格
 > 01 在 toy 上能跑；放到真实 `samples/` 上会崩在哪？
 > 本脚本定位 3 类问题 + 引出工业解法。
 
-### 概念
+### 3.1 把 01 喂给真实样本暴露表格切碎 / 父子块缺失 / 跨段引用断裂
 
 把 01 的 `chunk_by_paragraph` 喂给真实样本（`server_whitepaper.pdf` 4 页 + `disclosure.docx` 27 段），把"看不见的损失"暴露出来：
 
@@ -111,7 +111,7 @@ server_whitepaper.pdf#2#p2 | 三、整机规格
 
 入口：[`c02_chunk_failures.py`](c02_chunk_failures.py)
 
-### 跑一遍
+### 3.2 跑 02 看 [a][b][c] 三类失败的 chunk 演示
 
 ```bash
 python s03_chunking/c02_chunk_failures.py
@@ -136,7 +136,7 @@ AFTER  (cap=500 → 切成 2 块):
           第 1 块从 'NAND' 开头继续,失去 '组件 / 规格 / 说明' 列对齐语义。
 ```
 
-### 看输出
+### 3.3 实测 02 的 BEFORE/AFTER 量化输出
 
 **02 跑出来（实测）：**
 
@@ -171,7 +171,7 @@ BEFORE (过短的 header-only chunks,语义为零):
   id=disclosure.docx#None#p18 len=11 | '第四节 分季度财务数据'
 ```
 
-### 局限与下一步
+### 3.4 demo 而非 fix + 真实场景还有页眉/多栏/扫描件
 
 本段做对了什么 — 把 01 在真实样本上的三类典型失败(表格切碎 / 父子块缺失 / 跨段引用断裂)逐一定位 + 量化,每个失败都点名 RAGFlow 的对应工业模块(`pdf_parser.py` / `naive_merge` / `hierarchical_merge` / `attach_media_context`)。
 
