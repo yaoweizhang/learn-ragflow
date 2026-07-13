@@ -185,20 +185,6 @@ query='内存', alpha=0.5 (BM25 + dense 等权融合)
 | `_hybrid_topk(docs, query, query_vec, dense_score_fn, k, alpha)` | `code_01_cross_encoder_rerank.py` | `(list, str, list, callable, int, float)` | `list[{text, source, page, chunk_id, dense, bm25, score}]` | 复制 s06 code_02 的 hybrid_topk 公式(`α * vec + (1-α) * bm25_norm`);self-contained 跑通 BM25+dense 召回 → rerank 对比 |
 | `main()` (code_01) | `code_01_cross_encoder_rerank.py` | — | 打印 BEFORE/AFTER rerank top-3 | code_01 演示入口,默认 query `"内存"`(EOFError 时兜底) |
 
-### 本章的设计取舍
-
-s07 只有一个 code 文件，但 schema 仍然是这层负责"封装掉"的关键——hits 输入输出的字段语义：
-
-- **`hits` 输入字段**：`text / source / page / chunk_id / dense / bm25 / score`——s06 混合召回的产物，s07 只读不写；这保证 s07 的 `rerank` 函数签名兼容所有上游召回器（不管上游是 weighted_sum / RRF / 别的 fusion 策略）。
-- **`hits` 输出新增字段**：仅 `rerank_score`，不删任何原字段。**保留 `score` 让 BEFORE/AFTER 对照能打同一行**，方便定位"是 rerank 拉上去的还是 dense 拉上去的"。
-- **`top_k`（精排后保留几个）vs `top_n`（召回多少）**：前者是"喂给 LLM 的最终候选数"——s08 会把这 k 个 hit 拼进 prompt，**越大越费 token 但越准**；后者是"喂给 cross-encoder 的候选数"——**越大越费 latency**。生产上一般召回 50-100，精排取 3-5。本教程选 `top_k=3` 是因为 s05 / s06 的 `samples/` 只有 34 个 chunk，10 召回 3 精排已经能看出"rerank 把对的顶上去"的效果；**生产请按 query 复杂度调**。
-- **`@lru_cache(maxsize=1)` 缓存 vs 每次重载**：`FlagReranker` 加载要 ~5-10s（CPU）/ ~2-3s（GPU），rerank 一对 query-chunk 本身只要 3-5ms（CPU）/ 1-2ms（GPU）。**没有缓存，每次 rerank 都白白浪费 5s 加载**；有缓存，同一进程内 rerank 任意次只加载一次。`@lru_cache(maxsize=1)` 是 Python 标准库最简单的"单例"装饰器，跟 s04 / s05 / s06 的 `_embed_model()` 同款做法。
-- **`use_fp16=False` vs `use_fp16=True`**：`FlagReranker` 默认 fp32，精度最高但显存占用也最高（~2GB）。**GPU + 显存紧** 时改 `use_fp16=True`，推理速度 ~2x 但精度损失 ~1%。本教程选 fp32 是因为 demo 在 CPU 上跑，fp16 反而更慢；**生产 GPU 请开 fp16**。
-- **`normalize=True` vs `normalize=False`**：`FlagReranker.compute_score` 默认输出是**原始 sigmoid logits**，范围 `[0, +∞)`；设 `normalize=True` 后会被 FlagEmbedding 内部映射到 `[0,1]`（具体公式是 sigmoid + 校准），跟 s06 的 cosine ∈ [0，1] 同一个量纲。**如果不归一，print 出来的 `rerank_score` 会显示 10+ 这样的数字**，看起来吓人但其实是 logits。
-- **不重做 embed**：rerank 阶段只重打分，不重生成向量——意味着 `hits` 里**必须先有 `dense` 和 `bm25` 分**。生产代码把这条契约硬编码成 `RerankModel.Base.rerank(query, docs, top_k)`——上游必须保证 `docs` 已经召回过并打了基础分。
-
-如果你的场景需要"重新打分时同时打 5 路分（dense / bm25 / rerank / colbert / llm-judge）"，就把 `hits` schema 扩成 `list[dict]` 每个 dict 多塞字段——但**保持 `rerank` 函数签名只吃 `query / hits / top_k`**，不要把它升成 Pydantic 那种重型接口。toy 阶段越简单越好。
-
 ---
 
 ## RAGFlow 实现
@@ -324,20 +310,6 @@ if top > 0:
 | `rerank(query, hits, top_k=3)` | `code_01_cross_encoder_rerank.py` | `(str, list[dict], int)` | `list[{text, source, page, chunk_id, dense, bm25, score, rerank_score}]` | 把 s06 的 hits 喂给 cross-encoder 重打分,按 `rerank_score` 降序取前 k,保留 `score`(s06 混合分)供前后对比 |
 | `_hybrid_topk(docs, query, query_vec, dense_score_fn, k, alpha)` | `code_01_cross_encoder_rerank.py` | `(list, str, list, callable, int, float)` | `list[{text, source, page, chunk_id, dense, bm25, score}]` | 复制 s06 code_02 的 hybrid_topk 公式(`α * vec + (1-α) * bm25_norm`);self-contained 跑通 BM25+dense 召回 → rerank 对比 |
 | `main()` (code_01) | `code_01_cross_encoder_rerank.py` | — | 打印 BEFORE/AFTER rerank top-3 | code_01 演示入口,默认 query `"内存"`(EOFError 时兜底) |
-
-### 本章的设计取舍
-
-s07 只有一个 code 文件，但 schema 仍然是这层负责"封装掉"的关键——hits 输入输出的字段语义：
-
-- **`hits` 输入字段**：`text / source / page / chunk_id / dense / bm25 / score`——s06 混合召回的产物，s07 只读不写；这保证 s07 的 `rerank` 函数签名兼容所有上游召回器（不管上游是 weighted_sum / RRF / 别的 fusion 策略）。
-- **`hits` 输出新增字段**：仅 `rerank_score`，不删任何原字段。**保留 `score` 让 BEFORE/AFTER 对照能打同一行**，方便定位"是 rerank 拉上去的还是 dense 拉上去的"。
-- **`top_k`（精排后保留几个）vs `top_n`（召回多少）**：前者是"喂给 LLM 的最终候选数"——s08 会把这 k 个 hit 拼进 prompt，**越大越费 token 但越准**；后者是"喂给 cross-encoder 的候选数"——**越大越费 latency**。生产上一般召回 50-100，精排取 3-5。本教程选 `top_k=3` 是因为 s05 / s06 的 `samples/` 只有 34 个 chunk，10 召回 3 精排已经能看出"rerank 把对的顶上去"的效果；**生产请按 query 复杂度调**。
-- **`@lru_cache(maxsize=1)` 缓存 vs 每次重载**：`FlagReranker` 加载要 ~5-10s（CPU）/ ~2-3s（GPU），rerank 一对 query-chunk 本身只要 3-5ms（CPU）/ 1-2ms（GPU）。**没有缓存，每次 rerank 都白白浪费 5s 加载**；有缓存，同一进程内 rerank 任意次只加载一次。`@lru_cache(maxsize=1)` 是 Python 标准库最简单的"单例"装饰器，跟 s04 / s05 / s06 的 `_embed_model()` 同款做法。
-- **`use_fp16=False` vs `use_fp16=True`**：`FlagReranker` 默认 fp32，精度最高但显存占用也最高（~2GB）。**GPU + 显存紧** 时改 `use_fp16=True`，推理速度 ~2x 但精度损失 ~1%。本教程选 fp32 是因为 demo 在 CPU 上跑，fp16 反而更慢；**生产 GPU 请开 fp16**。
-- **`normalize=True` vs `normalize=False`**：`FlagReranker.compute_score` 默认输出是**原始 sigmoid logits**，范围 `[0, +∞)`；设 `normalize=True` 后会被 FlagEmbedding 内部映射到 `[0,1]`（具体公式是 sigmoid + 校准），跟 s06 的 cosine ∈ [0，1] 同一个量纲。**如果不归一，print 出来的 `rerank_score` 会显示 10+ 这样的数字**，看起来吓人但其实是 logits。
-- **不重做 embed**：rerank 阶段只重打分，不重生成向量——意味着 `hits` 里**必须先有 `dense` 和 `bm25` 分**。生产代码把这条契约硬编码成 `RerankModel.Base.rerank(query, docs, top_k)`——上游必须保证 `docs` 已经召回过并打了基础分。
-
-如果你的场景需要"重新打分时同时打 5 路分（dense / bm25 / rerank / colbert / llm-judge）"，就把 `hits` schema 扩成 `list[dict]` 每个 dict 多塞字段——但**保持 `rerank` 函数签名只吃 `query / hits / top_k`**，不要把它升成 Pydantic 那种重型接口。toy 阶段越简单越好。
 
 ---
 
