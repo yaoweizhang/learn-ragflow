@@ -89,7 +89,7 @@ python s04_embedding/c01_local_bge.py
 
 ### 看输出
 
-把 `01` 跑在仓库自带的 `samples/` 上，得到的真实片段长这样（用于对照"归一化后的向量是单位球面上的点"）：
+把 `c01` 跑在仓库自带的 `samples/` 上，得到的真实片段长这样（用于对照"归一化后的向量是单位球面上的点"）：
 
 ```python
 # 输入 4 个 chunk (PDF 前 2 段 + DOCX 前 2 段)
@@ -254,7 +254,7 @@ RAGFlow 的 embedding 路由在 `rag/llm/embedding_model.py`：抽象出 `Embedd
 - **要多语言、混合检索** → `bge-m3`，1024 维有 rerank-friendly 变体；
 - **要省运维、英文为主** → `text-embedding-3-small`，1536 维，OpenAI 兼容；
 - **要 rerank 配套** → 选 1024 维 BGE-m3 或 1024 维 Cohere multilingual，和 s07 的 BGE-reranker-large 维度对齐；
-- **要先看清每个后端边界条件再选** → 用本章 `02` 把 openai / ollama 都跑一遍，看清楚"什么 env 缺了就 graceful skip"。
+- **要先看清每个后端边界条件再选** → 用本章 `c02` 把 openai / ollama 都跑一遍，看清楚"什么 env 缺了就 graceful skip"。
 
 ### 扩展指南
 
