@@ -275,12 +275,12 @@ python s10_graphrag/c02_query.py   # 不调 LLM,只读 _graph.jsonl
 - **三元组 vs N 元组**——MVP 走 3 元组，够演示"实体 + 关系"的核心点；N 元组（带时间 / 强度 / 来源）能携带更多信息但 prompt 复杂度翻倍。**生产里 RAGFlow 用 4 元组**(head / tail / rel / description + strength），见 `docs/reference/ragflow-notes/graph_extraction.md`。
 - **`dict[head]` vs `dict[(head, tail)]`**——MVP 走 `dict[head] → set[(rel, tail)]`，**从 head 出发查 1 跳邻居是 O(1) `dict.get`**；从 tail 反查会变成 O(N) 遍历（"被 X 投资的所有公司"要扫所有 edges）。**生产里要建双向索引**（同时存 `dict[tail] → set[(rel, head)]`），RAGFlow 的 `n_hop_with_weight` 字段就是预先展开的双向邻接表。
 - **JSON vs 结构化分隔符**——MVP 走裸 JSON(`response_format={"type": "json_object"}` + `<think>` 剥除）；RAGFlow 走**三段式分隔符**(`{tuple_delimiter}` + `{record_delimiter}` + `{completion_delimiter}`，默认 `<SEP>` / `##` / `<|COMPLETE|>`），见 `docs/reference/ragflow-notes/graph_extraction.md` §1。**分隔符格式正确率 >90%**（实测 Claude / GPT-4），裸 JSON 在中文 / MiniMax-M3 / qwen 这一档模型上格式正确率 <30%——MVP 走裸 JSON 是为了让 prompt 足够简单、能跑通核心点；生产请切分隔符。
-- **`set` vs `list` 存邻接边**——MVP 用 `set`，**同一 `(rel, tail)` 多次出现自动去重**；`list` 简单但会在"同段重复抽到同一三元组"时污染边集合。代价是 `set` 不保证顺序，2.2 用 `sorted(graph.get(entity, set()))` 显式排。
+- **`set` vs `list` 存邻接边**——MVP 用 `set`，**同一 `(rel, tail)` 多次出现自动去重**；`list` 简单但会在"同段重复抽到同一三元组"时污染边集合。代价是 `set` 不保证顺序，c02 用 `sorted(graph.get(entity, set()))` 显式排。
 - **`build_graph` 单层 vs 多层**——MVP 走单层 dict（节点名即 key）；RAGFlow 把同一实体名跨段出现时**合并 description**(`<SEP>` 拼接，超过 12 段送 LLM 摘要压缩），并按 `entity_type` 分桶做 entity resolution。**MVP 完全不做合并**——`紫光恒越` 和 `紫光恒越技术有限公司` 是两个节点，召回时只能命中其中一个。
 
 ## 六、跨代码调度与契约
 
-2.1 写图（`extract_triples` → `build_graph` → `save_graph`），2.2 读图（`load_graph` → `query_graph`）。两者通过 `_graph.jsonl` 解耦——2.2 离线可重跑、调试抽取 prompt 时反复改 2.1 重抽，2.2 不需要每次重新走 LLM。**生产里也走这个模式**：2.1 离线 ETL pipeline 跑完之后可以常关，在线 service 只跑 2.2（扩展为多跳 / entity resolution），LLM 成本不会每次 query 都付一次。
+c01 写图（`extract_triples` → `build_graph` → `save_graph`），c02 读图（`load_graph` → `query_graph`）。两者通过 `_graph.jsonl` 解耦——c02 离线可重跑、调试抽取 prompt 时反复改 c01 重抽，c02 不需要每次重新走 LLM。**生产里也走这个模式**：c01 离线 ETL pipeline 跑完之后可以常关，在线 service 只跑 c02（扩展为多跳 / entity resolution），LLM 成本不会每次 query 都付一次。
 
 ## RAGFlow 实现
 

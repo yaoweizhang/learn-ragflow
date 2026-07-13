@@ -223,11 +223,11 @@ EMBED_PROVIDER=ollama EMBED_BASE_URL=http://localhost:11434 \
 - **`list[list[float]]` vs `np.ndarray`**：我们用 Python 列表。好处是 JSON 可序列化、和 OpenAI / Ollama 的 SDK 返回结构一致，坏处是大 batch 时内存和速度都不如 ndarray。s05 写 Chroma 时再做 `np.asarray(...)` 转换就够了——把"array 还是 list"的决定推迟到下游。
 - **每条输入一行 vs 整批一块**：本教程每次调用都是"一段文本对应一行向量"，和 s03 的 chunk 一一对应，下游不需要 flatten / reshape。如果你想一次传 100 条 sentence，sentence-transformers 支持 batch，但 OpenAI 的 `embeddings.create(input=[...])` 也接受 list——两套接口在这点上一致。
 - **不存 `model_name` 字段**：我们返回纯向量、不附带"我是哪个模型 embed 出来的"元数据。这意味着**调用方必须自己记住用的哪个模型**——生产代码把它写进 `tenant_id` + 集合名，本教程不引入这套命名约定（s05 再加）。
-- **归一化是默认开启不是可选**：01 / 02 都强制 `normalize_embeddings=True`，理由见下方"思考题答案"的三条（内积 = 余弦、距离度量统一、和训练目标对齐）。想要"未归一化"向量的场景是少数，按需改 `_embed_local` 一行即可。
+- **归一化是默认开启不是可选**：c01 / c02 都强制 `normalize_embeddings=True`，理由见下方"思考题答案"的三条（内积 = 余弦、距离度量统一、和训练目标对齐）。想要"未归一化"向量的场景是少数，按需改 `_embed_local` 一行即可。
 
 如果你的场景需要"每次返回带元数据"（比如 `[{vec, model, dim, took_ms}, ...]`），就在外层加一个 wrapper——但**保持 `embed()` 的签名是 `list[str] → list[list[float]]`**，不要把它升成 Pydantic 那种重型接口。toy 阶段越简单越好。
 
-01 / 02 都签同一个 schema：`embed(texts: list[str]) -> list[list[float]]`。01 是本地 BGE 直跑，02 是 env-driven dispatcher 选后端。**两者不能串行**——02 不 import 01，自己处理所有后端；调用方按 `EMBED_PROVIDER` env 决定跑谁。结果集被同样的 schema 锁住，s05/s06 拿到不论来自哪个 provider 的 `list[list[float]]` 都不需要分支判断。这是把"模型选型"封装掉的价值：**后续章节按统一接口消费**，换底层只改 `c02_provider_routing.py` 的 `_REGISTRY`。
+c01 / c02 都签同一个 schema：`embed(texts: list[str]) -> list[list[float]]`。c01 是本地 BGE 直跑，c02 是 env-driven dispatcher 选后端。**两者不能串行**——c02 不 import c01，自己处理所有后端；调用方按 `EMBED_PROVIDER` env 决定跑谁。结果集被同样的 schema 锁住，s05/s06 拿到不论来自哪个 provider 的 `list[list[float]]` 都不需要分支判断。这是把"模型选型"封装掉的价值：**后续章节按统一接口消费**，换底层只改 `c02_provider_routing.py` 的 `_REGISTRY`。
 
 ## RAGFlow 实现
 

@@ -340,7 +340,7 @@ unset LLM_API_KEY && python s09_agent_tools/c01_tool_call.py
 
 ## 六、跨代码调度与契约
 
-01 跑单步（`single_shot`），02 跑多步（`run_agent` + `max_steps` 循环）。`run_agent` 通过 `importlib` 加载 01 的工具描述、LLM 客户端、检索函数——**单步-多步两层完全共用同一份底座**，02 只新增 30 行循环控制代码。把"工具定义 + LLM 调用 + 检索函数"和"循环控制"解耦的好处：换循环策略（改成 DAG / supervisor-subagent）不动底层工具描述；加新工具（加 `calculate` / `web_search`）不动循环控制。
+c01 跑单步（`single_shot`），c02 跑多步（`run_agent` + `max_steps` 循环）。`run_agent` 通过 `importlib` 加载 c01 的工具描述、LLM 客户端、检索函数——**单步-多步两层完全共用同一份底座**，c02 只新增 30 行循环控制代码。把"工具定义 + LLM 调用 + 检索函数"和"循环控制"解耦的好处：换循环策略（改成 DAG / supervisor-subagent）不动底层工具描述；加新工具（加 `calculate` / `web_search`）不动循环控制。
 
 ## RAGFlow 实现
 

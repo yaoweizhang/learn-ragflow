@@ -333,7 +333,7 @@ python s01_what_is_rag/c03_augmented_llm.py
 
 环境变量：03 需要 `LLM_API_KEY`（可选 `LLM_BASE` / `LLM_MODEL`，指向任意 OpenAI 兼容服务）。无 key 时跳过真实生成，只打印 prompt 验证链路。
 
-三个 code 文件约定同一份 schema：`paragraphs = list[str]` 输入 → `retrieve` 返回 `list[{text, score, ...}]` 命中；02 / 03 的 `retrieve(q, paragraphs, k)` 签名完全一致——这是把"召回"封装掉的代价：**调用方不需要知道 01 是子串匹配、02 是词袋向量、03 又调一遍 02**，统一接口降低后续章节替换成本。
+三个 code 文件约定同一份 schema：`paragraphs = list[str]` 输入 → `retrieve` 返回 `list[{text, score, ...}]` 命中；c02 / 03 的 `retrieve(q, paragraphs, k)` 签名完全一致——这是把"召回"封装掉的代价：**调用方不需要知道 c01 是子串匹配、c02 是词袋向量、03 又调一遍 c02**，统一接口降低后续章节替换成本。
 
 ## RAGFlow 实现
 
