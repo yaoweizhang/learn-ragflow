@@ -109,13 +109,13 @@ services:
 
 [`c01_fastapi_docker.py`](c01_fastapi_docker.py)
 
-### 概念
+### 2.1 app.py + Dockerfile + docker-compose.yml 三件套的边界
 
 本节做两件事：① `s12_deployment/app.py` 用 FastAPI 把 s04 → s06 → s07 → s08 串成 `POST /qa {question: ...} → {text, citations}`；② `Dockerfile` + `docker-compose.yml` 把这个 FastAPI 应用包成镜像并跑起来，只挂 `.env` / `samples` / `_chroma` 三样东西，其他都靠镜像里 `pip install -r requirements.txt` 兜底。`c01_fastapi_docker.py` 干的事就是先做两道前置校验（`.env` 存在、`s05_vector_index/_chroma` 存在），然后 `subprocess.run(["docker", "compose", "up", "--build"], cwd=s12_deployment)`。
 
 s12 之所以只有这一步：整章就 4 个文件（`app.py` / `Dockerfile` / `docker-compose.yml` + 本 `c01_fastapi_docker.py`），组合只有一种，没有"由浅入深"的多档梯度——`docker compose up --build` 是终点，没有中间状态可设。所以 1 步就是全部。
 
-### 跑一遍
+### 2.2 `docker compose up --build` 启动与 curl 验证
 
 ```bash
 # 0. 前提:跑通 s04 / s05 / s07 (生成索引 + 装好 bge)
@@ -154,7 +154,7 @@ s12_deployment-rag-1  | INFO:     Uvicorn running on http://0.0.0.0:8000
 ❌ .env 不存在,请先 cp .env.example .env 并填 LLM_API_KEY
 ```
 
-### 看输出
+### 2.3 实测 `POST /qa` 的有 key / 无 key 响应
 
 把 `app.py` 串起来的整条链路跑通后，实测的 `POST /qa` 请求和响应长这样（输入 `"项目里有哪些表?"`）：
 
@@ -185,9 +185,9 @@ curl -X POST http://localhost:8000/qa \
 }
 ```
 
-`citations` 数组的每条对应 s07 精排后喂给 s08 的 top-k hit——**HTTP 边界只做"序列号 + 拆包"**，真正的 LLM 答不答、拒答不拒答由 s08 决定。容器的 build + Uvicorn 日志见上节 `### 跑一遍`。
+`citations` 数组的每条对应 s07 精排后喂给 s08 的 top-k hit——**HTTP 边界只做"序列号 + 拆包"**，真正的 LLM 答不答、拒答不拒答由 s08 决定。容器的 build + Uvicorn 日志见上节 `### 2.2`。
 
-### 局限与下一步
+### 2.4 生产部署的缺失项与故障排查
 
 本段做对了什么 — 把 s04 → s06 → s07 → s08 的整条 RAG 管线收敛到 `POST /qa` 一个 FastAPI 端点,再用 docker compose 一键起服务,本地端到端可跑通。
 
