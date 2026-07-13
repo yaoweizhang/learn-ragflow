@@ -94,13 +94,13 @@ OCR 那一步的基础数据长这样——`str`（平铺）：
 
 [`c01_table_extract.py`](c01_table_extract.py)
 
-### 概念
+### 2.1 `pdfplumber.extract_tables()` 的二维 list of dicts 输出
 
 `c01_table_extract.py` 打开 PDF，逐页调用 `page.extract_tables()`，把"至少有一行含非空白单元格"的表收进 `out`，每条记录形如 `{"page": i, "rows": [[cell, ...], ...]}`——一个二维数组，第一行通常是表头、后面是数据行。
 
 `pdfplumber.extract_tables()` 是启发式画线算法：对**带边框 / 带网格线**的规整表格（白皮书规格表、CSV-like 表）很顶；碰到无线表格、跨页表、合并单元格就掉链子。本节重点是"先把基本盘跑通"——MVP 的核心产物就是 list of dicts，下游 chunking / embedding 直接吃。
 
-### 跑一遍
+### 2.2 表格抽取的执行命令
 
 ```bash
 python s11_multimodal/c01_table_extract.py
@@ -116,11 +116,11 @@ PDF 表格数: 1
 ['内存', '32 × DDR4 3200MHz DIMM', '最高 8TB ...']
 ```
 
-### 看输出
+### 2.3 样本 PDF 的规格表行/列内容
 
-样本 PDF 只在 page 2 有 1 张 13×3 的规格表（组件 / 规格 / 说明）；短文本块或扫描 PDF `pdfplumber.extract_tables()` 会返回空列表，跟"识别失败"是不同语义——调用前判 `None` / `len() == 0` 区分这两种。具体 `extract_tables()` 输出的列 / 行内容见上节 `### 跑一遍`。
+样本 PDF 只在 page 2 有 1 张 13×3 的规格表（组件 / 规格 / 说明）；短文本块或扫描 PDF `pdfplumber.extract_tables()` 会返回空列表，跟"识别失败"是不同语义——调用前判 `None` / `len() == 0` 区分这两种。具体 `extract_tables()` 输出的列 / 行内容见上节 `### 2.2`。
 
-### 局限与下一步
+### 2.4 表格抽取的局限：无线表 / 跨页 / 合并格
 
 本段做对了什么 — 把 PDF 里的二维表格按行列结构保留下来,产出的 list of dicts 直接喂给下游 chunking / embedding,不会退化成 "列与列粘连的纯文本"。
 
@@ -149,13 +149,13 @@ PDF 表格数: 1
 
 [`c02_ocr.py`](c02_ocr.py)
 
-### 概念
+### 3.1 pytesseract 包装系统 tesseract 二进制
 
 `c02_ocr.py` 用 Pillow 打开图片，调 pytesseract 转交**系统 tesseract 二进制**做识别，返回字符串。`lang="chi_sim+eng"` 同时支持简体中文 + 英文——够覆盖绝大多数中文 RAG 场景。
 
 pytesseract 只是 Python 壳——**真正的 OCR 引擎是系统二进制 `tesseract`**。装包忘了装二进制、或装了二进制没装 `chi_sim` 语言包，是 99% 的踩坑来源。
 
-### 跑一遍
+### 3.2 OCR 的执行命令（含 tesseract 二进制安装）
 
 ```bash
 # 1. Python 依赖
@@ -187,11 +187,11 @@ python s11_multimodal/c02_ocr.py
 OCR skipped: 未提供图片路径
 ```
 
-### 看输出
+### 3.3 缺包 / 缺二进制 / 缺图三类分支的 trace
 
-输入图片路径时会调 `pytesseract.image_to_string(...)`；缺包 / 缺二进制 / 缺图三类异常分别 catch，打印针对性提示而不是 traceback。无图输入默认跳过 + 真扫中文图片两种 trace 见上节 `### 跑一遍`。
+输入图片路径时会调 `pytesseract.image_to_string(...)`；缺包 / 缺二进制 / 缺图三类异常分别 catch，打印针对性提示而不是 traceback。无图输入默认跳过 + 真扫中文图片两种 trace 见上节 `### 3.2`。
 
-### 局限与下一步
+### 3.4 OCR 的局限：无版面 / 无表结构 / 中文准确率
 
 本段做对了什么 — 把图片/扫描件里的文字还原成下游可消费的字符串,复用 s02 主线的 `{text, page, source}` schema,让 OCR 之后的 chunking / embedding 走同一条管道。
 
