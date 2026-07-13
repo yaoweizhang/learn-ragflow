@@ -256,13 +256,12 @@ top-3 hits (query='应收账款'):
 
 为什么 collection 的 metadata 字段只有 `source` / `page` 两列，而不是"作者 / 创建时间 / 部门 / 标签"全塞进去？几个常见取舍的折中：
 
-- **多列 vs 单列 JSON**：Chroma 0.5 的 `where` 要求 metadata 字段是 *强类型 scalar*，塞 JSON 进去会被强制 `str()` 序列化、`$gt` 之类的运算符全部失效。MVP 阶段只放两列能让 c02 直接演示 `where={"source": "x.pdf"}`；生产想加列，得想清楚每列是不是要走 `WHERE` 过滤（过滤列才值得占 metadata 位）。
 - **删旧重建 vs 增量 upsert**：`build_index` 走 `shutil.rmtree(DB_DIR)`，粗暴但幂等 —— 跑两次结果完全一样，不会因为重跑塞重复 `chunk_id`。生产里走 `col.upsert(...)` 增量更新更快，但要小心 `chunk_id` 重用（旧 chunk 文本变了但 id 不变，HNSW 里就指向"过期向量"）；通常两边都要：**upsert 主路径 + 定期 full rebuild 兜底**。
 - **HNSW 参数让 Chroma 默认 vs 显式指定**：`metadata={"hnsw:space": "cosine"}` 是我们**显式指定**的（Chroma 默认 `l2` —— 不显式就翻车）。`M / ef_construction / ef` 三个 HNSW 图参数走 Chroma 默认值（M=16 / ef_construction=100 / ef=10），三十几条 chunk 测不出来；百万级要改成 `M=32, ef_construction=200, ef=50`，在 `create_collection` 的 metadata 里加 `"hnsw:M": 32` 之类。
 - **`page` 转字符串存，查询时再翻回 int**：`add` 阶段 `metadatas=[{"source": c["source"], "page": str(c.get("page", ""))} for c in chunks]` —— Chroma 0.5。x 拒绝 int + string 混合（会 `Cannot convert None to MetadataValue` / native segfault）。`search` 阶段用 `try: int(page_val) else None` 翻回来。**类型抖动被吸收在 s05 层，下游 s06+ 拿到的 `page` 又是 `int / None`**。
 - **不做 server mode / 不做 embedding 内置到 collection**：`col.add(embeddings=...)` 显式传入已经算好的向量，**不让 Chroma 内部调 embedding**。这样 s05 跟 s04 是显式数据流（embeding 函数由调用方控制，不是 Chroma 黑盒），换 embedding 模型时只改 s04，不动 s05。如果用 `col.add(documents=[...])` 让 Chroma 自动 embed，就得在创建 collection 时配 `embedding_function=...`，把模型绑死。
 
-如果你的语料需要"按权限 / 时间段 / 标签"过滤，就在 metadata 里加字段 —— 但**保持字段是 scalar(`str / int / float / bool`)**，别塞 JSON / list。
+Chroma 0.5 的 `where` 限制（强类型 scalar / 不支持 JSON / 不支持 BM25）已在 §1.1 "元数据过滤" 段详述；想在大规模语料上做"按权限 / 时间段 / 多标签"过滤时，要么继续 Chroma 但保持字段是 scalar，要么换 ES / Infinity。
 
 ## 六、跨代码调度与契约
 

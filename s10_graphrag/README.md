@@ -214,8 +214,7 @@ python s10_graphrag/c02_query.py
 
 
 - **没有多跳**：`"X 的竞争对手的合作伙伴"` 是 3 跳，1 跳答不全。要 BFS 自己写，而且 3 跳以上必须上 community summary（否则 LLM 拿到的 context 拼接成本太高）；
-- **没有 entity resolution**：`"紫光恒越"` 和 `"紫光恒越技术有限公司"` 是两个键，query 命中哪个名字才能拿哪个的边——用户一般不会知道图里到底注册了哪个变体名；
-- **没有语义匹配**：用户输入 `"紫光"` 也命中不了 `"紫光恒越技术有限公司"`——要么靠 entity resolution 提前归一化，要么 LLM 在 prompt 里把 user query 改写一遍；
+- **没有 entity resolution / 语义匹配**：见 `c01` 上面的"没有 entity resolution" 展开——MVP 用 `name == name` 严格匹配，"紫光恒越" / "紫光恒越技术有限公司" 各是各的节点；生产走 `entity_resolution.py` 两阶段管线（粗筛 + LLM 精审）。
 - **没有路径权重 / 方向语义**：`set[(rel, tail)]` 不记录反向边、不记录 confidence，复杂关系（`"A 投资 B"` vs `"B 被 A 投资"`）分不清谁主动谁被动；
 - **没有图遍历可视化 / 解释**：`query_graph` 只返边列表，不出"为什么是这条边"、"这条边来自哪个 chunk"——bad case 排查要回到 `_graph.jsonl` 里手 grep；
 - **节点孤立时看不出来**：`graph.get("孤立实体")` 直接返空集，虽然 2.1 已经把 tail 注册成节点（让"存在但孤立"能被命中），但**没有入边的节点**和**不存在的节点**在我们的实现里都返回空集，提示完全一样。

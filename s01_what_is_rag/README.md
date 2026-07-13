@@ -194,9 +194,8 @@ Top-3 与你的问题最相关的段落(按向量余弦排序):
 本段做对了什么 — 用 2-gram 词袋 + 手写余弦把"任意段落相对查询的可量化相关度"算出来了,并按 Top-3 排序,无 NumPy 依赖,让 RAG 检索这一步有"分"。
 
 - **词袋维度爆炸**——每段可能 100+ unique token，sparse；不像 BGE 是 dense 512 维真语义向量。
-- **丢位置信息**——"披露在第 1 句"和"披露在第 3 句"对词袋向量没差别。
-- **丢上下文**——"摘要式披露"和"详细披露"在词袋层分不开。
 - **没真语义**——"营收"和"营业收入"在字面上无关，词袋给 0。
+- **丢位置 / 上下文信息**："摘要式披露" vs "详细披露" 在词袋层分不开 — 详细原因见 思考题答案 Q2。
 
 生产里要解决就是 s04（真语义 embedding)+ s07(cross-encoder 精排）。
 
@@ -307,7 +306,6 @@ python s01_what_is_rag/c03_augmented_llm.py
 
 - **`LLM_API_KEY 未设置`**：03 是预期行为——只打印 prompt，验证检索 + 拼 prompt 链路正确。设置 `LLM_API_KEY` 后才会真调 LLM。
 - **`LLM_BASE_URL` 报错 401 / 404**：检查 `.env` 或环境变量里的 base / model 是否跟所用服务匹配（OpenAI / DeepSeek / 智谱 / Anthropic / 自部署 vLLM）。
-- LLM 编数字：prompt 约束可能没生效；把"回答「我不知道」"提到 prompt 最开头，让 system 强化这条优先级。
 - 想离线跑：无 key 时只打印 prompt——这就是"教学 demo 的兜底形状"，不动代码也能验链路。
 
 下一章 s02 如何解决 — 进入工业实现第一站:把"文档加载"从 python-docx 单类型扩到 PDF + DOCX,产出 `{text, page, source}` 统一 schema,让 s03 chunking 不再关心文件类型分支。
