@@ -138,27 +138,7 @@ ActionInput: {"query": "R3630 G5 内存插槽数量"}
 
 ### 看输出
 
-无 `LLM_API_KEY` 时打印演示 trace（单步）：
-
-```
-[Q] R3630 G5 的内存插槽数量
-[skipped: LLM_API_KEY not set] — 演示假设 LLM 选了 retrieve:
-
-[LLM raw]
-Thought: 用户问的是 R3630 G5 的内存插槽数量,文档里应该有。
-Action: retrieve
-ActionInput: {"query": "R3630 G5 内存插槽数量"}
-
-[Parsed action] retrieve
-[Parsed payload] {'query': 'R3630 G5 内存插槽数量'}
-
-[Observation]
-- (server_whitepaper.pdf#1) 紫光恒越 R3630 G5 双路机架式服务器 ...
-- (server_whitepaper.pdf#2) 配备 32 个 DIMM 内存插槽 ...
-...
-```
-
-有 key 时（实测 MiniMax-M3 over minimaxi.com）：LLM 会真去 retrieve，observation 来自 s05-s07 整条管线，后续 code_02 才会真发起 1 跳查询。
+无 `LLM_API_KEY` 时打印的演示 trace（`[Q] → [LLM raw] → [Parsed action] → [Observation]`）见上节 `### 跑一遍`；有 key 时（实测 MiniMax-M3 over minimaxi.com）：LLM 会真去 retrieve，observation 来自 s05-s07 整条管线，后续 c02 才会真发起 1 跳查询。
 
 ### 局限与下一步
 
@@ -258,26 +238,7 @@ Obs:     1+1等于2。
 A: 1+1等于2。
 ```
 
-**关键观察**：同一个 system prompt 下，模型**对"1+1等于几"会一轮直接 finish**、**对"R3630 G5 的内存插槽数量"会先 retrieve 再 finish**——"工具选择权"真的回到了 LLM 手里。这就是从"硬管线"到"agent"的最小跨越。
-
-无 `LLM_API_KEY` 时（`graceful-skip`）：
-
-```
-Q: R3630 G5 的内存插槽数量
-[skipped: LLM_API_KEY not set] — 演示 trace 形状:
-
---- step 1 ---
-Thought: 用户问的是 R3630 G5 的内存插槽数量。
-Action:  retrieve
-Obs:     - (server_whitepaper.pdf#2) 配备 32 个 DIMM 内存插槽 ...
-
---- step 2 ---
-Thought: 找到了。
-Action:  finish
-Obs:     R3630 G5 配备 32 个 DIMM 内存插槽。
-
-[A] R3630 G5 配备 32 个 DIMM 内存插槽。
-```
+**关键观察**：同一个 system prompt 下，模型**对"1+1等于几"会一轮直接 finish**、**对"R3630 G5 的内存插槽数量"会先 retrieve 再 finish**——"工具选择权"真的回到了 LLM 手里。这就是从"硬管线"到"agent"的最小跨越。`graceful-skip` 的 trace 形状见上节 `### 跑一遍`。
 
 ### 局限与下一步
 

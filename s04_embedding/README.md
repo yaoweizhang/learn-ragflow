@@ -161,15 +161,7 @@ provider: local, dim: 512, count: 3
 
 ### 看输出
 
-`02` 的预期输出（本机无 OpenAI key 且无 Ollama）：
-
-```
-provider: local, dim: 512, count: 3
-[openai] skipped, set LLM_API_KEY (and LLM_BASE_URL) to enable
-[ollama] skipped, set EMBED_BASE_URL and run `ollama serve` to enable
-```
-
-第二、三行的 "skipped" 是 **graceful fallback**——02 故意不抛异常，让你能在 demo 机器上跑通整条 demo 链，缺哪个后端就只缺哪个。设上 `LLM_API_KEY` 之后 `embed_openai` 才会真发请求，输出从 `skipped` 变成 `[openai] ok: provider=openai, dim=1536`。
+第二、三行的 "skipped" 是 **graceful fallback**——02 故意不抛异常，让你能在 demo 机器上跑通整条 demo 链，缺哪个后端就只缺哪个。设上 `LLM_API_KEY` 之后 `embed_openai` 才会真发请求，输出从 `skipped` 变成 `[openai] ok: provider=openai, dim=1536`。具体预期输出（`provider: local, dim: 512, count: 3` / `[openai] skipped` / `[ollama] skipped`）见上节 `### 跑一遍`。
 
 切 OpenAI：
 

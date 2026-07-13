@@ -80,23 +80,7 @@ server_whitepaper.pdf#2#p2 | 三、整机规格
 
 ### 看输出
 
-**01 跑出来（实测，`samples/server_whitepaper.pdf` + `samples/disclosure.docx`）：**
-
-```
-输入段落 31 → 输出块 34
-最大块长度 452 字符 (cap=500)
-server_whitepaper.pdf#1#p0 | 紫光恒越 R3630 G5 双路机架式服
-务器
-产品白皮书 ...
-server_whitepaper.pdf#1#p1 | 二、关键特性
-计算密度：单台 2U 机箱内集成两颗处理器、32 条内存 DIMM 与 10 个 PCIe 4.0 槽位，
-server_whitepaper.pdf#2#p2 | 三、整机规格
-组件 规格 说明
-处理器 2 × 第三代 Intel Xeon 可
-扩展处理器
-```
-
-31 段（4 页 PDF + 27 段 DOCX）→ 34 块，**最大块 452 字符，未触发硬切兜底**。`chunk_id` 按 `{source}#{page}#p{n}` 稳定生成，可被 s04+ 直接引用。
+把它跑在仓库自带的 `samples/server_whitepaper.pdf` + `samples/disclosure.docx` 上 — 实测 31 段（4 页 PDF + 27 段 DOCX）→ 34 块，**最大块 452 字符，未触发硬切兜底**。`chunk_id` 按 `{source}#{page}#p{n}` 稳定生成，可被 s04+ 直接引用。具体输入段落 → 输出块的 sample 块内容见上节 `### 跑一遍`。
 
 ### 局限与下一步
 

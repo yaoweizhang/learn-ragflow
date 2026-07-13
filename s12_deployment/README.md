@@ -185,20 +185,7 @@ curl -X POST http://localhost:8000/qa \
 }
 ```
 
-`citations` 数组的每条对应 s07 精排后喂给 s08 的 top-k hit——**HTTP 边界只做"序列号 + 拆包"**，真正的 LLM 答不答、拒答不拒答由 s08 决定。
-
-容器日志流（实测成功）：
-
-```
-[+] Running 2/2
- ✔ Network s12_deployment_default  Created                             0.0s
- ✔ Container s12_deployment-rag-1  Created                             0.1s
-Attaching to s12_deployment-rag-1
-s12_deployment-rag-1  | INFO:     Started server process [1]
-s12_deployment-rag-1  | INFO:     Waiting for application startup.
-s12_deployment-rag-1  | INFO:     Application startup complete.
-s12_deployment-rag-1  | INFO:     Uvicorn running on http://0.0.0.0:8000
-```
+`citations` 数组的每条对应 s07 精排后喂给 s08 的 top-k hit——**HTTP 边界只做"序列号 + 拆包"**，真正的 LLM 答不答、拒答不拒答由 s08 决定。容器的 build + Uvicorn 日志见上节 `### 跑一遍`。
 
 ### 局限与下一步
 

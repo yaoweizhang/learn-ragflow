@@ -118,17 +118,7 @@ PDF 表格数: 1
 
 ### 看输出
 
-**表格抽取那一步跑出来（实测，`samples/server_whitepaper.pdf`，`pdfplumber` 0.10+）：**
-
-```
-PDF 表格数: 1
---- page 2 ---
-['组件', '规格', '说明']
-['处理器', '2 × 第三代 Intel Xeon 可\n扩展处理器', '最高 40 核/80 线程,单核\n最高 3.7GHz,TDP 上限\n270W']
-['芯片组', 'Intel C621A', '支持 PCIe 4.0 × 80 lanes']
-```
-
-样本 PDF 只在 page 2 有 1 张 13×3 的规格表（组件 / 规格 / 说明）；短文本块或扫描 PDF `pdfplumber.extract_tables()` 会返回空列表，跟"识别失败"是不同语义——调用前判 `None` / `len() == 0` 区分这两种。
+样本 PDF 只在 page 2 有 1 张 13×3 的规格表（组件 / 规格 / 说明）；短文本块或扫描 PDF `pdfplumber.extract_tables()` 会返回空列表，跟"识别失败"是不同语义——调用前判 `None` / `len() == 0` 区分这两种。具体 `extract_tables()` 输出的列 / 行内容见上节 `### 跑一遍`。
 
 ### 局限与下一步
 
@@ -199,14 +189,7 @@ OCR skipped: 未提供图片路径
 
 ### 看输出
 
-**OCR 那一步跑出来（实测，交互模式默认回车跳过）：**
-
-```
-可选: 输入图片路径跑 OCR (回车跳过):
-OCR skipped: 未提供图片路径
-```
-
-输入图片路径时会调 `pytesseract.image_to_string(...)`；缺包 / 缺二进制 / 缺图三类异常分别 catch，打印针对性提示而不是 traceback。
+输入图片路径时会调 `pytesseract.image_to_string(...)`；缺包 / 缺二进制 / 缺图三类异常分别 catch，打印针对性提示而不是 traceback。无图输入默认跳过 + 真扫中文图片两种 trace 见上节 `### 跑一遍`。
 
 ### 局限与下一步
 

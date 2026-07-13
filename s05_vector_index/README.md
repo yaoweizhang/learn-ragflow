@@ -206,13 +206,7 @@ top-3 hits (query='应收账款'):
 
 ### 看输出
 
-Code_01 的预期输出（具体数字由 `samples/` 决定）：
-
-```
-indexed 34 chunks into _chroma/ (collection=docs, dim=512)
-```
-
-34 是 4 页白皮书 + 27 段披露报告 → 34 个 chunk；512 是 BGE-small-zh 的输出维度。**首次跑会从 HF Hub 下载 ~100MB 的 BGE 模型**，后续跑复用本地缓存，只算 embedding。
+34 是 4 页白皮书 + 27 段披露报告 → 34 个 chunk；512 是 BGE-small-zh 的输出维度。**首次跑会从 HF Hub 下载 ~100MB 的 BGE 模型**，后续跑复用本地缓存，只算 embedding。`c01` 的单行索引结果 `indexed 34 chunks into _chroma/ (collection=docs, dim=512)` 见上节 `### 跑一遍`。
 
 Code_02 的预期输出（输入 `应收账款`）：
 

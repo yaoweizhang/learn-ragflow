@@ -141,7 +141,7 @@ chunks: 8
 {"head": "紫光恒越 R3630 G5", "rel": "支持内存", "tail": "DDR4 3200 内存(最大 32 条)"}
 ```
 
-不同次跑节点数 / 边数会小幅抖动（LLM 在 `temperature=0` 下对长 prompt 仍有少量随机性；chunk 0/1/2 是封面 + 目录，信息密度低，模型决定抽不抽也有差异）——**这是 LLM 抽取的固有现象，不是 bug**。生产里要做的是把 `temperature=0` + 多次 retry + LLM cache 叠起来（`set_llm_cache` / `get_llm_cache`，见 `docs/reference/ragflow-notes/graph_extraction.md` §2），让重复跑可复现。
+节点 / 边数抖动属于 LLM 抽取的固有现象——生产做法（`temperature=0` + retry + LLM cache）见 `docs/reference/ragflow-notes/graph_extraction.md` §2。
 
 ### 局限与下一步
 
@@ -206,20 +206,7 @@ python s10_graphrag/c02_query.py
 
 ### 看输出
 
-2.2 跑起来：
-
-```
-图节点数: 8, 边数: 6
-
-查哪个实体 (回车退出): 紫光恒越技术有限公司
-  紫光恒越技术有限公司 --版权所有--> 紫光恒越 R3630 G5 双路机架式服务器 产品白皮书 v1.0
-  紫光恒越技术有限公司 --拥有版权--> 紫光恒越 R3630 G5 双路机架式服务器 产品白皮书 v1.0
-
-查哪个实体 (回车退出): 不存在的实体xyz
-  (无结果——'不存在的实体xyz' 不在图中或没有出边)
-```
-
-跟 2.1 拆开的好处：**2.2 离线 / 零成本 / 可重跑**，调试抽取 prompt 时反复改 2.1 重抽，2.2 不用每次重新走 LLM；同 `_graph.jsonl` 跑 N 次结果完全一致，适合做"prompt 改了之后，看 query 输出有没有变"的回归对照。
+跟 2.1 拆开的好处：**2.2 离线 / 零成本 / 可重跑**，调试抽取 prompt 时反复改 2.1 重抽，2.2 不用每次重新走 LLM；同 `_graph.jsonl` 跑 N 次结果完全一致，适合做"prompt 改了之后，看 query 输出有没有变"的回归对照。具体 trace（节点 / 边数 + 两次 query + 退出）见上节 `### 跑一遍`。
 
 ### 局限与下一步
 
