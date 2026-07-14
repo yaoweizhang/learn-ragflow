@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-s01 / unit 03 — 完整 RAG 链路：检索 + 拼 prompt + LLM 生成。
+s01 / 代码 3: RAG pipeline — 完整 RAG 链路：检索 + 拼 prompt + LLM 生成。
 
-保留 unit 02 的词袋模型检索（自包含，不依赖 s04 真 embedding），
+保留 代码 2 的词袋模型检索（自包含，不依赖 s04 真 embedding），
 加上"按检索结果生成答案"这一步。
 若环境变量 LLM_API_KEY 未设置，则打印 prompt 但不真调 LLM，
 便于在没有 key 的机器上也能跑通。

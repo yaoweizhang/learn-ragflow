@@ -2,7 +2,7 @@
 
 [上一章(无) · 下一章 s02 → ... → s12]
 
-> *"先字面匹配, 再向量召回, 最后接入 LLM — RAG 的三层递进, 30 行起跑通"*
+> *"先字面匹配, 再向量召回, 最后接入 LLM — RAG 的三层递进, 30-80 行起跑通"*
 >
 > **链路位置**: 端到端 (代码 1/2/3 不依赖 s02-s06), 独立可跑
 > **代码文件**: substring_match.py · bag_of_words.py · rag_pipeline.py
@@ -23,13 +23,13 @@
 
 这三种失败有一个共同解法 — **让模型"开卷考试"**: 答题前先把相关参考资料塞进 prompt, 让模型依据资料回答, 而不是凭参数记忆。这套"先查资料, 再答问题"的范式就是 **RAG (Retrieval-Augmented Generation)**: **检索 (retrieve)** 找到相关段落, **增强 (augment)** 把段落拼进 prompt, **生成 (generate)** 让 LLM 依据这些段落作答。三步合一, 模型就从一个"闭卷答题者"变成一个"开卷答题者" — 编造的源头被资料覆盖, 私有数据被检索补齐, 训练截止被最新索引绕过。RAG 不是唯一解法 (还有 fine-tuning / prompt engineering / tool use), 但它是**性价比最高、落地最快、可解释最强**的一种: 不需要重训模型, 不需要标注数据, 每次回答都能附引用让用户验证。
 
-s01 的任务就是把这三步用 **30-80 行 Python 跑通一遍**, 不依赖任何 embedding 模型或向量库 — 让"retrieve + augment + generate" 这三个动词绑死在一条线上, 后面 11 章再把每个动词替换成工业实现。本章是 12 章教程的入口, 也是后续所有章节的底座: 代码 2 的 `top_k(query, paragraphs, k)` 接口是 s04-s06 替换的目标, 代码 3 的 `build_prompt` 是 s08 替换的目标, 代码 3 的 `call_llm` 是 s09-s10 替换的目标。**接口形状留好了, 后续章节照着替换**。如果你只想跑通 RAG 的最小形态, 读完本章即可; 如果想上生产, 继续读 s02-s12。
+s01 的任务就是把这三步用 **30-80 行 Python 跑通一遍**, 不依赖任何 embedding 模型或向量库 — 让"retrieve + augment + generate" 这三个动词绑死在一条线上, 后面 11 章再把每个动词替换成工业实现。如果你想只跑通 RAG 的最小形态, 读完本章即可; 如果想上生产, 继续读 s02-s12。
 
 ---
 
 ## 解决方案
 
-s01 用 **三个递进的脚本** 把 RAG 主干跑通。每一步解决前一步的局限, 但也留下新的脆弱性 — 这种"递进暴露脆弱性, 后续章节填空"的设计是 12 章教程的核心结构。
+s01 用 **三个递进的脚本** 把 RAG 主干跑通。每一步解决前一步的局限, 但也留下新的脆弱性。
 
 ```
 代码 1 (子串)              代码 2 (词袋)              代码 3 (RAG pipeline)
@@ -108,11 +108,10 @@ python s01_what_is_rag/substring_match.py
 实测输出 (交互输入 `披露`):
 
 ```
-[query] 披露
-[hit]  相关信息披露详见财务报表附注三(二十五)、五 (二)1 及十五(二)。
+2024 年度财务信息披露报告
 ```
 
-- 输入 query: `披露` — 命中 1 条 (`相关信息披露详见财务报表附注...`)
+- 输入 query: `披露` — 命中 1 条 (`2024 年度财务信息披露报告`)
 - 输入 query: `外星人` — miss (返回 `I don't know.`)
 
 **观察**: 字面匹配对同义词 `公开` → `披露` 无效 — 试 query `公开` 时也会命中 (因为 chunk 里恰好有"公开"字面), 但 query `公告` 在 chunk 只写"披露"时仍然 miss。这暴露 代码 1 的根本局限: **字面包含 ≠ 语义相关**, 即便 chunk 在语义上等价, 字符不重合就不命中。这是 代码 2 / s04 要解决的语义召回问题。
@@ -174,10 +173,8 @@ def cosine(a: list[float], b: list[float]) -> float:
 
 
 def top_k(query: str, paragraphs: list[str], k: int = 3) -> list[tuple[str, float]]:
-    """2-gram 词袋 + 手写余弦, 返回按相似度排序的 top-k.
-    等价于 s05 的 chroma.col.query() 在 dense 向量上的语义检索.
-    概念等价于 s04 的 BGE embedding, 只是这里用词频向量代替, 省去模型下载."""
-    # 全局词表: 所有段落 token 集合
+    """对每段打分，按分排序返回 top-k. 等价 s05 的 chroma.col.query()."""
+    # 全局词表：所有段落 token 集合
     vocab: dict[str, int] = {}
     for p in paragraphs:
         for tok in set(tokenize(p)):
@@ -207,18 +204,19 @@ def main() -> None:
 python s01_what_is_rag/bag_of_words.py
 ```
 
-预期输出示例 (交互输入 `披露`):
+实测输出 (交互输入 `披露`):
 
 ```
-[vocab] 共 N 个 2-gram token
-[query] 披露
-Top-3 与你的问题最相关的段落 (按向量余弦排序):
-[1] score=0.342
-    相关信息披露详见财务报表附注三(二十五)、五 (二)1 及十五(二)...
-[2] score=0.215
-    ...
-[3] score=0.187
-    ...
+Top-3 与你的问题最相关的段落（按向量余弦排序）：
+
+[1] score=0.277
+    2024 年度财务信息披露报告...
+
+[2] score=0.187
+    本报告所涉及财务数据已经立信会计师事务所审计，并出具标准无保留意见审计报告（信会师报字 [2025] 第 ZX-00123 号）。本报告所有数据为披露方根据监管规则编报，实际经营成果以正式披露公告为准。...
+
+[3] score=0.000
+    青蓝科技股份有限公司...
 ```
 
 - 交互输入, 看 top-3 余弦分 (按相似度降序, 每段一个 `[rank] score=...`)
@@ -263,7 +261,6 @@ def build_prompt(question: str, hits: list[str]) -> str:
 
 ```python
 def retrieve(query: str, paragraphs: list[str], k: int = 3) -> list[str]:
-    """复用 代码 2 的 2-gram 词袋 + 余弦, 取 top-k 段落."""
     vocab = build_vocab(paragraphs)
     para_vecs = [vectorize(p, vocab) for p in paragraphs]
     q_vec = vectorize(query, vocab)
@@ -276,7 +273,7 @@ def retrieve(query: str, paragraphs: list[str], k: int = 3) -> list[str]:
 
 def build_prompt(question: str, hits: list[str]) -> str:
     """对照 docs/reference/ragflow-notes/prompt_templates.md 里的 'You are an AI assistant...' 模板.
-    本章用极简版, 只保留 [i] (source) text 的渲染."""
+    本章用极简版，只保留 [i] (source) text 的渲染."""
     ctx = "\n\n".join(f"[{i + 1}] {h}" for i, h in enumerate(hits))
     return (
         "你只能依据 <context> 标签内的资料回答问题；\n"
@@ -288,7 +285,7 @@ def build_prompt(question: str, hits: list[str]) -> str:
 
 
 def call_llm(prompt: str) -> str:
-    """最小可用 OpenAI 兼容调用; 零 SDK 依赖."""
+    """最小可用 OpenAI 兼容调用；零 SDK 依赖。"""
     if not LLM_API_KEY:
         return ""
 
@@ -337,28 +334,31 @@ def main() -> None:
 python s01_what_is_rag/rag_pipeline.py
 ```
 
-预期输出示例 (无 key, 交互输入 `关联方披露`):
+实测输出 (无 LLM_API_KEY, 交互输入 `关联方披露`):
 
 ```
 [retrieve] 召回 3 段
-  [1] 相关信息披露详见财务报表附注三(二十五)...
-  [2] ...
-  [3] ...
+  [1] 2024 年度财务信息披露报告...
+  [2] 本报告所涉及财务数据已经立信会计师事务所审计，并出具标准无保留意见审计报告（信会师报字 [2025] 第 ZX-00123 号）。本报告所有数据为披露方根据监管规则编报，实际经营成果以正式披露公告为准。...
+  [3] 青蓝科技股份有限公司...
 
 [prompt]
-你只能依据 <context> 标签内的资料回答问题;
-若资料不足以回答, 请回复「我不知道」。
+你只能依据 <context> 标签内的资料回答问题；
+若资料不足以回答，请回复「我不知道」。
 
 <context>
-[1] 相关信息披露详见财务报表附注三(二十五)...
-[2] ...
-[3] ...
+[1] 2024 年度财务信息披露报告
+
+[2] 本报告所涉及财务数据已经立信会计师事务所审计...
+
+[3] 青蓝科技股份有限公司
 </context>
 
 问题: 关联方披露
-回答:
+回答: 
 
-[llm] LLM_API_KEY 未设置, 跳过真实生成...
+[llm] LLM_API_KEY 未设置，跳过真实生成；如需 LLM 回答:
+      LLM_API_KEY=sk-xxx python s01_what_is_rag/rag_pipeline.py
 ```
 
 - 无 `LLM_API_KEY`: 打印 retrieve 结果 + prompt 后停 (graceful-skip, 便于无 key 机器验证链路)

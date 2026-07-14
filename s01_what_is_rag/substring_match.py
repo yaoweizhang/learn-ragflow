@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-s01 / unit 01 — 朴素检索：按子串命中把段落拉回来。不调用 LLM。
+s01 / 代码 1: 子串字面匹配 — 按子串命中把段落拉回来。不调用 LLM。
 
 运行: python s01_what_is_rag/substring_match.py
 需要: 无外部依赖；samples/disclosure.docx 存在
