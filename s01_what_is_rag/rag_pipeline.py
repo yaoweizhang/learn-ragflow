@@ -8,9 +8,9 @@ s01 / unit 03 — 完整 RAG 链路：检索 + 拼 prompt + LLM 生成。
 便于在没有 key 的机器上也能跑通。
 
 运行:
-  LLM_API_KEY=sk-xxx python s01_what_is_rag/c03_rag_pipeline.py
+  LLM_API_KEY=sk-xxx python s01_what_is_rag/rag_pipeline.py
   # 或者无 key:
-  python s01_what_is_rag/c03_rag_pipeline.py
+  python s01_what_is_rag/rag_pipeline.py
 """
 import math
 import os
@@ -131,7 +131,7 @@ def main() -> None:
         print(f"[llm] {answer}")
     else:
         print("[llm] LLM_API_KEY 未设置，跳过真实生成；如需 LLM 回答:")
-        print("      LLM_API_KEY=sk-xxx python s01_what_is_rag/c03_rag_pipeline.py")
+        print("      LLM_API_KEY=sk-xxx python s01_what_is_rag/rag_pipeline.py")
 
 
 if __name__ == "__main__":

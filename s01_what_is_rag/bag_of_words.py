@@ -3,7 +3,7 @@
 s01 / unit 02 — 词袋模型 + 余弦相似度。用最朴素的"段落 → 词频向量"代替 embedding，
 概念等价于 s04 的 BGE 向量检索；这里省去模型下载，让 s01 自包含。
 
-运行: python s01_what_is_rag/c02_bag_of_words.py
+运行: python s01_what_is_rag/bag_of_words.py
 需要: 无外部依赖
 """
 import math
