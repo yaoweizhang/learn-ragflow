@@ -9,8 +9,7 @@ A hands-on, engineering-focused RAG (Retrieval-Augmented Generation) tutorial ai
 Two layers (双层):
 
 - **Main chapters**: each chapter ships one `README.md` plus N descriptive `code_NN_<topic>.py` files at the chapter root (30–80 lines each); modify one line, see the output change, and validate "does a higher alpha give better recall?" in 5 minutes.
-- **Source reference**: [`docs/reference/ragflow-notes/`](./docs/reference/ragflow-notes/) collects [RAGFlow](https://github.com/infiniflow/ragflow)'s 5–15 line production excerpts with line numbers and "why this design" commentary, organized by chapter at the repository top — read when you want to go deep, not duplicated in each chapter README.
-- **Industrial reference (default reading path)**: [RAGFlow](https://github.com/infiniflow/ragflow) is one of GitHub's highest-star open-source RAG engines, with each RAG-pipeline stage engineered as an independent, swappable module. This tutorial uses RAGFlow as its **sole** industrial reference — every chapter ends with a `## RAGFlow 实现` section excerpting RAGFlow's implementation at that layer, with detailed source analysis in [`docs/reference/ragflow-notes/`](docs/reference/ragflow-notes/). **ragflow-notes is not supplementary material — it's the second half of the learning path**.
+- **Industrial reference (default reading path; sole industrial comparison)**: [RAGFlow](https://github.com/infiniflow/ragflow) is one of GitHub's highest-star open-source RAG engines, with each RAG-pipeline stage engineered as an independent, swappable module. This tutorial uses RAGFlow as its **sole** industrial reference — every chapter ends with a `## RAGFlow 实现` section excerpting RAGFlow's implementation at that layer, with detailed source analysis in [`docs/reference/ragflow-notes/`](./docs/reference/ragflow-notes/) (chapter-aligned at the repo top: 5–15 line key excerpts + line numbers + "why this design" commentary, read when you want to go deep, not duplicated in each chapter README). **ragflow-notes is not supplementary material — it's the second half of the learning path**.
 
 Every chapter contains:
 
@@ -22,7 +21,7 @@ Every chapter contains:
 ## Quick start
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/yaoweizhang/learn-ragflow.git
 cd learn-ragflow
 pip install -r requirements.txt
 cp .env.example .env       # then edit .env and set LLM_API_KEY / LLM_BASE_URL / LLM_MODEL
@@ -122,28 +121,24 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 - PDF / DOCX parsing into a unified `list[{text, page, source}]`
 - Three real-world problems: scanned PDFs, tables, headers / footers
 - Production reference: [`docs/reference/ragflow-notes/deepdoc_pdf_parsing.md`](./docs/reference/ragflow-notes/deepdoc_pdf_parsing.md) (`deepdoc/parser/` + VisionParser)
-- → [RAGFlow implementation](./docs/reference/ragflow-notes/deepdoc_pdf_parsing.md)
 
 **Chapter 3 — Text chunking** &nbsp;[chapter details](./s03_chunking/)
 
 - Fixed character cap + sentence-boundary split (spec: ≤ 500 chars; sentence boundaries `(.。!?！？)`)
 - Three failure modes: tables, parent-child chunks, cross-paragraph references
 - Production reference: [`docs/reference/ragflow-notes/deepdoc_chunking.md`](./docs/reference/ragflow-notes/deepdoc_chunking.md) (`_concat_downward` / `naive_merge` / `hierarchical_merge`)
-- → [RAGFlow implementation](./docs/reference/ragflow-notes/deepdoc_chunking.md)
 
 **Chapter 4 — Embedding** &nbsp;[chapter details](./s04_embedding/)
 
 - BGE local embedding (BAAI/bge-small-zh-v1.5, 512 dim, normalized)
 - OpenAI / Ollama providers optional
 - Production reference: [`docs/reference/ragflow-notes/embedding_routing.md`](./docs/reference/ragflow-notes/embedding_routing.md)
-- → [RAGFlow implementation](./docs/reference/ragflow-notes/embedding_routing.md)
 
 **Chapter 5 — Vector indexing** &nbsp;[chapter details](./s05_vector_index/)
 
 - Chroma persistent (`PersistentClient` + HNSW cosine)
 - Metadata filtering: `where={"source": "..."}`
 - Production reference: [`docs/reference/ragflow-notes/vector_indexing.md`](./docs/reference/ragflow-notes/vector_indexing.md) (ES / Infinity / OceanBase)
-- → [RAGFlow implementation](./docs/reference/ragflow-notes/vector_indexing.md)
 
 ### Part 3 — Retrieval and generation
 
@@ -152,21 +147,18 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 - Self-implemented BM25 + dense vectors + `alpha * vec + (1-α) * bm25` weighted fusion
 - `alpha` is a configurable knob (fact-style questions skew BM25; concept-style skew vector)
 - Production reference: [`docs/reference/ragflow-notes/hybrid_retrieval.md`](./docs/reference/ragflow-notes/hybrid_retrieval.md) (`FusionExpr` + `rerank_with_knn` + `rank_fea`)
-- → [RAGFlow implementation](./docs/reference/ragflow-notes/hybrid_retrieval.md)
 
 **Chapter 7 — Reranking** &nbsp;[chapter details](./s07_rerank/)
 
 - BGE cross-encoder (`bge-reranker-base`) for precision rerank
 - `top_k` controls cross-encoder pair count (O(n) not O(n²))
 - Production reference: [`docs/reference/ragflow-notes/rerank.md`](./docs/reference/ragflow-notes/rerank.md) (`RerankModel.Base` multi-provider abstraction)
-- → [RAGFlow implementation](./docs/reference/ragflow-notes/rerank.md)
 
 **Chapter 8 — Prompt & generation** &nbsp;[chapter details](./s08_prompt_generate/)
 
 - Prompt templates for citation `[i]`, refusal, footnote alignment
 - `_format_context` renders hits as `[i] (source#page) text`
 - Production reference: [`docs/reference/ragflow-notes/prompt_templates.md`](./docs/reference/ragflow-notes/prompt_templates.md) (dual-pass + multi-template)
-- → [RAGFlow implementation](./docs/reference/ragflow-notes/prompt_templates.md)
 
 **Chapter 9 — Agent & tools** &nbsp;[chapter details](./s09_agent_tools/)
 
@@ -174,7 +166,6 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 - Two tools: `retrieve(query)` + `finish(answer)`
 - Parsing fragility: `max_steps` + markdown-fence stripping + JSON retry
 - Production reference: [`docs/reference/ragflow-notes/agent_tools.md`](./docs/reference/ragflow-notes/agent_tools.md) (Canvas DAG + `bind_tools()`)
-- → [RAGFlow implementation](./docs/reference/ragflow-notes/agent_tools.md)
 
 ### Part 4 — Advanced RAG
 
@@ -183,14 +174,12 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 - LLM-extracted `(head, rel, tail)` triples
 - `dict[head] → set[(rel, tail)]` 1-hop query
 - Production reference: [`docs/reference/ragflow-notes/graph_extraction.md`](./docs/reference/ragflow-notes/graph_extraction.md) (light path + `entity_resolution` two-stage pipeline)
-- → [RAGFlow implementation](./docs/reference/ragflow-notes/graph_extraction.md)
 
 **Chapter 11 — Multimodal** &nbsp;[chapter details](./s11_multimodal/)
 
 - pdfplumber for table extraction (row × column structure)
 - pytesseract OCR (`chi_sim+eng`)
 - Production reference: [`docs/reference/ragflow-notes/multimodal_parsing.md`](./docs/reference/ragflow-notes/multimodal_parsing.md) (vision model + multi-OCR backend)
-- → [RAGFlow implementation](./docs/reference/ragflow-notes/multimodal_parsing.md)
 
 ### Part 5 — Deployment and shipping
 
@@ -200,11 +189,10 @@ Read Part 0 first; then Chapter 1's "substr → vectors → retrieve + LLM" line
 - docker-compose (api + chroma persistent volume)
 - 503 fallback: clear error when index is missing, not a raw exception
 - Production reference: [`docs/reference/ragflow-notes/deployment.md`](./docs/reference/ragflow-notes/deployment.md)
-- → [RAGFlow implementation](./docs/reference/ragflow-notes/deployment.md)
 
 ### Further reading (project-level reference, not part of the tutorial runtime — referenced from s01-s12)
 
-- [RAGFlow source-reading index](./docs/reference/ragflow-notes/README.md) — production-code excerpts (read when you want to go deep)
+- [RAGFlow source-reading index](./docs/reference/ragflow-notes/README.md) — production implementation (read when you want to go deep)
 - [`docs/` directory guide](./docs/) — navigation for `docs/reference/ragflow-notes/` and other reference material
 
 ## Chapter index
@@ -239,7 +227,7 @@ learn-ragflow/
 │   └── disclosure.docx
 ├── docs/                        # Design docs (not part of the tutorial runtime)
 │   └── reference/
-│       └── ragflow-notes/       # RAGFlow source excerpts (one per chapter)
+│       └── ragflow-notes/       # RAGFlow engineering practices (one per chapter)
 ├── s00_concepts/                # Chapter 0 (preface; 5-H2 prose, no code files)
 │   └── README.md
 ├── s01_what_is_rag/             # Chapter 1
@@ -252,41 +240,6 @@ learn-ragflow/
 └── s12_deployment/              # Chapter 12
 ```
 
-### Per-chapter layout
-
-Every chapter (`sXX_topic/`) follows the same shape — one `README.md` plus N descriptive `code_NN_<topic>.py` files at the chapter root:
-
-```
-sXX_topic/
-├── README.md                # Chapter entry: navigation + one H2 per code file
-├── code_01_<topic>.py       # always present, 30–80 lines
-├── code_02_<topic>.py       # as needed (most chapters have 2)
-└── code_03_<topic>.py       # as needed; s01 / s03 have 3
-```
-
-Each chapter's `README.md` uses a uniform H2 skeleton that adapts to the code file count:
-
-- **一、章节介绍** — what this chapter solves, why it's designed this way, where it sits in the RAG pipeline.
-- **二、<code_01 topic>：`code_NN_xxx.py`** — full coverage of one code file (H3 children: 这是什么 / 跑起来 / 它做对了什么 / 它做错了什么 / 思考题). Each code file gets its own H2 so the "what it is" and "how to use it" stay bundled — after reading one section, you know what the code does, how to run it, and where it breaks.
-- **三、<code_02 topic>：`code_NN_xxx.py`** (as needed) — same shape.
-- **四、<code_03 topic>：`code_NN_xxx.py`** (as needed) — same shape.
-- **+1、其他 / 整体设计取舍** — cross-file design decisions, schema shape, troubleshooting.
-- **+1、RAGFlow 实现** — excerpted RAGFlow production implementation for this layer (5–15 line key code + line numbers + design intent), contrasted with the toy.
-- **+1、其他 / 选型与思考题** — mainstream approach quick-look + selection memo + this chapter's thinking exercises.
-- **思考题答案** (last H2) — all Q&A consolidated.
-
-- 1-code-file chapters (s07 / s08 / s12): 一 + 二 (code_01) + 三 (RAGFlow 实现) + 四 (选型) + 五 (思考题答案) = 6 H2 sections.
-- 2-code-file chapters: 一 + 二 + 三 + 四 (RAGFlow 实现) + 五 (选型) + 六 (思考题答案) = 7 H2 sections.
-- 3-code-file chapters (s01 / s03): 一 + 二 + 三 + 四 + 五 (RAGFlow 实现) + 六 (选型) + 七 (思考题答案) = 7 H2 sections.
-- Chapter 0 (preface, no code files): 一/二/三/四/五 + 思考题答案 = 5 H2 sections.
-
-Each code file is independently runnable:
-
-```bash
-python sXX_topic/code_01_<topic>.py
-```
-
-The 思考题 (thinking exercises) and answers are appended to the bottom of each chapter's `README.md`; no separate `thinking_answers.md`.
 
 ## Where to go next
 
@@ -296,11 +249,11 @@ After working through all 12 chapters, the natural next steps are:
 - **Swap chunker**: s03's `chunk_by_paragraph` is paragraph-based; try sentence + sliding-window or Markdown-heading-based splitting.
 - **Tune retrieval weights**: s06's `alpha` controls vector vs. BM25 weighting; build a 5–10 question eval set to pick the best value.
 - **Go to production**: s12 ships FastAPI + docker compose. Add Prometheus monitoring, Sentry error tracking, and an independent model server (vLLM / TGI) for scale.
-- **Read RAGFlow source**: see [`docs/reference/ragflow-notes/`](./docs/reference/ragflow-notes/) for chapter-aligned source excerpts; focus on **design intent**, not line-by-line memorization.
+- **Read RAGFlow source**: see [`docs/reference/ragflow-notes/`](./docs/reference/ragflow-notes/) for chapter-aligned engineering practices; focus on **design intent**, not line-by-line memorization.
 
 ## Acknowledgements
 
-- [**RAGFlow**](https://github.com/infiniflow/ragflow) — primary industrial reference; see [`docs/reference/ragflow-notes/`](./docs/reference/ragflow-notes/) for chapter-aligned source excerpts. RAGFlow evolves, so excerpts may go stale — focus on **design intent**, not line-by-line memorization.
+- [**RAGFlow**](https://github.com/infiniflow/ragflow) — primary industrial reference; see [`docs/reference/ragflow-notes/`](./docs/reference/ragflow-notes/). RAGFlow evolves, so notes may go stale — focus on **design intent**, not line-by-line memorization.
 - [**all-in-rag**](https://github.com/datawhalechina/all-in-rag) — sibling tutorial. The "project intro / motivation / audience / highlights / detailed outline" layout of this README borrows from its "content outline" organization.
 - [**learn-claude-code**](https://github.com/shareAI-lab/learn-claude-code) — inspiration for the "minimal runnable MVP per chapter" format.
 - [**BGE models**](https://github.com/FlagOpen/FlagEmbedding) (BAAI) — default embedding and reranker.
