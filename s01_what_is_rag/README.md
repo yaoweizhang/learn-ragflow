@@ -1,263 +1,368 @@
-# s01 RAG 入门 — 把"开卷考试"用 30 行代码跑一遍
+# s01: RAG 全链路最小骨架 — 从字面匹配到检索增强生成
 
-> **本章定位**：s01 是 12 章的入门章，3 个脚本递进：朴素子串 → 词袋向量 → 完整 RAG 链路。详细定位见 s00 §1.4；RAGFlow 实现见本章末"## RAGFlow 实现"。
+[上一章(无) · 下一章 s02 → ... → s12]
 
----
-
-## 一、章节介绍
-
-把 RAG 全链路的"最小闭环"放在第 1 章，原因是后续 11 章都会回到这条主干做替换。一上来如果讲"文档解析 → embedding → 向量库 → rerank → prompt"，读者会"只见森林不见树"——看得到每个环节，看不到为什么这套环节能组合出 RAG。本章用最朴素的 3 个脚本把"retrieve + augment + generate" 这三个动词绑死在一条线上，后面的章节再讲每个动词怎么替换成工业实现。
-
-### 1.1 核心定义
-
-**RAG = 检索 + 增强 + 生成**。详细定义 + 开卷考试比喻见 [s00 §1.1](../s00_concepts/README.md#一1-一句话定义)。本章要解决的是：把这条主干在 30-80 行代码里跑一遍。
-
-3 个脚本的递进关系（子串 → 词袋向量 → 完整链路）：
-
-```
-01 (子串)                02 (词袋向量)                03 (完整 RAG)
-┌────────────────┐        ┌─────────────────────┐       ┌──────────────────────┐
-│ 段落列表       │        │ 段落 → 词频向量     │       │ 同 02 检索            │
-│       │        │        │       │             │       │       │              │
-│       ▼        │        │       ▼             │       │       ▼              │
-│ 子串匹配       │ ─演进─▶ │ cosine 排序 top-k   │ ─演进─▶ │ top-k 拼 prompt      │
-│       │        │        │       │             │       │       │              │
-│       ▼        │        │       ▼             │       │       ▼              │
-│ 直接返回       │        │ 直接返回            │       │ LLM 生成答案         │
-└────────────────┘        └─────────────────────┘       └──────────────────────┘
-   没排序、没语义              sparse 语义、有分数              真正"开卷"
-```
-
-两条主轴线：检索质量（01 → 02 → s04 → s06）和生成质量（01 → 03 → s07 → s08）。
-
-### 1.2 真实世界的问题
-
-1. **检索质量不足**——朴素子串找不到同义词（问"营收"找不到"营业收入"）、找到关键词不一定是答案（一段提到"应收账款"的列表，关键词命中很多，但不是用户想问的"如何计提坏账"）。**对应 RAG 的召回问题**，用 s04 embedding + s06 混合检索解决。
-2. **生成质量不足**——LLM 在没有资料约束时会编造数字（"按惯例审计费用通常为 50 万元"），甚至在 prompt 里被诱导偏离资料。**对应 RAG 的 prompt 工程 + 拒答问题**，用 s07 rerank 把更准的资料喂给 LLM，s08 prompt 模板做硬约束。
-
-### 1.3 为什么必须在第 1 章就讲清楚
-
-- **建立直觉**：让 LLM"开卷考试"，先得有个"卷"。本章 3 个脚本就是"卷"的最朴素形态——子串匹配、词袋向量、top-k 拼 prompt。
-- **锁定主干**：12 章的任何一章，无论讲切块 / embedding / 向量库 / rerank，最终都对应这条主干的一个环节替换。第 1 章锁定了这条主干，后面 11 章填空就好。
-- **给后续章节留接口**：02 的 `retrieve(q, paragraphs, k=3)` 是 s04-s06 替换的目标；03 的 `build_prompt` 是 s08 替换的目标；03 的 `call_llm` 是 s08 / s09 替换的目标。本章接口形状留好了，后面章节照着替换。
-
-### 1.4 基础数据 schema
-
-01 和 02 的输入都是同一份段落列表：
-
-```python
-paragraphs: list[str]    # 整份文档切成段落(按 `\n\n` 切)
-```
-
-02 把每段转成词袋向量：
-
-```python
-vocab: dict[str, int]                    # {token: index}
-vec: list[int]                           # 长度 == len(vocab),值为该 token 在段落里的出现次数
-cosine(a, b) = dot(a, b) / (norm(a) * norm(b))   # 范围 [0, 1],越大越相似
-```
-
-03 在 02 的检索之上拼 prompt：
-
-```
-用户问题 ─▶ retrieve(q, paragraphs, k=3) ─▶ top-3 hits
-                                                  │
-                                                  ▼
-                                          build_prompt
-                                                  │
-                                                  ▼
-                                            LLM.generate
-                                                  │
-                                                  ▼
-                                              答案
-```
-
-prompt 用 `<context>...</context>` 标签包裹资料，避免 prompt injection。
+> *"先字面匹配, 再向量召回, 最后接入 LLM — RAG 的三层递进, 30 行起跑通"*
+>
+> **链路位置**: 端到端 (c01/c02/c03 不依赖 s02-s06), 独立可跑
+> **代码文件**: c01_substring_match.py · c02_bag_of_words.py · c03_rag_pipeline.py
 
 ---
 
-## 二、朴素关键词检索（子串匹配）：[c01_naive_keyword.py](c01_naive_keyword.py)
+## 问题
 
-> 对应 s00 章 "什么是 RAG" 中的核心直觉：让 LLM "开卷考试"，先得有个"卷"。
+大模型很会"说话", 但不会"答"。它不知道你公司昨天签的合同, 不知道上季度的财报数字, 不知道你团队昨天改的接口签名 — 不是它笨, 而是**它只见过训练截止日期之前的公开世界**。把这三种典型失败场景拆开看, 都是同一类问题的不同切面:
 
-### 2.1 子串匹配的 30 行最小实现
+**第一, 训练截止 (knowledge cutoff)**。任何 LLM 都有一个训练数据截止时间, GPT-4 是 2023 年 10 月, Claude 是 2025 年初, 开源模型也类似。问它昨天的股价、最新法规、刚发布的论文摘要, 它要么沉默 ("截至我的训练数据..."), 要么编一段听起来合理但完全错误的内容。这个问题**没有银弹** — 模型的训练数据是固化的, 你没法在每次新数据出现时重训整个模型, 工业级的成本和时间都不允许。即便是号称"在线学习"的方案, 也只能做轻量微调, 没法把整份新文档塞进参数。
 
-最朴素的检索策略：
+**第二, 私有数据 (private data)**。你的客户名单、内部 wiki、产品需求文档、合同附件、技术评审记录 — 这些数据从来没出现在任何公开训练集里。即便你用的是 GPT-5 还是 Claude-Opus, 它也读不到你没喂给它的东西。把整份公司文档塞进 prompt? 不现实, 一份 10 万字的 wiki 已经超出大多数模型的上下文窗口; 即便塞得下, 也稀释了模型对关键信息的注意力 (lost-in-the-middle 现象: 模型对中间段的注意力远低于首尾)。RAG 用"按需检索 + 拼 prompt" 的方式绕过这个限制: 不一次性塞整份文档, 只检索 top-k 相关段落拼进 prompt。
 
-1. 把文档读成段落列表；
-2. 把用户问题拆词；
-3. 找第一个段落里有任意一个词的；
-4. 把那段返回。
+**第三, 幻觉 (hallucination)**。在没有外部资料约束的情况下, LLM 会**自信地编造细节** — "按惯例审计费用通常为 50 万元", 这个数字是它从训练语料里"看起来合理"地拼出来的, 不是从任何一份资料里查到的。幻觉是 LLM 最大的可信度杀手: 用户看到流畅、自信、带具体数字的回答, 不会怀疑它在编; 等到出问题时 (法务纠纷、财务误报、医疗误诊), 代价已经付出去。即便加了"如果你不知道请说不知道"的 prompt 约束, LLM 在压力下仍可能编造, 因为它的训练目标就是"对所有 query 给出流畅回答", 拒答对模型来说是低概率事件。
 
-30 行代码，零外部依赖。
+这三种失败有一个共同解法 — **让模型"开卷考试"**: 答题前先把相关参考资料塞进 prompt, 让模型依据资料回答, 而不是凭参数记忆。这套"先查资料, 再答问题"的范式就是 **RAG (Retrieval-Augmented Generation)**: **检索 (retrieve)** 找到相关段落, **增强 (augment)** 把段落拼进 prompt, **生成 (generate)** 让 LLM 依据这些段落作答。三步合一, 模型就从一个"闭卷答题者"变成一个"开卷答题者" — 编造的源头被资料覆盖, 私有数据被检索补齐, 训练截止被最新索引绕过。RAG 不是唯一解法 (还有 fine-tuning / prompt engineering / tool use), 但它是**性价比最高、落地最快、可解释最强**的一种: 不需要重训模型, 不需要标注数据, 每次回答都能附引用让用户验证。
 
-入口：[`c01_naive_keyword.py`](c01_naive_keyword.py)
+s01 的任务就是把这三步用 **30-80 行 Python 跑通一遍**, 不依赖任何 embedding 模型或向量库 — 让"retrieve + augment + generate" 这三个动词绑死在一条线上, 后面 11 章再把每个动词替换成工业实现。本章是 12 章教程的入口, 也是后续所有章节的底座: c02 的 `top_k(query, paragraphs, k)` 接口是 s04-s06 替换的目标, c03 的 `build_prompt` 是 s08 替换的目标, c03 的 `call_llm` 是 s09-s10 替换的目标。**接口形状留好了, 后续章节照着替换**。如果你只想跑通 RAG 的最小形态, 读完本章即可; 如果想上生产, 继续读 s02-s12。
 
-### 2.2 跑 01 看「披露」命中 /「外星人」拒答
+---
+
+## 解决方案
+
+s01 用 **三个递进的脚本** 把 RAG 主干跑通。每一步解决前一步的局限, 但也留下新的脆弱性 — 这种"递进暴露脆弱性, 后续章节填空"的设计是 12 章教程的核心结构。
+
+```
+c01 (子串)              c02 (词袋)              c03 (RAG pipeline)
+┌────────────────┐      ┌─────────────────┐      ┌──────────────────┐
+│ 段落列表       │      │ 段落 → 词频向量 │      │ 同 c02 检索      │
+│       │        │      │       │         │      │       │          │
+│       ▼        │      │       ▼         │      │       ▼          │
+│ 子串匹配       │ ───▶ │ cosine 排序     │ ───▶ │ top-k 拼 prompt  │
+│       │        │      │ top-k           │      │       │          │
+│       ▼        │      │       │         │      │       ▼          │
+│ 返回第一段     │      │ 直接返回        │      │ LLM 生成答案     │
+└────────────────┘      └─────────────────┘      └──────────────────┘
+   没排序、没语义         sparse 语义、有分         真正"开卷"
+```
+
+| 脚本 | 解决什么 | 留下什么局限 | 何时用 |
+|---|---|---|---|
+| `c01_substring_match.py` | 字面命中 (query 出现在 chunk 中) | 找不到同义词 ("营收" 找不到 "营业收入"); 无打分 | 教学 / 强字面约束场景 (法条 / 代码标识符) |
+| `c02_bag_of_words.py` | 词频向量 + 余弦排序 top-k | 维度爆炸; 丢语序 ("狗咬人" = "人咬狗"); 仍无真语义 | 玩具检索 / 教学 / 小语料 |
+| `c03_rag_pipeline.py` | retrieve → build_prompt → call_llm 完整闭环 | 召回错则全错; prompt 极简; 无 rerank | 端到端 demo / 后续章节填空底座 |
+
+三步的关系是一条**主干**: c01 把"段落列表 → 第一个命中段落"做出来, 暴露"无打分"的局限 — 第一段不一定是答案段; c02 把"段落列表 → top-k + 余弦分"做出来, 暴露"无语义"的局限 — 词袋给"披露"和"公开披露"高分, 但给"披露"和"公告"零分; c03 把 c02 的 top-k 拼进 prompt 调 LLM, 暴露"召回错 + prompt 极简"的局限 — 召回错则全错, prompt 无引用跟踪则 LLM 编引用号。**每一章的局限, 都是下一章要解决的入口**。
+
+为什么是 3 个脚本、不是 1 个或 5 个? 太少 (1 个) 暴露不出"每一步的脆弱性", 太多 (5+) 把教学成本摊得太薄。3 个刚好对应 RAG 三动词 (retrieve / augment / generate) 的最小可拆解粒度: c01 / c02 只做 retrieve, c03 把三动词串起来。后续章节 (s02-s12) 会把每一行替换成工业实现: c02 的 2-gram 词袋换成 BGE 真向量 (s04), c02 的内存列表换成 Chroma (s05), c03 的单路召回换成 BM25+dense (s06), c03 的无 rerank 换成 cross-encoder (s07), c03 的极简 prompt 换成多语言模板 + 哨兵 (s08)。**s01 不替代后续章节, s01 是后续章节的填空底座**。
+
+---
+
+## 工作原理
+
+### c01: 子串字面匹配 (substring matching)
+
+**做一件事**: 判断 query 是否在 chunk 中作为字面子串出现, 命中即返回。
+
+**工作原理** (5 步):
+1. 用 `python-docx` 把 `samples/disclosure.docx` 读成段落列表 `paragraphs: list[str]` — 跳过空段落, 只保留非空文本
+2. 接收交互输入的 query (如 `披露`, `外星人`) — `input("问点啥: ").strip()` 去掉首尾空白
+3. 把 query 用 `question.split()` 拆成词列表, 段落用 `.lower()` 转小写
+4. 遍历段落, 对每段判断"是否有任意 query 词作为子串出现在段落中" (`any(w.lower() in p.lower() for w in question.split())`)
+5. 第一个命中的段落直接返回; 全 miss 时返回 `I don't know.` — 拒答兜底, 不让 LLM 编造答案
+
+```python
+# 中间片段: 拆词 + 子串包含判断
+for p in paragraphs:
+    if any(w.lower() in p.lower() for w in question.split()):
+        return p
+return "I don't know."
+```
+
+**完整函数**:
+
+```python
+def load_paragraphs(path: Path) -> list[str]:
+    """只取非空段落, 去掉 Word 文档里那些"占位用的空段"."""
+    return [p.text for p in Document(path).paragraphs if p.text.strip()]
+
+
+def fake_rag(question: str, paragraphs: list[str]) -> str:
+    """子串字面匹配: 拿问题里的每个词去段落里找子串, 命中即返回第一段.
+    全 miss 时返回拒答兜底 'I don't know.' — 不让 LLM 编造答案."""
+    for p in paragraphs:
+        if any(w.lower() in p.lower() for w in question.split()):
+            return p
+    return "I don't know."
+
+
+def main() -> None:
+    paragraphs = load_paragraphs(SAMPLE)
+    q = input("问点啥: ").strip()
+    print(fake_rag(q, paragraphs))
+
+
+if __name__ == "__main__":
+    main()
+```
+
+**为什么不只写这一种**: 字面匹配只认"字符包含", 不认"语义"。query `营收` 在 chunk 写 `营业收入` 时不命中 — 同义词 / 缩写 / 语序变体全部失败; query `披露` 找不到 chunk 里的 `公开` / `公告` / `告示`, 即便语义完全等价。下一节 c02 把段落切成 n-gram 词袋, 用余弦相似度替代布尔包含, 部分缓解但仍无真语义 (s04 BGE 才彻底解决)。
+
+### c02: 词袋模型 (bag-of-words) + 余弦相似度
+
+**做一件事**: 把每条 chunk 表征为 2-gram 词频向量, 用余弦相似度排序 top-k 候选, 替代 c01 的"第一段即答案"。
+
+**工作原理** (6 步):
+1. 用同款 `python-docx` 加载器读段落 (与 c01 共用 `load_paragraphs`)
+2. 对每段做 2-gram 切词 (`text[i:i+2] for i in range(len(text)-1)`, 滑动窗口) — 中文每 2 字 1 个 token, 单字粒度丢信息
+3. 全部段落 token 组成全局词表 `vocab: {token: index}`, 用 `dict.setdefault(tok, len(vocab))` 自动分配索引
+4. 每段转成词频向量 `vec = [词频 in vocab]`, 长度 = `len(vocab)`, 用 `Counter(tokenize(text))` 计数
+5. query 用同款 2-gram 切, 转同样形状的向量 (query 词表外的 token 维度为 0)
+6. 算 query 向量与每段向量的余弦相似度 (`dot(a,b) / (norm(a) * norm(b))`), 排序返回 top-3
+
+```python
+# 中间片段: 2-gram tokenize + 词频向量
+def tokenize(text: str) -> list[str]:
+    text = re.sub(r"\s+", "", text)
+    return [text[i : i + 2] for i in range(len(text) - 1)]
+
+def vectorize(text: str, vocab: dict[str, int]) -> list[float]:
+    counter = Counter(tokenize(text))
+    return [float(counter.get(tok, 0)) for tok in vocab]
+```
+
+**完整函数**:
+
+```python
+def tokenize(text: str) -> list[str]:
+    """2-gram 滑动窗口 tokenize. 不是 jieba, 但足够"向量检索"概念演示."""
+    text = re.sub(r"\s+", "", text)
+    return [text[i : i + 2] for i in range(len(text) - 1)]
+
+
+def vectorize(text: str, vocab: dict[str, int]) -> list[float]:
+    """把段落转成词频向量, 词表外 token 丢弃."""
+    counter = Counter(tokenize(text))
+    return [float(counter.get(tok, 0)) for tok in vocab]
+
+
+def cosine(a: list[float], b: list[float]) -> float:
+    """手写余弦相似度, 等价 numpy 的 dot / (norm(a) * norm(b))."""
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(x * x for x in b))
+    if na == 0 or nb == 0:
+        return 0.0
+    return dot / (na * nb)
+
+
+def top_k(query: str, paragraphs: list[str], k: int = 3) -> list[tuple[str, float]]:
+    """2-gram 词袋 + 手写余弦, 返回按相似度排序的 top-k.
+    等价于 s05 的 chroma.col.query() 在 dense 向量上的语义检索.
+    概念等价于 s04 的 BGE embedding, 只是这里用词频向量代替, 省去模型下载."""
+    # 全局词表: 所有段落 token 集合
+    vocab: dict[str, int] = {}
+    for p in paragraphs:
+        for tok in set(tokenize(p)):
+            vocab.setdefault(tok, len(vocab))
+
+    para_vecs = [vectorize(p, vocab) for p in paragraphs]
+    q_vec = vectorize(query, vocab)
+
+    scored = [(p, cosine(q_vec, pv)) for p, pv in zip(paragraphs, para_vecs)]
+    scored.sort(key=lambda x: -x[1])
+    return scored[:k]
+
+
+def main() -> None:
+    paragraphs = load_paragraphs(SAMPLE)
+    q = input("问点啥: ").strip()
+    print(f"\nTop-3 与你的问题最相关的段落(按向量余弦排序):")
+    for rank, (text, score) in enumerate(top_k(q, paragraphs, k=3), 1):
+        snippet = text[:120].replace("\n", " ")
+        print(f"\n[{rank}] score={score:.3f}")
+        print(f"    {snippet}...")
+```
+
+**为什么不只写这一种**: 词袋有两个硬伤 — 第一, **维度爆炸**: 每段可能 100+ unique token, 词表笛卡尔积后稀疏, 不像 BGE 是 dense 512 维真语义向量; 第二, **丢语序 + 丢上下文**: "狗咬人" 和 "人咬狗" 在词袋层完全相同 (只是两个 token 交换位置), "摘要式披露" 和 "详细披露" 也分不开 (组合方式全丢)。下一节 c03 把 c02 的 top-k 直接拼进 prompt 调 LLM, 把"召回 + 生成" 闭环, 但仍受 c02 召回质量的拖累 (s06 hybrid 召回 + s07 rerank 才解决召回, s04 BGE 解决语义)。
+
+### c03: RAG pipeline (retrieve + augment + generate)
+
+**做一件事**: 把 c02 的 top-3 召回拼进 prompt, 调 OpenAI 兼容 LLM 生成引用答案 — 完整 retrieve → augment → generate 三步闭环。
+
+**工作原理** (7 步):
+1. 加载段落 (复用 c01/c02 的 `python-docx` 加载, 保持 `paragraphs: list[str]` 输入形状一致)
+2. 接收 query 输入 (`input("问点啥: ").strip()`)
+3. `retrieve`: 复用 c02 的词袋 + 余弦, 取 top-3 段落 (`retrieve(q, paragraphs, k=3)`)
+4. `build_prompt`: 把 top-3 渲染成 `[1] ... [2] ... [3] ...`, 每段一个 `[i]` 编号, 包进 `<context>...</context>` 标签做边界
+5. 拼 system 约束 ("你只能依据 <context> 标签内的资料回答问题, 若资料不足以回答请回复「我不知道」") — prompt 硬约束最弱的一道防线, 防 LLM 自由发挥
+6. `call_llm`: 调 OpenAI 兼容 `/chat/completions` (`urllib.request` 零 SDK 依赖); 无 `LLM_API_KEY` 时只打印 prompt 后停 (教学兜底, 便于无 key 机器验证链路)
+7. 解析 LLM 输出, 把 `[i]` 引用号与 hits 对齐 (本题不实现, 见 s08 工业 prompt 模板)
+
+```python
+# 中间片段: build_prompt — 把 hits 渲染成 prompt
+def build_prompt(question: str, hits: list[str]) -> str:
+    ctx = "\n\n".join(f"[{i + 1}] {h}" for i, h in enumerate(hits))
+    return (
+        "你只能依据 <context> 标签内的资料回答问题；\n"
+        "若资料不足以回答，请回复「我不知道」。\n\n"
+        f"<context>\n{ctx}\n</context>\n\n"
+        f"问题: {question}\n"
+        "回答: "
+    )
+```
+
+**完整函数**:
+
+```python
+def retrieve(query: str, paragraphs: list[str], k: int = 3) -> list[str]:
+    """复用 c02 的 2-gram 词袋 + 余弦, 取 top-k 段落."""
+    vocab = build_vocab(paragraphs)
+    para_vecs = [vectorize(p, vocab) for p in paragraphs]
+    q_vec = vectorize(query, vocab)
+    scored = sorted(
+        zip(paragraphs, (cosine(q_vec, pv) for pv in para_vecs)),
+        key=lambda x: -x[1],
+    )
+    return [p for p, _ in scored[:k]]
+
+
+def build_prompt(question: str, hits: list[str]) -> str:
+    """对照 docs/reference/ragflow-notes/prompt_templates.md 里的 'You are an AI assistant...' 模板.
+    本章用极简版, 只保留 [i] (source) text 的渲染."""
+    ctx = "\n\n".join(f"[{i + 1}] {h}" for i, h in enumerate(hits))
+    return (
+        "你只能依据 <context> 标签内的资料回答问题；\n"
+        "若资料不足以回答，请回复「我不知道」。\n\n"
+        f"<context>\n{ctx}\n</context>\n\n"
+        f"问题: {question}\n"
+        "回答: "
+    )
+
+
+def call_llm(prompt: str) -> str:
+    """最小可用 OpenAI 兼容调用; 零 SDK 依赖."""
+    if not LLM_API_KEY:
+        return ""
+
+    import json
+    req = urllib.request.Request(
+        f"{LLM_BASE}/chat/completions",
+        data=json.dumps({
+            "model": LLM_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.2,
+        }).encode(),
+        headers={
+            "Authorization": f"Bearer {LLM_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        data = json.loads(resp.read())
+    return data["choices"][0]["message"]["content"]
+
+
+def main() -> None:
+    paragraphs = load_paragraphs(SAMPLE)
+    q = input("问点啥: ").strip()
+
+    hits = retrieve(q, paragraphs, k=3)
+    print(f"\n[retrieve] 召回 {len(hits)} 段")
+    for i, h in enumerate(hits, 1):
+        print(f"  [{i}] {h[:80].replace(chr(10), ' ')}...")
+
+    prompt = build_prompt(q, hits)
+    print(f"\n[prompt]\n{prompt}\n")
+
+    if LLM_API_KEY:
+        answer = call_llm(prompt)
+        print(f"[llm] {answer}")
+    else:
+        print("[llm] LLM_API_KEY 未设置，跳过真实生成；如需 LLM 回答:")
+        print("      LLM_API_KEY=sk-xxx python s01_what_is_rag/c03_rag_pipeline.py")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+**为什么不只写这一种**: c03 是 RAG 的最小闭环, 但每一段都极简 — retrieve 只有词袋单路 (召回错则全错), prompt 无引用跟踪 (LLM 编 `[5]` 但 prompt 只有 `[1][2][3]` 是高频故障), call_llm 无 retry / streaming。后续 s06 加 hybrid 召回, s07 加 rerank, s08 加工业 prompt 模板 + 引用检测, 才能上生产。
+
+---
+
+## 试一下
+
+**准备** (首次):
 
 ```bash
-python s01_what_is_rag/c01_naive_keyword.py
+pip install -r requirements.txt
+cp .env.example .env
+# 编辑 .env, 填 LLM_API_KEY / LLM_BASE_URL / LLM_MODEL (c03 需要)
 ```
 
-输入对照（用 `samples/disclosure.docx` 实测）：
+c01 / c02 不需要任何 key, 可以直接跑。c03 需要 LLM_API_KEY 才能生成最终答案; 但即便无 key, c03 也会打印 prompt 让验证"retrieve → build_prompt" 链路正确, 这是教学 demo 的优雅降级。
 
-| 输入 | 输出 |
-|---|---|
-| `披露` | `相关信息披露详见财务报表附注三(二十五)、五 (二)1 及十五(二)。` |
-| `外星人` | `I don't know.` |
+**跑 c01** (无 key):
 
-### 2.3 实测 01 的命中 + 拒答输出
+```bash
+python s01_what_is_rag/c01_substring_match.py
+```
 
-**01 跑出来（实测，`samples/disclosure.docx`）：**
+实测输出 (交互输入 `披露`):
 
 ```
 [query] 披露
 [hit]  相关信息披露详见财务报表附注三(二十五)、五 (二)1 及十五(二)。
-
-[query] 外星人
-[hit]  I don't know.
 ```
 
-"披露"命中说明子串匹配能召回字面相关的段落；"外星人"返回 `I don't know.` 说明零命中时不让 LLM 编——为后续章节埋下"拒答"的种子。
+- 输入 query: `披露` — 命中 1 条 (`相关信息披露详见财务报表附注...`)
+- 输入 query: `外星人` — miss (返回 `I don't know.`)
 
-### 2.4 找不到同义词 / 命中不等价答案（这就是后面章节要解决的）
+**观察**: 字面匹配对同义词 `公开` → `披露` 无效 — 试 query `公开` 时也会命中 (因为 chunk 里恰好有"公开"字面), 但 query `公告` 在 chunk 只写"披露"时仍然 miss。这暴露 c01 的根本局限: **字面包含 ≠ 语义相关**, 即便 chunk 在语义上等价, 字符不重合就不命中。这是 c02 / s04 要解决的语义召回问题。
 
-本段做对了什么 — 用 30 行 python-docx + 子串匹配跑通 RAG 闭环最小形状，零外部依赖。
-
-- **找不到同义词**——问"营收"找不到"营业收入"。
-- **找到关键词不一定是答案**——段落里出现"应收账款"，但讲的是会计科目列表，不是用户想问的"如何计提坏账"。
-- **没有评分**——第一个命中就返回，多个相关时不能排序。
-
-这两个问题分别对应 RAG 系统的两大难题：
-
-- **召回（recall)** → s04 embedding + s06 混合检索
-- **精排（precision)** → s07 rerank + s08 prompt
-
-- **`ModuleNotFoundError: No module named 'docx'`**：`pip install python-docx`。
-- 永远返回 `I don't know.`：`DISCLOSURE.docx` 路径错了 / 段落切得太碎；print 一段 paragraphs[0] 验加载。
-
-下一章 s02 如何解决 — 把段落级文档加载抽象成统一 schema `{text, page, source}`,把 python-docx 这一类文件读取切干净,s03+ 才能在不感知文件类型的前提下做切块。
-
----
-
-## 三、词袋向量 + 余弦相似度：[c02_vector_basics.py](c02_vector_basics.py)
-
-> 词袋（bag-of-2-grams)+ 手写余弦，省去 embedding 模型下载，让 s01 自包含。
-> 后面 s04 用 BGE 真向量替代这套玩具；s05 用 Chroma 持久化索引。
-
-### 3.1 2-gram 词袋 + 手写余弦排序
-
-1. 把每段切成 2-gram（中文每 2 字 1 个 token）；
-2. 全部 token 组成词表 `vocab: {token: index}`；
-3. 每段转成词频向量 `vec = [词频 in vocab]`；
-4. 问题转同样形状的向量；
-5. 余弦相似度 = "问题向量" 与 "段落向量" 的夹角；
-6. 按分排序返回 Top-3。
-
-入口：[`c02_vector_basics.py`](c02_vector_basics.py)
-
-### 3.2 跑 02 交互输入查 top-3
+**跑 c02** (无 key):
 
 ```bash
-python s01_what_is_rag/c02_vector_basics.py
-# 交互:输入查询(如"披露")
+python s01_what_is_rag/c02_bag_of_words.py
 ```
 
-输出示例（按相似度分排序的前 3 段）：
-
-```
-Top-3 与你的问题最相关的段落(按向量余弦排序):
-[1] score=0.342
-    相关信息披露详见财务报表附注三(二十五)、五 (二)1 及十五(二)...
-[2] score=0.215
-    ...
-```
-
-### 3.3 实测 02 的 top-3 + 余弦分输出
-
-**02 跑出来（实测，`samples/disclosure.docx`，交互输入"披露"）：**
+预期输出示例 (交互输入 `披露`):
 
 ```
 [vocab] 共 N 个 2-gram token
 [query] 披露
-Top-3 与你的问题最相关的段落(按向量余弦排序):
+Top-3 与你的问题最相关的段落 (按向量余弦排序):
 [1] score=0.342
     相关信息披露详见财务报表附注三(二十五)、五 (二)1 及十五(二)...
 [2] score=0.215
     ...
+[3] score=0.187
+    ...
 ```
 
-**跟 01 的差别**：01 只返第一段（无评分），02 返 Top-3 + 余弦分（有排序）。`[1]` 永远是分数最高那一段，即便它是"披露"字面量最密集的那段也不一定是真答案——这正是 03 + s07 要解决的问题。
+- 交互输入, 看 top-3 余弦分 (按相似度降序, 每段一个 `[rank] score=...`)
 
-### 3.4 词袋维度爆炸 / 丢语义 / 丢上下文（这就是后面章节要解决的）
+**观察**: 词袋维度爆炸 (2-gram 笛卡尔积, 每段 100+ unique token), 语序信息全丢 ("狗咬人" vs "人咬狗" 同分), 长 chunk 的 L2 范数主导相似度排序 (需要归一化才能消除长度偏置)。这是 c03 的召回质量上限, 也是 s04 BGE dense 向量要解决的。
 
-本段做对了什么 — 用 2-gram 词袋 + 手写余弦把"任意段落相对查询的可量化相关度"算出来了,并按 Top-3 排序,无 NumPy 依赖,让 RAG 检索这一步有"分"。
-
-- **词袋维度爆炸**——每段可能 100+ unique token，sparse；不像 BGE 是 dense 512 维真语义向量。
-- **没真语义**——"营收"和"营业收入"在字面上无关，词袋给 0。
-- **丢位置 / 上下文信息**："摘要式披露" vs "详细披露" 在词袋层分不开 — 详细原因见 思考题答案 Q2。
-
-生产里要解决就是 s04（真语义 embedding)+ s07(cross-encoder 精排）。
-
-- **`EOFError when piped`**：02 的 `input("问点啥: ")` 在 `< /dev/null` 下抛 EOFError——交互模式是主用方式；想脚本化跑就直接改 `main()` 里的 `q = ...`。
-- 词表过大 / 内存炸：把 2-gram 换成 3-gram 词汇量指数级增长；demo 阶段保持 2-gram。
-- top-1 不是真答案：词袋的本质问题；想"营收"和"营业收入"互通，等 s04 BGE embedding。
-
-下一章 s02 如何解决 — 把词汇量从"每段 unique token 100+"压下来,先做 chunking 把段内稀疏维拆成局部稠密的小块,再交给 s04 embedding。这一步不解决词袋 vs dense 的本质对立,但把"分块"做了,s04 才有合适的输入颗粒度。
-
----
-
-## 四、完整 RAG 链路：检索 + Prompt + LLM：[c03_augmented_llm.py](c03_augmented_llm.py)
-
-> 这一章是"s01 → RAG 全链路"的最小闭环；s02-s08 把每一环换成真工业实现。
-
-### 4.1 retrieve → build_prompt → call_llm 三段闭环
-
-三段代码：
-
-- `retrieve(q, paragraphs, k=3)`——把 2 的向量检索原样搬过来。
-- `build_prompt(question, hits)`——把 hits 渲染成 `[1] ... [2] ... [3] ...`，包进 `<context>` 标签。
-- `call_llm(prompt)`——调 OpenAI 兼容的 `/chat/completions`；缺 API key 时直接跳过。
-
-完整流程：
-
-```
-用户问题 ─▶ retrieve (02 词袋向量) ─▶ top-3 hits
-                                               │
-                                               ▼
-                                       build_prompt
-                                               │
-                                               ▼
-                                       LLM.generate
-                                               │
-                                               ▼
-                                           答案
-```
-
-入口：[`c03_augmented_llm.py`](c03_augmented_llm.py)
-
-### 4.2 跑 03 无 key 时只打 prompt
+**跑 c03** (需 LLM_API_KEY):
 
 ```bash
-# .env 里有 LLM_API_KEY 就走端到端;无 key 时 graceful-skip 只打印 prompt
-python s01_what_is_rag/c03_augmented_llm.py
+python s01_what_is_rag/c03_rag_pipeline.py
 ```
 
-可选：自定义 base / model（在 `.env` 里设 `LLM_BASE` / `LLM_MODEL` 即可，code 顶部 `load_dotenv(override=True)` 会读到）。
-
-无 key 输出示例：
+预期输出示例 (无 key, 交互输入 `关联方披露`):
 
 ```
 [retrieve] 召回 3 段
   [1] 相关信息披露详见财务报表附注三(二十五)...
   [2] ...
+  [3] ...
 
 [prompt]
 你只能依据 <context> 标签内的资料回答问题;
-若资料不足以回答,请回复「我不知道」。
+若资料不足以回答, 请回复「我不知道」。
 
 <context>
-[1] ...
+[1] 相关信息披露详见财务报表附注三(二十五)...
 [2] ...
 [3] ...
 </context>
@@ -265,183 +370,54 @@ python s01_what_is_rag/c03_augmented_llm.py
 问题: 关联方披露
 回答:
 
-[llm] LLM_API_KEY 未设置,跳过真实生成...
+[llm] LLM_API_KEY 未设置, 跳过真实生成...
 ```
 
-### 4.3 实测 03 的 retrieve + prompt 拼接输出
+- 无 key: 打印 retrieve 结果 + prompt 后停 (graceful-skip, 便于无 key 机器验证链路)
+- 有 key: LLM 生成引用答案, 接在 `回答:` 后
 
-**03 跑出来（实测，无 key）：**
-
-```
-[retrieve] 召回 3 段
-  [1] 相关信息披露详见财务报表附注三(二十五)...
-  [2] ...
-
-[prompt]
-你只能依据 <context> 标签内的资料回答问题;
-若资料不足以回答,请回复「我不知道」。
-
-<context>
-[1] ...
-[2] ...
-[3] ...
-</context>
-
-问题: 关联方披露
-回答:
-
-[llm] LLM_API_KEY 未设置,跳过真实生成...
-```
-
-有 key 时 `call_llm` 会真发请求，LLM 输出接在 `回答:` 后；无 key 时只打印 prompt 形状，让你确认"检索 + 拼 prompt"链路正确但 LLM 步骤被优雅跳过。
-
-### 4.4 prompt 极简 / 无 rerank / 无 hybrid 召回（这就是后面章节要解决的）
-
-本段做对了什么 — 用 60 行内代码把 `retrieve → build_prompt → call_llm` 这条 RAG 三动词闭环跑通,prompt 里硬约束"资料外回答「我不知道」"+`<context>` 边界,把第三章教学 demo 的 hallucination 风险压在 prompt 工程可达的范围内。
-
-- **极简 prompt 模板**——RAGFlow 的 `rag/prompts/generator.py` 维护多语言多场景 prompt，带 `<|COMPLETE|>` 哨兵和明确的"回答字数限制"等。本章对应其中"纯检索 + 纯生成"分支。
-- **没有 rerank**——top-3 不一定最相关；s07 会补 cross-encoder。
-- **没有 hybrid 召回**——本章只有词袋向量；RAGFlow 走 `weighted_sum(BM25, vector)`（详见 `docs/reference/ragflow-notes/hybrid_retrieval.md`）。
-- **无引用检测**——如果 LLM 答了一段不在 `<context>` 里的话（"按惯例审计费用通常为 50 万元"），本章只靠 prompt 约束。生产里通常还要在输出侧用字符串匹配 / LLM-as-judge 检测"未引用"段。
-
-- **`LLM_API_KEY 未设置`**：03 是预期行为——只打印 prompt，验证检索 + 拼 prompt 链路正确。设置 `LLM_API_KEY` 后才会真调 LLM。
-- **`LLM_BASE_URL` 报错 401 / 404**：检查 `.env` 或环境变量里的 base / model 是否跟所用服务匹配（OpenAI / DeepSeek / 智谱 / Anthropic / 自部署 vLLM）。
-- 想离线跑：无 key 时只打印 prompt——这就是"教学 demo 的兜底形状"，不动代码也能验链路。
-
-下一章 s02 如何解决 — 进入工业实现第一站:把"文档加载"从 python-docx 单类型扩到 PDF + DOCX,产出 `{text, page, source}` 统一 schema,让 s03 chunking 不再关心文件类型分支。
+**观察**: retrieve 候选 → build_prompt 拼接 → LLM 调用三段流水线的脆弱性。召回错 (c02 词袋丢语义) + prompt 极简 (无引用跟踪) + LLM 无 retry, 任一环节失败全错。这是后续章节每一段都要加固的入口: s04 修召回质量, s06 修单路召回, s08 修 prompt 极简, s11 修 LLM 调用脆性。
 
 ---
 
-## 五、核心函数一览
+## 接下来
 
-| 函数 | 文件 | 输入 | 输出 | 一句话解释 |
-|---|---|---|---|---|
-| `retrieve(q, paragraphs)` | `c01_naive_keyword.py` | 问题、段落列表 | 第一个命中段落 / `"I don't know."` | 子串匹配第一段 |
-| `vocab_for(paragraphs)` | `c02_vector_basics.py` | 段落列表 | `{token: index}` | 2-gram 词表 |
-| `cosine(a, b)` | `c02_vector_basics.py` | 两个等长 list[float] | float ∈ [0, 1] | 手写余弦(避免 NumPy 依赖) |
-| `retrieve(q, paragraphs, k)` | `c02_vector_basics.py` | 问题、段落列表、k | top-k 段落 | 词袋向量 top-k |
-| `retrieve(q, paragraphs, k)` | `c03_augmented_llm.py` | 问题、段落列表、k | top-k 段落 | 同 02 |
-| `build_prompt(question, hits)` | `c03_augmented_llm.py` | 问题、top-k 段落 | 拼好的 prompt 字符串 | `<context>...</context>` 包裹 |
-| `call_llm(prompt)` | `c03_augmented_llm.py` | prompt 字符串 | LLM 返回字符串 | OpenAI 兼容 `/chat/completions`;缺 key 时跳过 |
-| `main()` (01) | `c01_naive_keyword.py` | — | 段落 + 查询输出 | 01 入口 |
-| `main()` (02) | `c02_vector_basics.py` | 交互输入查询 | top-3 + 分 | 02 入口 |
-| `main()` (03) | `c03_augmented_llm.py` | — | prompt + LLM 输出 | 03 入口 |
+s01 是 RAG 的最小骨架, 但每一步都很脆弱, 这些脆弱性是后续 11 章的填空目标:
 
-## 六、跨代码协同
+- **c01 找不到同义词** — 字面匹配的固有限制, query `营收` 找不到 chunk 里的 `营业收入`, query `披露` 找不到 chunk 里的 `公开 / 公告`。这是 c02 词袋 → s04 BGE 真语义要解决的召回质量问题。
+- **c02 词袋丢语义 + 丢语序** — 维度爆炸 (2-gram 笛卡尔积), 稀疏向量无真语义, "狗咬人" = "人咬狗" 同分, "摘要式披露" = "详细披露" 同分。这是 s04 BGE dense 512 维向量要解决的语义召回。
+- **c03 召回错 + prompt 极简 + 无 rerank** — 召回质量是整条流水线的天花板 (top-3 不相关, LLM 拿到错的资料就编答案); prompt 无引用跟踪会让 LLM 编 `[5]` 但 prompt 里只有 `[1][2][3]`, 这是 s06 hybrid + s07 rerank + s08 工业 prompt 要解决的"召回 + 精排 + 生成" 全链路加固。
 
-环境变量：c03 需要 `LLM_API_KEY`（可选 `LLM_BASE` / `LLM_MODEL`，指向任意 OpenAI 兼容服务）。无 key 时跳过真实生成，只打印 prompt 验证链路。
-
-三个 code 文件约定同一份 schema：`paragraphs = list[str]` 输入 → `retrieve` 返回 `list[{text, score, ...}]` 命中；c02 / c03 的 `retrieve(q, paragraphs, k)` 签名完全一致——这是把"召回"封装掉的代价：**调用方不需要知道 c01 是子串匹配、c02 是词袋向量、c03 又调一遍 c02**，统一接口降低后续章节替换成本。
-
-## RAGFlow 实现
-
-RAGFlow 把 RAG 主干实现成 12 个独立模块——解析、切块、embedding、索引、召回、重排、prompt、生成 各自可替换。本教程的 12 章地图见 [s00 §1.4](../s00_concepts/README.md#一4-12-章对照)；RAGFlow 在每一层的工程化做法见 s02-s12 各章末的 RAGFlow 实现小节。s01 跑的是这条主干的最朴素直连版——`query → retrieve → augment → generate`，RAGFlow 的模块化设计正好对应这条主干的"每一环可独立替换"。
-
-| s01 里的环节 | 工业实现 | 教程章节 |
-|---|---|---|
-| `python-docx` 读段落 | `pypdf` / `python-docx` + `pdfplumber` + 多 Parser 调度 | s02 |
-| 按段落切(不切) | 固定字符 cap + 句界切 / 父子块 / 表格感知 | s03 |
-| 词袋 sparse 向量 | BGE dense 512 维真语义向量 | s04 |
-| 内存 list | Chroma / Elasticsearch / Infinity 持久化索引 | s05 |
-| cosine only | BM25 + dense `weighted_sum` 融合 | s06 |
-| 无 | cross-encoder 重排序 + PageRank | s07 |
-| 极简 `<context>` | 多语言模板 + 哨兵 + 角标 | s08 |
-| OpenAI 兼容 | OpenAI / DeepSeek / 智谱 / Anthropic / Bedrock / Ollama | s08 |
-
-工业版 vs s01 的对照：
-
-| 步骤 | s01 | RAGFlow 真实实现 | 教程章节 |
-|---|---|---|---|
-| 文档解析 | `python-docx` | `deepdoc/parser/{pdf,docx}.py` | s02 |
-| 切块 | 按段落 | `naive_merge` token-aware + `hierarchical_merge` | s03 |
-| Embedding | 词袋 sparse 2-gram | BGE small-zh dense 512 | s04 |
-| 索引 | 内存 list | Chroma / Infinity / Elasticsearch | s05 |
-| 召回 | cosine only | BM25 + 向量 `weighted_sum` | s06 |
-| 精排 | 无 | cross-encoder 重排序 + PageRank | s07 |
-| Prompt | 极简 `<context>` | 多语言模板 + 哨兵 + 角标 | s08 |
-| LLM | OpenAI 兼容 | Anthropic / OpenAI / Bedrock / Ollama | s08 |
-
----
-
-## 选型速记
-
-### 主流 RAG 范式速览
-
-下面这张表把 RAG 系统按"流程长度 / 检索深度 / 是否可解释 / 适用场景"列出来：
-
-| 范式 | 检索流程 | 检索深度 | 可解释 | 适用场景 |
-|---|---|---|---|---|
-| **Naive RAG(本章 MVP)** | query → top-k → LLM | 1 段 | 弱(无打分详情) | 教学 / 演示 |
-| **Advanced RAG**(s04-s08) | query → embed → BM25+dense → rerank → LLM | 2 段 | 中 | 中小规模生产 |
-| **Modular RAG**(s09/s10) | query → Agent 路由 → 多模态 → LLM | N 跳 | 强 | 多源 / 多跳 |
-
-我们的 toy `retrieve + build_prompt + call_llm` 在复杂度上只占第一行——**Naive RAG**；RAGFlow 走完整 Modular，**多一道抽象就多一道观测点 + 一个失败模式**。教学 demo 选 MVP 因为它跑通快、依赖少；**生产请按"语料规模 / 检索质量 / 可观测性"做 tier 选型**(Naive → Advanced → Modular）。
-
-- **教学 / 玩具 / 文档 < 100 段** → 本章 MVP（子串 / 词袋 + cosine），零依赖、能跑通
-- **中小规模生产 / 文档 100-100k 段** → s04 BGE + s06 BM25+dense 融合 + s07 rerank + s08 prompt 模板
-- **检索质量敏感 / 命中率优先** → 高级 RAG 叠加：HyDE 查询重写 + 多路召回 + cross-encoder
-- **复杂多源 / 跨系统 / 多跳推理** → 模块化 RAG：s09 Agent + s10 GraphRAG + 工具调用
-- **要想清楚 toy 跟生产的边界** → 用本章 02 把"词袋 vs BGE"、03 把"无 rerank vs 有 rerank"各跑一次，对比输出
-
-### 扩展指南
-
-加一层 RAG 能力（换 LLM / 加 rerank / 加 hybrid）只要三步：
-
-1. 在 `c03_augmented_llm.py` 的 `build_prompt(hits, question)` 之后插入一个 `rerank(hits, question)` 钩子，s07 的 `rerank(query, hits, top_k=3)` 直接接进来，`hits` 还是 `[(text, source, page)]` 的统一形状，LLM 看到的就是前 3 条精排后的 context；
-2. 把 03 的 `call_llm(question, prompt)` 里的 `model=` 参数抽出来，从环境变量 `LLM_MODEL` 读（默认 `gpt-4o-mini`），切 Claude / 本地 vLLM / Qwen 都只改 env 不改代码；
-3. 把 02 的 `vocab + tfidf` 子串匹配换成 `embed_local(query)` 返回的 512 维向量，余弦检索回 `chunks_emb` 矩阵，s04 的 BGE 把它接进来，**接口形状留好了，只换实现**。
-
-不要把"加 rerank / 换 LLM / 加 hybrid" 写在 `retrieve()` 里——它只懂子串，加 hybrid 会污染单一职责。`retrieve` 只懂 toy，**main() 懂全 RAG 模式**(MVP → +rerank → +hybrid → s12 完整 Modular）。本章只跑 MVP，但接口形状留好了。
+s02 **文档加载**: 给 RAG 一份"能读"的资料 — 把 `python-docx` 单文件解析扩成 PDF + DOCX + TXT 多 Parser 调度, 产出统一的 `{text, page, source}` schema, 让 c02 的输入不再依赖单一文件类型, s03 chunking 才有干净原料。这是把"玩具 RAG"推向"工业 RAG"的第一步 — 没有稳定的文档加载, 后面的 chunking / embedding / retrieval 都建立在沙滩上。
 
 ---
 
 ## 思考题
 
-1. **怎么把 01 的子串匹配改成 Top-3 候选段？最简单的打分怎么算？**
-2. **如果两段都包含"披露"两次，词袋向量会怎么算？它分得开"摘要式披露"和"详细披露"吗？**
-3. **如果 LLM 答了一段不在 `<context>` 里的话（比如"按惯例审计费用通常为 50 万元"），怎么从工程上防住？**
-
-（答案见文末「思考题答案」）
+1. **c01 子串匹配为什么找不到同义词?** 举一个具体 query 例子说明。
+2. **c02 词袋 + 余弦相似度, 为什么需要向量归一化?** 不归一化会怎样?
+3. **c03 的 retrieve → build_prompt → call_llm 三步, 哪一步最脆弱?** 为什么?
 
 ---
 
 ## 思考题答案
 
-### Q1. 怎么把子串匹配改成 Top-3 候选段？最简单的打分怎么算？
+### Q1. c01 子串匹配为什么找不到同义词?
 
-**最简单的版本：数命中的关键词数量。**
+字面匹配只看 "字符包含", 不看语义。query `披露` 只在 chunk 中**字面包含** "披露" 时才命中; 当 chunk 写 "公开" / "公告" / "告示" 时, 即便语义等价也不命中。这在企业知识库场景 (同一概念的不同表述, 比如 "营收" / "营业收入" / "主营业务收入", 或者 "披露" / "公开" / "公告") 是高频故障 — 用户用自己习惯的词提问, 但文档里用的是公司内部术语, 子串匹配会全部 miss。
 
-遍历段落，对每个段落计 `score = sum(1 for w in question.split() if w.lower() in p.lower())`，按分数排序，取前 3 个非零段落返回。如果全 0，仍然返回 `"I don't know."`。
+要解决: c02 词袋模型把 query 和 chunk 都转成 2-gram 词频向量, 余弦相似度能在部分情况下给出非零分 (比如 `披露` 和 `公开披露` 共享 `披露` 这个 2-gram); 但更彻底的解决是 s04 的 BGE 真语义向量, 把语义相关的词压到向量空间的近邻位置 — 即便字符完全不重合, "披露" 和 "公告" 的 BGE 向量也会有高余弦相似度。
 
-**为什么这是"向量检索"的原始形态？**
+### Q2. c02 词袋 + 余弦相似度, 为什么需要向量归一化?
 
-朴素子串打分有两个根本问题：
+余弦相似度的数学定义是 `cos(θ) = dot(a,b) / (norm(a) * norm(b))`, 本质上是**两个向量方向**的夹角, 与向量的**长度**无关。但在词袋场景下, 长 chunk 的向量 L2 范数远大于短 chunk — 同样是 "披露" 这个 token, 在 1000 字 chunk 里出现 1 次对应词频向量某个维度 = 1, 在 100 字 chunk 里出现 1 次对应同一维度也是 1, 但长 chunk 的总维度更多 (其他 token 也贡献非零维度), 总 L2 范数更大。
 
-1. **词不匹配**——"营收"和"主营业务收入"在字面上无关，但语义上强相关。子串打分给 0，向量相似度会给高分。
-2. **字面命中 ≠ 语义相关**——一段提到"应收账款"的列表，关键词命中很多，但不是答案。向量相似度会被"语义方向"压低匹配分。
+不归一化时, 长度主导相似度: 两个不相关的长 chunk 也会因大量 "非零维度" 拿到非零余弦分, top-k 排序退化成 "找最长 chunk", 失去 "找最相关 chunk" 的语义。归一化 (`normalize_embeddings=True` 或代码里的 `cosine()` 函数) 把所有向量投影到单位球面, 余弦分只反映方向相似度, 与长度无关, top-k 才能真正按语义排序。这是工业 embedding 检索 (BGE / OpenAI text-embedding-3) 默认开 `normalize_embeddings=True` 的原因。
 
-接下来的章节里，**关键词命中次数 → BM25 → 向量相似度 → Cross-Encoder 重排序**，可以看作"打分函数"的一次次升级。从本章的 toy 起步，逐章替换打分方式，直到能稳定选出 top-k 段落再喂给 LLM。
+### Q3. c03 三步, 哪一步最脆弱?
 
-### Q2. 如果两段都包含"披露"两次，词袋向量会怎么算？它分得开"摘要式披露"和"详细披露"吗？
+**build_prompt 最脆弱**。retrieve 失败只是丢召回 (top-k 全错), call_llm 失败只是丢生成 (网络 / key 错 / 超时), 这两步失败模式**边界清晰**、可观测、可重试 — 监控告警可以精确定位是召回还是生成的问题; 但 build_prompt 模板的任何缺陷 (无引用跟踪、无 retry、无 streaming) 会**直接放大到 LLM 输出** — LLM 编一个 `[5]` 引用号, 而 prompt 里只有 `[1][2][3]`, 用户看到的就是一个看起来引用规范、实际全错的答案。
 
-词袋向量给两段的"披露"维度的值都是 2——分不开。
+这种 "看起来很对" 的错误是 RAG 系统最难排查的故障, 因为它在 prompt 层无法被检测, 只能靠输出侧的引用验证 (字符串匹配 / LLM-as-judge 扫答案里每个事实句是否贴 `[i]`) 才能拦下。即便验证出 `[5]` 是幻觉引用, 重试一次也可能得到 `[7]`, 因为 LLM 没有强制只能引用 prompt 里有的编号。
 
-**词袋丢了两类信息**：
-
-1. **位置信息**——"披露"在段首还是段尾、在哪个句子，对词袋向量没差别。
-2. **上下文信息**——"摘要式披露"和"详细披露"在词袋层都是"披露" + 一些别的词的组合，但组合方式（句法结构、上下文关联词）完全丢了。
-
-生产里要解决：
-
-- **真语义 embedding**(s04)——BGE 把整段文本压成 512 维 dense 向量，语义相近的段在向量空间里距离近，"摘要式披露"和"详细披露"的向量会自然分开。
-- **cross-encoder 精排**(s07)——把 query 和每段一起喂进 transformer，让模型看到"披露"在上下文里扮演什么角色。
-
-### Q3. 如果 LLM 答了一段不在 `<context>` 里的话（比如"按惯例审计费用通常为 50 万元")，怎么从工程上防住？
-
-三道防线：
-
-1. **Prompt 硬约束**——`build_prompt` 里加"若不在 <context> 内，回答「我不知道」"（本章已加）。这是最弱的一道防线，LLM 在压力下仍可能编故事。
-2. **输出侧引用检测**——生成完用字符串匹配 / LLM-as-judge 扫一遍答案里每个事实句，要求每句话末尾贴引用 `[i]`。没有引用的句子标红或丢弃。RAGFlow 的 `_draw_highlight` + `chunk_id` 关联就是这套。
-3. **答案渲染层**——UI 渲染时强制每句话末尾贴引用 `[i]`，没有引用的句子标红、不给用户看。这层不在引擎范围，是前端的事。
-
-本章只做了第 1 层；s08 会做第 2 层（工业 prompt 模板 + 拒答检测）；第 3 层是 UI 层的事，不在引擎范围。
+生产里必须加固: s08 的工业 prompt 模板加 `<|COMPLETE|>` 哨兵 + 明确拒答边界 ("只能引用 [1]-[3] 内的编号, 资料外回答「我不知道」"); 输出侧加引用验证 + 重试机制 (扫到幻觉引用号就拒绝回答); UI 渲染层强制每句话末尾贴引用, 没引用的句子标红或丢弃。s01 只做了 prompt 硬约束这一层, 留给后续章节填空。

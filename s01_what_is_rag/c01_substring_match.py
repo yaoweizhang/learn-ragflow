@@ -2,7 +2,7 @@
 """
 s01 / unit 01 — 朴素检索：按子串命中把段落拉回来。不调用 LLM。
 
-运行: python s01_what_is_rag/code_01_naive_keyword.py
+运行: python s01_what_is_rag/c01_substring_match.py
 需要: 无外部依赖；samples/disclosure.docx 存在
 """
 from pathlib import Path
