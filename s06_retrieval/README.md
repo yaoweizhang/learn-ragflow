@@ -1,285 +1,249 @@
-# s06 检索 (Retrieval) — BM25 + 向量召回的加权融合
+# s06 混合检索 — BM25 字面召回 + dense 语义召回的加权融合
 
-> **本章定位**：s06 是 RAG 在线链路的"召回入口"——把用户 query 投影到 s04/s05 已建好的 embedding 空间，先做 **dense 近邻**，再做 **BM25 字面打分**，最后按 `α` 加权融合成 top-k。详细定位见 s00 §1.4；RAGFlow 实现见本章末"## RAGFlow 实现"。
+[上一章 s05 → · 下一章 s07 → ... → s12]
+
+> *"纯 dense 漏字面 (型号 / 编号), 纯 BM25 漏同义 (营收 / 营业收入) — 两路并行 + 加权融合才稳"*
+>
+> **链路位置**: 在线检索链路的召回入口 (s05 索引 → **s06 召回** → s07 精排)
+> **代码文件**: c01_bm25.py · c02_hybrid_fusion.py
+
+> 环境准备: 见 root README §快速开始 — 代码 1 纯 stdlib; 代码 2 需 `pip install sentence-transformers` + 本地 BGE (`HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1` 走缓存)
 
 ---
 
-## 一、章节介绍
+## 问题
 
-### 1.1 核心定义：什么是混合检索？两条通道并行 + 加权融合
+s05 把 chunk 落盘成可查的索引, 但"查"这个动作还没定义: 用户敲一句 query, 系统要把它投影回已建好的 chunk 空间, 找出 top-k 最相关的段落。这一步就是**召回 (retrieval)**, 也是整条在线链路里最容易翻车的一环 — 因为**任何单一召回通道都有它的死穴**。
 
-**混合检索 (Hybrid Retrieval)** 是把两条异构的召回通道——**稀疏词法 (BM25)** 和 **embedding 语义 (cosine similarity)**——并行跑在同一份 chunk 集合上，按某种融合策略 (weighted_sum / RRF) 合并成一个 top-k 排序。它要解决的痛点是：**任何一路单独召回都会在某些 query 类型上翻车，两路互补才能稳定**。
+**第一, 纯 dense 漏字面**。s04 的 BGE dense 向量擅长语义近邻: query `营收` 能召回写着 `营业收入` 的 chunk, `内存` 能召回 `RAM`。但对精确型号 (`R3630 G5`)、编号 (`ZX-00123`)、专有术语, dense 会把它们拉偏到"语义相似但字面不对"的邻居 — 长 ID 在 embedding 空间里噪声大, 一个字符差异在 512 维里几乎不改变方向。用户想精确定位一个型号, dense 却给他一堆"看起来相关"的近似段。
+
+**第二, 纯 BM25 漏同义**。BM25 是纯统计的稀疏词法召回: 词项命中就打分 (tf + idf + 长度归一), 型号 / 编号 / 术语这类"字面强信号"它抓得极准, 可解释性也强 (每个分都能反推到具体 token)。但它对同义改写完全无能 — `内存` 和 `RAM` 在 BM25 下是 0 分, `营收` 和 `营业收入` 也互不命中。用户换个说法提问, BM25 就全 miss。
+
+**第三, 两路信号量纲不同, 不能直接相加**。就算你想"两路都要", 也不能简单把分加起来: BM25 累加分可能到几 (无界), dense cosine 落在 `[0, 1]`。直接相加会让 BM25 一边倒地主导排序, dense 的语义信号被淹没。融合前**必须先各自归一**, 再按一个权重 `α` 加权 — `α` 大偏语义, `α` 小偏字面。而 `α` 到底该取多少、是常数还是 per-query 入参, 又是一个必须面对的取舍。
+
+这三个问题合起来指向同一个解法: **混合检索 (hybrid retrieval)** — 把稀疏词法 (BM25) 和稠密语义 (cosine) 两条通道并行跑在同一份 chunk 上, 各自归一后按 `α` 加权融合成一个 top-k。BM25 救 dense 漏字面, dense 救 BM25 漏同义, 两条通道 1+1>2。s06 的任务就是把这条"两路召回 + 加权融合"的主干用手写代码跑通 — 先写 BM25 单路 baseline, 再叠 dense 做融合, 让 `α` 这个旋钮的作用肉眼可见。
+
+---
+
+## 解决方案
+
+s06 用 **两个递进的脚本** 把混合检索跑起来。代码 1 先把 BM25 单路召回做出来, 代码 2 把它和 dense cosine 融合成完整的 hybrid。
 
 ```
-                    query: "应收账款 计提"
-                            │
-                ┌───────────┴───────────┐
-                ▼                       ▼
-        BM25 (稀疏/字面)          dense cosine (稠密/语义)
-        tf + idf + 长度归一       BGE → 512-d vec → cosine
-        强: 型号 / 编号 / 术语    强: 同义词 / 改写 / 语义近邻
-                │                       │
-                │ 各自归一 [0, 1]        │
-                └───────────┬───────────┘
-                            ▼
-                  score = α · vec + (1−α) · bm25_norm
-                            │
-                            ▼
-                    top-k hits (送 s07 rerank)
+代码 1 (BM25 单路)                代码 2 (BM25 + dense 融合)
+┌──────────────────┐           ┌────────────────────────┐
+│ chunk 集合        │           │ 复用 c01 的 BM25        │
+│      │            │           │      │                 │
+│      ▼            │           │      ▼                 │
+│ tokenize (中英)   │  ───────▶ │ BM25 分 + dense cosine  │
+│      │            │           │ 各自归一 [0,1]          │
+│      ▼            │           │      │                 │
+│ BM25 打分 top-k   │           │ α·vec + (1-α)·bm25_norm │
+└──────────────────┘           └────────────────────────┘
+  只有字面, 漏同义               两路互补, 但 α 写死
 ```
 
-把它放进 RAG 全景看：**s06 是把"用户问题"投影回"已索引 chunk 空间"的第一步**。s05 把 chunks 落盘成可查的索引，但查询的入口 (ann 召回 / bm25 召回 / 融合权重） 都是 s06 的事。如果只用 dense，精确型号（`"R3630 G5"`）会被拉偏到语义近邻；如果只用 BM25，改写（`"营收" vs "营业收入"`）永远找不到。**两路并行 + 加权融合 = 鲁棒召回**。
-
-#### 稀疏 vs 稠密：两条通道的本质差异
-
-s06 的代码把所有事都写在一个文件里，但拆开看是两种**性质相反**的检索通道：
-
-| 维度 | 稀疏 / BM25 | 稠密 / dense cosine |
-|---|---|---|
-| 表示 | 高维 0-1 稀疏向量(词袋) | 低维稠密向量(BGE 512 维) |
-| 核心信号 | 词项命中 (tf + idf + 长度归一) | 语义方向(内积 / cosine) |
-| 命中同义词 | **不能** (`内存` ≠ `RAM`) | **能** (embedding 把它们拉到近) |
-| 命中型号 / 编号 | **强** (字面匹配) | **弱** (长 ID 在 embedding 里噪声大) |
-| 训练成本 | 无 (纯统计) | 高 (Transformer + 千万级句对) |
-| 可解释性 | **强** (反推到具体 token) | **弱** (512 维每个分量无字面含义) |
-| 量化分范围 | 0 ~ 几十 (无界) | 0 ~ 1 (cosine,归一化后等价于内积) |
-
-**关键 takeaway**：两路信号**量纲不同**——BM25 累加分可能到几，cosine ∈ [0，1]。直接相加会偏 BM25 一边。**融合前必须归一**——本教程 BM25 除以 `max(bm_scores)` 落 [0，1]，dense 已经是 cosine ∈ [0，1]。
-
-#### 与传统信息检索的对应
-
-混合检索和传统 IR 的演进关系正好对应 RAG 召回链路的"从单通道到多通道"：
-
-| 检索形态 | 通道数 | 典型融合 | 适用阶段 |
+| 脚本 | 解决什么 | 留下什么局限 | 何时用 |
 |---|---|---|---|
-| BM25-only (Lucene / ES `match`) | 1 | 单分排序 | 全文搜索、关键词型 FAQ |
-| dense-only (FAISS / Chroma `query`) | 1 | cosine / 内积 | 语义近邻、KNN 推荐 |
-| **weighted_sum fusion** (s06 MVP) | 2 | `α·v + (1-α)·b_norm` | 教学 / 简单混合 |
-| RRF (Reciprocal Rank Fusion) | 2 | `Σ 1/(rank_i + c)` | Milvus / ES 多通道融合 |
-| 生产 3-layer | 3+ | DB `weighted_sum` + app `rerank_with_knn` + `rank_fea` | 生产 |
+| `c01_bm25.py` | 手写 BM25 字面召回 (tf + idf + 长度归一) | 漏同义 (`内存` ≠ `RAM`); 中文分词 naive; 无倒排索引 | BM25-only baseline / 关键词型检索 / 教学 |
+| `c02_hybrid_fusion.py` | BM25 + dense cosine α 加权融合 | `α` 写死 0.95; 无第三层信号; 无精排 | 教学混合检索 / 粗排入口 / s07 精排的底座 |
 
-s06 的 MVP 是这张表的第三行——**两通道 + 加权融合**，α 是唯一的旋钮。第四章要学的 RRF / 三层融合是它的扩展版本。
-
-### 1.2 真实世界的问题：纯 dense 漏字面 / 纯 BM25 漏同义 / α 是常数还是入参
-
-3 类典型失败（纯 dense 漏字面 / 纯 BM25 漏同义 / α 是常数还是入参）详见 §三 "做错了什么"。
+两脚本的关系是一条**主干**: 代码 1 把"chunk 集合 → BM25 top-k"做出来, 暴露"漏同义"的死穴 — `营收` 找不到 `营业收入`; 代码 2 把 代码 1 的 BM25 分和 s04 BGE 的 dense cosine 在 `hybrid_topk` 里按 `α` 加权融合, 暴露"`α` 写死 + 无精排"的局限 — 同一个 `α` 对术语型和概念型 query 一刀切, 粗排 top-k 还没经过 cross-encoder 重打分。**每一步的局限, 都是下一步 (代码 2 / s07) 要解决的入口**。
 
 ---
 
-## 二、BM25 词法召回 (hand-written BM25 + 中英分词）：[c01_bm25.py](c01_bm25.py)
+## 代码 1: BM25 词法召回 ([c01_bm25.py](c01_bm25.py))
 
-入口：[`c01_bm25.py`](c01_bm25.py)
+### 工作原理
 
-在内存里对 chunk 集合跑一遍 BM25，拿到"字面命中"分。
-code_02 会把这里的 BM25 分和 dense cosine 一起做加权融合，进入混合检索。
+**做一件事**: 在内存里对 chunk 集合跑一遍手写 BM25, 拿到每条 chunk 的"字面命中"分, 按分降序取 top-k。
 
-### 2.1 手写 BM25 召回器（tokenize + 类 + 打分 + topk）
+**5 步**:
+1. 内联 `pypdf` + `python-docx` 加载 `samples/` (复刻 s02 loader), 再按 500 字符 cap 中英句界切成 chunk (复刻 s03 chunker) — 得到 34 个自包含 chunk
+2. `tokenize(text)` — 中文按 1-2 字滑动窗口 + 英文/数字单词拆分 (整体 lowercase), 纯中文段落也有 df 命中
+3. `BM25(docs, k1=1.5, b=0.75)` — 构造期一次性算 `df` / `tf` / `avgdl`, 查询期只跑打分公式的 `tf` 部分
+4. `score(query)` — 对每个 doc 算 BM25 累加分 (`IDF * tf * (k1+1) / (tf + k1*(1 - b + b*dl/avgdl))`)
+5. `bm25_topk(docs, query, k)` — 按 BM25 分降序, 取分 > 0 的前 k 条
 
-`code.py` 实现一个 Robertson BM25 召回器：拿到 `docs` 后离线算 df/tf/IDF，query 来时按词项打分、按 BM25 分降序取 top-k。
+```python
+# 中间片段: BM25 打分公式 (TF 饱和 k1 + 长度归一 b)
+for q in qterms:
+    if q not in self.df:
+        continue
+    idf = math.log((self.N - self.df[q] + 0.5) / (self.df[q] + 0.5) + 1)
+    for i, tf in enumerate(self.tf):
+        dl = sum(tf.values())
+        denom = tf[q] + self.k1 * (1 - self.b + self.b * dl / self.avgdl)
+        scores[i] += idf * tf[q] * (self.k1 + 1) / denom
+```
 
-- `tokenize(text)` —— 中文按 1-2 字滑动窗口 + 英文/数字单词拆分（lowercase），纯中文段落也有 df 命中；
-- `BM25(docs, k1=1.5, b=0.75)` —— 构造期一次性算 `df` / `tf` / `avgdl`，查询期只跑 score 公式的 `tf` 部分；
-- `score(query)` —— 对每个 doc 算 BM25 累加分（`IDF * tf * (k1+1) / (tf + k1*(1 - b + b*dl/avgdl))`）；
-- `bm25_topk(docs, query, k)` —— 按 BM25 分排序，取分 > 0 的前 k 条；
-- `main()` —— 内联 pypdf + python-docx + 500 字符 cap 句界切，跟 s02 code_01 / s03 同一套"加载器复刻"取舍，跑固定 query `"应收账款 计提"` 打印 BM25 top-5。
+**完整函数**:
 
-### 2.2 单条命令出 34 chunks BM25 top-5
+```python
+class BM25:
+    """Robertson BM25: token-level TF-IDF with TF saturation (k1) + length norm (b)."""
+
+    def __init__(self, docs: list[dict], k1: float = 1.5, b: float = 0.75):
+        self.docs = docs
+        self.k1, self.b = k1, b
+        self.N = len(docs)
+        self.avgdl = sum(len(tokenize(d["text"])) for d in docs) / max(self.N, 1)
+        self.df: Counter = Counter()
+        self.tf: list[Counter] = []
+        for d in docs:
+            tf = Counter(tokenize(d["text"]))
+            self.tf.append(tf)
+            for term in tf:
+                self.df[term] += 1
+
+    def score(self, query: str) -> list[float]:
+        qterms = tokenize(query)
+        scores = [0.0] * self.N
+        for q in qterms:
+            if q not in self.df:
+                continue
+            idf = math.log((self.N - self.df[q] + 0.5) / (self.df[q] + 0.5) + 1)
+            for i, tf in enumerate(self.tf):
+                dl = sum(tf.values())
+                denom = tf[q] + self.k1 * (1 - self.b + self.b * dl / self.avgdl)
+                scores[i] += idf * tf[q] * (self.k1 + 1) / denom
+        return scores
+
+
+def bm25_topk(docs: list[dict], query: str, k: int = 5) -> list[dict]:
+    """对 docs 跑 BM25, 返回按 BM25 分降序的 top-k 命中。"""
+    bm = BM25(docs)
+    scores = bm.score(query)
+    order = sorted(range(len(docs)), key=lambda i: -scores[i])
+    return [
+        {"text": docs[i]["text"], "source": docs[i]["source"],
+         "page": docs[i].get("page"), "chunk_id": docs[i].get("chunk_id"),
+         "bm25": scores[i]}
+        for i in order[:k] if scores[i] > 0
+    ]
+```
+
+### 试一下
 
 ```bash
 python s06_retrieval/c01_bm25.py
 ```
 
-输出示例：
+固定 query `应收账款 计提`, 打印 34 chunks 上的 BM25 top-5:
 
 ```
 loaded 34 chunks from samples/
 query='应收账款 计提' → BM25 top-5:
-  [disclosure.docx#-] bm25=... | ...
+  [disclosure.docx#-] bm25=4.360 | 报告期内，公司实现营业收入人民币 28.74 亿元，同比增长 31.6%；归属于上市公司股东的净利润 3.92 亿元，同
+  [server_whitepaper.pdf#3] bm25=3.998 | 四、应用场景 云数据中心：作为通用计算节点支撑私有云与混合云平台，配合虚拟化与容器平台提供高 密度的虚拟机/容器实例；典
+  [disclosure.docx#-] bm25=3.896 | 三、供应链风险：高端 GPU 与专用 AI 芯片供应受国际地缘政治影响，可能导致部分订单交付延迟。公司已建立国产化替代方
+  [disclosure.docx#-] bm25=3.871 | 展望 2025 年，公司将围绕"行业大模型 + 智能体平台 + 行业知识库"三位一体战略，持续加大研发投入，预计 202
+  [disclosure.docx#-] bm25=2.828 | 按业务板块划分，2024 年公司收入结构如下：智能算力基础设施业务收入 12.86 亿元，占比 44.7%，同比增长 2
 ```
 
-chunk 数与 s05 code_01 一致（34），但走的不是向量空间，是字面 token 命中。
+**观察**: 34 是 4 页白皮书 + 27 段披露报告切出的 chunk (跟 s03/s04/s05 一致); BM25 分严格递减。**注意第二个 hit 是 `server_whitepaper.pdf#3`** — BM25 不区分 PDF / DOCX 来源, 只要词项命中就拉过来。每个分都能反推到具体 token 的 tf, 可解释性远超向量检索。
 
-### 2.3 BM25 top-5 字面命中跨 PDF / DOCX 来源
+### 为什么不只写这一种
 
-Code_01 的预期输出（`query='应收账款 计提'`）：
-
-```
-loaded 34 chunks from samples/
-query='应收账款 计提' → BM25 top-5:
-  [disclosure.docx#-] bm25=4.360 | 报告期内,公司实现营业收入人民币 28.74 亿元,同比增长 31.6%;归属于上市公司股东的净利润 3.92 亿元,同
-  [server_whitepaper.pdf#3] bm25=3.998 | 四、应用场景 云数据中心:作为通用计算节点支撑私有云与混合云平台...
-  [disclosure.docx#-] bm25=3.896 | 三、供应链风险:高端 GPU 与专用 AI 芯片供应受国际地缘政治影响...
-  [disclosure.docx#-] bm25=3.871 | 展望 2025 年,公司将围绕"行业大模型 + 智能体平台 + 行业知识库"三位一体战略...
-  [disclosure.docx#-] bm25=2.828 | 按业务板块划分,2024 年公司收入结构如下:智能算力基础设施业务收入 12.86 亿元...
-```
-
-34 是 4 页白皮书 + 27 段披露报告 → 34 个 chunk（跟 s03 / s04 / s05 一致）；BM25 分严格递减。**注意第二个 hit 是 `server_whitepaper.pdf#3`**——BM25 不区分 PDF / DOCX 来源，只要词项命中就拉过来。
-
-### 2.4 没语义、中文分词 naive、无字段加权、无倒排、无 query expansion
-
-本段做对了什么 — 用 ~100 行手写 BM25 + 中英 1-2 字滑动窗口,把"字面 token 命中 → 分"这条路跑通了,纯 stdlib、无外部 embedding 依赖,k1 / b 两个超参可调,每个命中的分都能反推到具体 token tf,可解释性远超向量检索。
-
-
-- **没语义匹配**：`"内存"`和 `"RAM"`、`"营收"`和 `"营业收入"`在 BM25 下是 0 分；改写 / 同义 / 跨语种召回是 BM25 的死穴——这是 code_02 必须叠 dense cosine 的根本原因；
-- **中文分词太 naive**：1-2 字滑动窗口会产生大量噪声 token(`"应收"`、`"账款"`、`"应"`、`"收"`），df 散在海量 1-字 token 上 → 真正有判别力的 2-字词被稀释；生产应该走 `jieba` 之类带词典的 tokenizer；
-- **没字段加权 / 没 BM25F**：所有 token 同权；title / heading / body 的 boost 要手工实现，生产代码把这部分挪到了 `rank_feature` 第三层信号；
-- **构造期没有倒排索引**：每次查询还是要扫所有 doc 的 tf 才能算分，chunk 数大时会成瓶颈；生产里 `bm25s` / `rank_bm25` / `pyserini` 都建倒排表，查询 O(|q| * avg_postings) 而不是 O(|q| * N）；
-- **没有 query expansion / 同义词扩展**：`"AI"` 查不到 `"人工智能"`；生产里靠 query analyzer 做改写、拼写纠正、term drop。
-
-
-- 中文 chunk 都 0 分：确认 `tokenize()` 的 1-2 字滑动窗口没被改成空；中文段落的分词质量完全靠它。
-- 想验 1 字 vs 2 字切分的差别：把 `tokenize` 改成只保留 2 字切分（不要 1 字），再跑一遍 `bm25_topk`，对比两组 top-5。
-- `ModuleNotFoundError`：本节无外部 embedding 依赖；只靠 Python stdlib 跑。如果 BGE 还没装好不会影响本节。
-
-下一章 code_02 如何解决 — 把这段 BM25 跟 s05 的 dense cosine 在 `hybrid_topk` 里按 `α` 加权融合,BM25 救 dense 漏字面,dense 救 BM25 漏同义,两条通道 1+1>2;alpha 走默认 0.95(dense 主导),生产里改成 per-query 调。
+BM25 是纯字面召回 — `内存` 找不到 `RAM`, `营收` 找不到 `营业收入`, 改写 / 同义 / 跨语种召回是它的死穴; 而且中文 1-2 字滑动窗口分词 naive (噪声 token 稀释判别力), 构造期没建倒排索引 (chunk 多时逐 doc 扫 tf 成瓶颈)。同义召回的缺口要靠 代码 2 叠一路 dense cosine 来补。
 
 ---
 
-## 三、混合检索 fusion (BM25 + dense cosine， α-weighted)：[c02_hybrid_fusion.py](c02_hybrid_fusion.py)
+## 代码 2: 混合检索 fusion ([c02_hybrid_fusion.py](c02_hybrid_fusion.py))
 
-入口：[`c02_hybrid_fusion.py`](c02_hybrid_fusion.py)
+### 工作原理
 
-把 code_01 的 BM25 字面分和 dense cosine 相似度做加权融合，
-让"完全一致关键词"和"语义近邻"两条信号同时参与排序。
+**做一件事**: 把 代码 1 的 BM25 字面分和 dense cosine 语义分各自归一到 `[0, 1]`, 按 `α` 加权融合成一个 top-k, 让"完全一致关键词"和"语义近邻"两条信号同时参与排序。
 
-### 3.1 可注入的 hybrid_topk + α 加权 + 各自归一
+**5 步**:
+1. 用 `importlib` 加载 代码 1 (目录以数字开头, 普通 `import` 报 SyntaxError), 复用它的 `BM25` / `tokenize` / `_load_chunks` — 不重写、不跨章节
+2. 用 s04 同款本地 BGE (`bge-small-zh-v1.5`, `normalize_embeddings=True`) 把 34 chunk 和 query 编码成 512 维向量
+3. `dense_score_fn(chunk) -> float` — 由调用方注入, 本节就地实现"对每条 chunk 暴力算 cosine" (chunk 量级小、都在内存); 生产里换成 chroma `col.query` 或 ES `knn` 一行 import 替换
+4. **归一 + 加权**: BM25 分除以 `max(bm25_scores)` 落 `[0, 1]`, dense cosine 已是 `[0, 1]`, 按 `final = α * vec + (1 - α) * bm25_norm` 融合; 默认 `α=0.95` 偏向量, 镜像生产 `FusionExpr("weighted_sum", {"weights": "0.05,0.95"})`
+5. 打印 hybrid top-3, **两个子分都可见** (`vec` / `bm25` / `final`), 方便看是 dense 还是 BM25 把某条 chunk 拉上来的
 
-`code.py` 实现一个可注入的 `hybrid_topk(docs, query, query_vec, dense_score_fn, k, alpha)`：
+```python
+# 中间片段: 各自归一 + α 加权融合
+bm_scores = bm.score(query)
+bm_max = max(bm_scores) if any(bm_scores) else 1.0
+for i, d in enumerate(docs):
+    v = float(dense_score_fn(d))
+    b = bm_scores[i] / bm_max if bm_max > 0 else 0.0
+    combined.append({..., "dense": v, "bm25": bm_scores[i],
+                     "score": alpha * v + (1 - alpha) * b})
+```
 
-- `dense_score_fn(chunk) -> float` —— 由调用方注入，本节就地实现"对每条 chunk 暴力算 cosine"(chunks 都在内存里、量级小）。生产里换成 chroma `col.query` 或 ES `knn`；
-- `BM25(docs).score(query)` —— 复用 code_01 的 hand-written BM25，拿到每个 chunk 的字面分；
-- **归一 + 加权**：BM25 分除以 `max(bm25_scores)` 落到 [0，1]，dense cosine 已经是 [0，1](BGE `normalize_embeddings=True`)，按 `final = alpha * vec + (1 - alpha) * bm25_norm` 融合；默认 `alpha=0.95` 偏向量，mirrors 生产代码 `FusionExpr("weighted_sum", {"weights": "0.05,0.95"})` 的权重大小关系（dense=0.95， keyword=0.05）；
-- `main()` —— 内联 pypdf + python-docx + 500 字符 cap 切块 + 本地 BGE + code_01 的 BM25，跑固定 query `"应收账款 计提"`，打印 hybrid top-3，**两个子分都可见**（不只是融合分）。
+**完整函数**:
 
-`hybrid_topk` 是这一章的核心 API：code_02 就是把"怎么把两路召回合在一起"封装成一个独立函数，下一章（s07）会在这上面叠 `rerank` / `rerank_with_knn`。
+```python
+def hybrid_topk(
+    docs: list[dict],
+    query: str,
+    query_vec: list[float],
+    dense_score_fn,
+    k: int = 5,
+    alpha: float = 0.95,
+) -> list[dict]:
+    """对 docs 算 BM25 分 + dense 分, 各自归一 [0,1] 后 alpha 加权融合, 返回 top-k.
 
-### 3.2 c02 命令与含子分的期望输出
+    `dense_score_fn(chunk) -> float` 由调用方注入 (可以是 chroma query、暴力
+    遍历、自己实现的近似 KNN 等), 保证 unit 02 不绑死任何具体向量库.
+    """
+    bm = BM25(docs)
+    bm_scores = bm.score(query)
+    bm_max = max(bm_scores) if any(bm_scores) else 1.0
+
+    combined = []
+    for i, d in enumerate(docs):
+        v = float(dense_score_fn(d))
+        b = bm_scores[i] / bm_max if bm_max > 0 else 0.0
+        combined.append({
+            "text": d["text"],
+            "source": d["source"],
+            "page": d.get("page"),
+            "chunk_id": d.get("chunk_id"),
+            "dense": v,
+            "bm25": bm_scores[i],
+            "score": alpha * v + (1 - alpha) * b,
+        })
+    combined.sort(key=lambda x: -x["score"])
+    return combined[:k]
+```
+
+### 试一下
 
 ```bash
-python s06_retrieval/c02_hybrid_fusion.py
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python s06_retrieval/c02_hybrid_fusion.py
 ```
 
-输出示例（实测，alpha=0.95）：
-
-```
-loaded 34 chunks from samples/
-query='应收账款 计提', alpha=0.95 (dense-dominant)
-hybrid top-3 (with both sub-scores visible):
-  [disclosure.docx#-] final=0.946 = 0.95*vec(0.957) + 0.05*bm25(1.413) | ...
-  [disclosure.docx#-] final=0.910 = 0.95*vec(0.922) + 0.05*bm25(1.310) | ...
-  ...
-```
-
-每个 hit 同时打出 `vec` / `bm25` / `final`，方便看"是 dense 拉上去的还是 BM25 拉上去的"。
-
-### 3.3 final ≈ α·vec + (1−α)·bm25_norm 的分项证据
-
-Code_02 的预期输出（`query='应收账款 计提'`，`alpha=0.95`）：
+固定 query `应收账款 计提`, `alpha=0.95`, 打印含子分的 hybrid top-3:
 
 ```
 loaded 34 chunks from samples/
 query='应收账款 计提', alpha=0.95 (dense-dominant)
 hybrid top-3 (with both sub-scores visible):
-  [disclosure.docx#-] final=0.503 = 0.95*vec(0.477) + 0.05*bm25(4.360) | 报告期内,公司实现营业收入人民币 28.74 亿元,同比增长 31.6%...
+  [disclosure.docx#-] final=0.503 = 0.95*vec(0.477) + 0.05*bm25(4.360) | 报告期内，公司实现营业收入人民币 28.74 亿元，同比增长 31.6%；归属于上市公司股东的净利润 3.92 亿元，同
   [disclosure.docx#-] final=0.487 = 0.95*vec(0.513) + 0.05*bm25(0.000) | 第二节 主要财务数据
-  [disclosure.docx#-] final=0.471 = 0.95*vec(0.475) + 0.05*bm25(1.727) | 本报告所涉及财务数据已经立信会计师事务所审计...
+  [disclosure.docx#-] final=0.471 = 0.95*vec(0.475) + 0.05*bm25(1.727) | 本报告所涉及财务数据已经立信会计师事务所审计，并出具标准无保留意见审计报告（信会师报字 [2025] 第 ZX-0012
 ```
 
-`final` 范围 [0.4， 0.6] 而不是 [0.9， 1.0] 的根因是 s04 §2.1 提的 cosine 归一化后 top-1 score 通常在 0.5 而不是 1.0(BGE 编码"应收账款 计提"和"1。应收账款"标题的向量微差）；`α=0.95` 时 dense cosine 主导，BM25 只在 dense 几乎打平时（差距 < 5%）做 tie-breaker。**第二个 hit BM25=0.000 是关键 evidence**——纯 dense 召回把它拉到第二位，纯 BM25 召回根本不会看它；`α=0.95` 让"语义近但字面无"的 chunk 保留在 top-k。
+**观察**: `final` 落在 `[0.4, 0.6]` 而非 `[0.9, 1.0]` 的根因是 s04 提过的 cosine 归一化后 top-1 通常在 0.5 左右 (BGE 编码 query 与标题的向量微差); `α=0.95` 时 dense 主导, BM25 只在 dense 几乎打平时做 tie-breaker。**第二个 hit `bm25=0.000` 是关键证据** — 纯 dense 把它拉到第二位, 纯 BM25 根本不会看它; `α=0.95` 让"语义近但字面无"的 chunk 保留在 top-k。
 
-### 3.4 per-query α 缺失、无第三层信号、无精排、无分页
+### 为什么不只写这一种
 
-本段做对了什么 — 把 01 的 BM25 跟 s05 的 dense cosine 在 `hybrid_topk(docs, query, query_vec, dense_score_fn, k, alpha)` 里按 α 加权融合,两路先各自归一 [0, 1] 再相加;API 解耦(`dense_score_fn` 注入)让单元测试可以直接喂 list[dict] + 暴力 cosine,production 换 chroma / ES 一行 import 替换;`α = 0.95` 时 dense 主导但 BM25 仍在 dense 几乎打平时把字面命中顶上来,默认权重与 RAGFlow `weighted_sum` 0.95/0.05 同序。
-
-
-- **没有 per-query alpha 调度**：写死 `alpha=0.95` 对所有 query 同权；事实型查询（"应付账款多少"）应该更偏 BM25(alpha 低），概念型查询（"营收下滑的原因"）更偏 dense(alpha 高）——生产代码把 `vector_similarity_weight` 做成检索接口的入参，由调用方按 query 类型传；
-- **假设两路信号都存在**：如果 docs 是空、或 dense_score_fn 全 0，hybrid_topk 仍然返回结构但都是 0 分；没有"任一路缺失就退化成另一路"的兜底——生产里 `Dealer.search` 在 ES 全文召回失败时会跳过 fusion 单独走向量；
-- **没有第三层信号**：生产代码的 `sim = tkweight*tksim + vtweight*vtsim + rank_fea` 里 `rank_fea` 是 PageRank + tag boost，本节完全没有——权威文档没被抬高，带标签的 chunk 也没特殊对待；
-- **没有精排**：`hybrid_topk` 直接返回粗排 top-k；生产代码在粗排后再 `rerank_with_knn(tkweight, vtweight, rank_fea)` 用 cross-encoder 重打分。本章 MVP 不做重排序，s07 会接上；
-- **没有分页 / 候选窗口对齐**：固定 top-5，没有 `_rerank_window(page_size, top)` 这种"块大小 = page_size 整数倍"的工程细节——本节不深陷这块，s07+ 才会碰到。
-
-
-- `ModuleNotFoundError: No module named 'sentence_transformers'`：BGE 依赖；`pip install sentence-transformers` 兜底；离线环境先 `pip download` 到本地、`HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1` 强制走本地缓存。
-- `OSError: [E050] Can't find model 'BAAI/bge-small-zh-v1.5'`：HuggingFace Hub 不可达；构建镜像时预下载模型到 `~/.cache/huggingface/hub/`，或 `HF_ENDPOINT=https://hf-mirror.com` 走国内镜像。
-- `UnicodeEncodeError: 'gbk' codec can't encode character`：Windows 控制台编码问题，跑前 `set PYTHONIOENCODING=utf-8`(s05 / s06 / s07 同问题）。
-- `alpha=0` 或 `alpha=1` 跑出意料的结果：把 α 调到极端值时，dense 几乎不参与排序（`α=0`）或 BM25 不参与（`α=1`）；见下方"思考题答案"的两条实测对比。
-- 想看 `α` sweep：把 `hybrid_topk` 调三次（`α=0.05 / 0.5 / 0.95`），对比三组 top-3 的 `chunk_id` 是否重叠——这是最简单的 per-query alpha sweep 实验。
+`hybrid_topk` 把 `α` 写死 0.95, 对所有 query 一刀切 — 事实型查询 (`应付账款多少`) 该偏 BM25, 概念型 (`营收下滑的原因`) 该偏 dense, `α` 必须做成 per-query 入参; 而且它只返回粗排 top-k, 没有第三层 rank_fea 信号 (PageRank / tag boost), 也没有 cross-encoder 精排。粗排上叠一层重排, 是 s07 要解决的入口。
 
 ---
 
-## 四、核心函数一览
+## 接下来
 
-| 函数 | 文件 | 输入 | 输出 | 一句话解释 |
-|---|---|---|---|---|
-| `tokenize(text)` / `_split_long(text, max_chars)` / `_chunk_by_paragraph(docs, max_chars=500)` | `c01_bm25.py` | `str` / `list[dict]` | `list[str]` / `list[dict]` | 复制 s03 chunker;中英分词 + 句界切 + 500 字符 cap |
-| `_pdf(path)` / `_docx(path)` / `_load_chunks()` | `c01_bm25.py` | `Path` | `list[{text, page, source, chunk_id}]` | 复制 s02 loader + s03 chunker;在 01 内自包含 |
-| `BM25` (class) | `c01_bm25.py` | `list[list[str]]` | — | 手写 BM25:`__init__(corpus)` 算 IDF + avgdl;`score(query_tokens, doc_tokens)` 算每 doc 的 BM25 分 |
-| `bm25_topk(docs, query, k=5)` | `c01_bm25.py` | `list[dict], str, int` | `list[{chunk, bm25}]` | 用 `BM25` 给每个 chunk 打 BM25 分,降序取 top-k |
-| `main()` (01) | `c01_bm25.py` | — | 打印 BM25 top-k | 01 演示入口:BM25-only baseline |
-| `_model()` / `_embed(texts)` / `_cosine(a, b)` | `c02_hybrid_fusion.py` | `list[str]` / `(list, list)` | `list[list[float]]` / `float` | 复制 s04 BGE encode;cosine 用内积(已 L2 归一化) |
-| `hybrid_topk(docs, query, query_vec, dense_score_fn, k, alpha)` | `c02_hybrid_fusion.py` | `(list, str, list, callable, int, float)` | `list[{chunk, bm25, dense, score}]` | 核心公式:`final = α * dense_norm + (1-α) * bm25_norm`;dense 注入而非硬写 |
-| `main()` (02) | `c02_hybrid_fusion.py` | — | 打印 BM25 vs dense vs hybrid 三组 top-k | 02 演示入口;离线镜像环境 `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1` 跑 |
+s06 是在线检索链路的召回入口: 代码 1 把 BM25 字面召回跑通, 代码 2 把它和 dense cosine 融合成鲁棒的 hybrid 粗排。但每一步都留下脆弱点, 这些是后续章节的填空目标:
 
-## 五、跨代码 schema 设计取舍
+- **代码 1 BM25 漏同义 + 分词 naive** — `内存` 找不到 `RAM`, 1-2 字滑动窗口噪声大; 前者靠 代码 2 叠 dense 补, 后者生产里换 `jieba` 带词典 tokenizer + 倒排索引 (`bm25s` / `pyserini`)。
+- **代码 2 `α` 写死 + 无第三层信号** — 同一个 `α` 对术语型和概念型 query 一刀切; 生产把 `vector_similarity_weight` 做成 API 入参, 并加 `sim = tkweight*tksim + vtweight*vtsim + rank_fea` 的 PageRank / tag boost 第三层信号。
+- **代码 2 只出粗排, 无精排** — `hybrid_topk` 的 top-k 是召回粗排, "对不对"还得靠精排。
 
-为什么 fusion 公式是 `α * vec + (1-α) * bm25_norm` 而不是 RRF / concat / max？几个常见取舍的折中：
-
-- **weighted_sum vs RRF**：`weighted_sum` 直接用各通道归一化后的分做线性加权，结果区间直观（`[0,1]`）、可解释、能叠加第三层信号；RRF(`Σ 1/(rank_i + 60)`）只看排名不看分，加 PageRank / tag boost 时得另起一条管线。**生产代码的两阶段都是线性加权**——DB `FusionExpr("weighted_sum", {"weights": "0.05,0.95"})` + app `tkweight*tksim + vtweight*vtsim + rank_fea`，链路简单、可扩展。本教程选 weighted_sum 是为了演示"分相加"这个最朴素的信号叠加。
-- **α=0.95 vs α=0.5**：`α=0.5` 是"six-of-one-half-dozen-of-the-other"的折中默认值，本教程选 `α=0.95` 是因为 demo 用的 query(`"应收账款 计提"`）是**术语型密集场景**——dense cosine 在 BGE 编码后已经把相关 chunk 拉得很近，BM25 在 `1 - α = 0.05` 的权重下还能在 dense 几乎打平时把字面命中顶上来。**调小 α 到 0.5 的副作用**：`"营收"` / `"营业收入"` 这种同义场景里 dense 主导会让 BM25 的字面优势稀释。**通用 API 必须把 α 做成人参**。
-- **dense_score_fn 注入 vs 内部硬写**：`hybrid_topk` 接 `dense_score_fn(chunk) -> float` 而不是绑死 chroma / ES / numpy，**让单元测试可以直接喂 `list[dict]` + 暴力 cosine**。生产替换为 `col.query` / `knn_search` 一行 import 替换，s06 的 MVP 不绑死任何具体向量库。
-- **不归一 vs 各自归一 [0，1]**：BM25 累加分可能到几，cosine ∈ [0，1]。**直接相加 → BM25 一边倒**。必须先各自归一——本教程 BM25 除以 `max(bm_scores)`、dense 已经是 cosine ∈ [0，1](BGE `normalize_embeddings=True`)。
-- **不存 chunk_id vs 保留 chunk_id**：fusion 后命中结构带 `chunk_id = {source}#{page}#p{n}`，跟 s05 的 `chunk_id` 命名一致，下一章（s07）做 rerank / chunk 拉取直接复用——**全链路 ID 守恒**是 RAG pipeline 的关键约定。
-
-如果你的场景需要**第三层信号**（权威文档 / 标签 boost），就把 `hybrid_topk` 扩成 `final = α·v + (1-α)·b + γ·rank_fea`，γ 是 PageRank / tag cosine 的权重——生产代码的 `sim = tkweight*tksim + vtweight*vtsim + rank_fea` 就是这个思路。
-
-## 六、跨代码调度与契约
-
-c01 跑 BM25（纯字面，无外部依赖），c02 把 c01 的 BM25 + s04 BGE 的 dense cosine 在 `hybrid_topk` 里拼成加权融合。两者通过同一份 chunk 列表对齐——c01 输出 `{chunk, bm25}`，c02 拿 `dense_score_fn(chunk)` 算 dense 分，两者按 `chunk_id` 配对后做加权融合，得到最终排序。**s07 拿到 s06 的输出后，直接做 rerank 精排 + chunk 拉取，不需要重算 BM25 或 dense**——这是把"sparse 算过 / dense 算过"两件事固化在 s06 输出的红利。
-
-## RAGFlow 实现
-
-RAGFlow 的混合检索在 `rag/search.py` 的 `search()` 函数里：`FusionExpr` 类负责"BM25 + dense 加权融合"，公式是 `alpha * vec_score + (1 - alpha) * bm25_score`，alpha 可按 query 类型动态调（事实型偏 BM25，概念型偏 dense）。
-
-**设计取舍**：RAGFlow 把"alpha 调度"提到运行时（per-query 调），不是写死。这跟 s06 toy 的 `alpha=0.5` 固定值差一档——alpha 应该在 query routing 阶段根据 query 类别（factual / conceptual / multi-hop）选不同值。
-
-**整体拓扑**：(1) 01 走 `samples/ → load → chunk → BM25(corpus)` 拿 BM25 分 → (2) 02 拿 query → `s04._embed(query)` 拿 query 向量 → (3) `hybrid_topk(docs, query, query_vec, dense_score_fn, k, alpha)` 按 `α * dense + (1-α) * bm25_norm` 加权融合 → (4) 输出 `{chunk, bm25, dense, score}` 列表给 s07 精排。**生产差异**：RAGFlow 把 α 提到运行时 per-query 调(事实型偏 BM25、概念型偏 dense),s06 toy 写死 `α=0.95`(术语型密集场景);另外 RAGFlow 加第三层 PageRank / tag boost 信号(`sim = tkweight*tksim + vtweight*vtsim + rank_fea`),s06 只两层。
-
-详细摘录与 5-15 行 "为什么这样写" 的分析见 [`docs/reference/ragflow-notes/hybrid_retrieval.md`](../docs/reference/ragflow-notes/hybrid_retrieval.md)。
-
----
-
-## 选型速记
-
-### 主流融合策略速览
-
-下面这张表把社区常用的几类 fusion 策略按"信号维度 / 融合方式 / 是否需要训练 / 适用场景"列出来：
-
-| 策略 | 信号维度 | 融合方式 | 训练成本 | 适用场景 |
-|---|---|---|---|---|
-| **weighted_sum**(本教程) | 2 (dense + sparse) | `α·v + (1-α)·b_norm` | 0 | 教学 / 简单混合 / 权重可解释 |
-| **RRF (Reciprocal Rank Fusion)** | 2+ | `Σ 1/(rank_i + c)`,c=60 | 0 | Milvus `RRFRanker` / 不依赖分数量纲 |
-| **Convex Combination** | 2+ | `Σ α_i · s_i`,Σ α_i = 1 | 0 | 多通道、加权约束凸 |
-| **Borda Count** | 2+ | `Σ (N - rank_i + 1)` | 0 | 投票式融合、社交选择 |
-| **生产 3-layer** | 3+ (dense + sparse + rank_fea) | DB `weighted_sum` + app `rerank_with_knn` + `rank_fea` | 0 (linear) | 生产 / per-query α |
-| **Cross-encoder rerank** | 1 (query-doc pair) | `[CLS]` 头 + softmax | 训练 cross-encoder | s07 主题、精排 |
-
-我们的 toy `hybrid_topk` 在信号维度上只占第一行——**两通道 + 加权**；生产代码把它扩到三通道并加了 PageRank / tag boost，s07 会叠 cross-encoder 重排序 做精排。
-
-- **教学 / 快速原型 / 权重可解释** → `weighted_sum`（本教程）；α 直接调，看得见每个 hit 的子分贡献；
-- **不依赖分数量纲 / 多通道** → RRF(`Σ 1/(rank_i + 60)`），Milvus `RRFRanker` 原生支持；
-- **生产 / per-query α / 多层信号** → 生产 3-layer 流水线，DB fusion + app rerank + `rank_feature`；
-- **追求 top-1 精度** → 加 cross-encoder 重排序（s07），把 `hybrid_topk` 的 top-20 喂给 `[CLS]` 模型重打分；
-- **要先看清每个边界再选** → 用本章 code_02 把 query `"应收账款 计提"` 和 `"内存"` 各跑一次，看清楚"BM25 / dense 谁拉上去的、α 在什么范围最稳"，再决定要不要换 fusion。
-
-### 扩展指南
-
-加一种新 fusion 策略（RRF / convex / 加权）只要三步：
-
-1. 写一个 `rrf_fusion(rank_lists: list[list[Hit]], k=60) -> list[Hit]` 或 `convex_fusion(score_lists, weights=[0.5, 0.5])`，**签名 / 返回 hit dict 形状和 `hybrid_topk` 一致**（`{chunk_id, text, dense, bm25, score}`），下游 s07 rerank 不用改一行；
-2. 在 `c02_hybrid_fusion.py` 的 `main()` 里按 `FUSION_MODE` env 选 fusion 函数（默认 `weighted_sum`），不要在 `hybrid_topk` 里写 `if mode == "rrf": ... elif mode == "convex": ...` 之类分发——它只懂 α 加权；
-3. 给代码文件 README 加一段"它跟 weighted_sum 比，赢在哪 / 输在哪"的对照（RRF：不依赖分数量纲 / 多通道融合简单；convex：凸约束 / 数学性质好）。
-
-不要把多 fusion 的判断塞进 `hybrid_topk`——它只懂"BM25 + dense α 加权"这一件事。`main()` 懂全 fusion 模式。本章 MVP 只跑 weighted_sum，但接口形状留好了。
+s07 **rerank 精排**: 在 s06 输出的 hybrid top-k 顶上叠一层 cross-encoder — 把 query 和每条候选 chunk 拼成 pair 送 `[CLS]` 头重打分, 把 hybrid 的 top-20 重排成真正相关的 top-3 给 LLM。粗排看"召回全不全", 精排看"排序对不对", 两级串起来才是生产级的检索质量。
 
 ---
 
