@@ -264,8 +264,8 @@ s03 **chunking**: 把 c01 输出的 `{text, page, source}` schema 上的 `text` 
 
 是的，统一 schema 时要分清两种"段落"：
 
-- **PDF 的"段" = 页**（`page` 是结构边界）。`pypdf.extract_text()` 按页返一段字符串——一页内多段被绑在一起。
-- **DOCX 的"段" = `\n` 切分的人工段落**（`python-docx` 的 `paragraphs` 是 Word 的 paragraph 元素）。
+- **PDF 的"段" = 页**(`page` 是结构边界）。`pypdf.extract_text()` 按页返一段字符串——一页内多段被绑在一起。
+- **DOCX 的"段" = `\n` 切分的人工段落**(`python-docx` 的 `paragraphs` 是 Word 的 paragraph 元素）。
 
 把 `page` 硬塞给 DOCX 用 `0` 或 `-1` 当 sentinel 都不优雅；**用 `None` 表达"这个 schema 字段对当前格式不适用"更稳**。下游拿到 `page=None` 时知道"不要按页号切片"——比如前端高亮时跳过 `page` 字段。统一 schema 时不要做假数据，直接 `None` 是最诚实的表达。
 
