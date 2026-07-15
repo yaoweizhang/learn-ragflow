@@ -1,125 +1,141 @@
 # s10 GraphRAG — 把"实体之间的关系"建成图来查
 
-> **本章定位**：s10 是 RAG 的"关系面"。s06-s09 都把"找相关段落"当终点——但有一类问题，**段落相关性不够**："X 和 Y 有什么关系？"、"提到 Z 的产品都有哪些？"、"A 公司投资了谁？被谁投资？"。详细定位见 s00 §1.4；RAGFlow 实现见本章末"## RAGFlow 实现"。
+[上一章 s09 → · 下一章 s11 → s12]
+
+> *"段落的'相似度'只回答'哪段相关', 而图的'邻接关系'才能回答'实体之间有什么关系' — 抽三元组 + 建图 + 1 跳查询, 80 行跑出'关系面'"*
+>
+> **链路位置**: RAG 的"关系面"补充 (s06-s09 是"段落相似度", s10 是"实体邻接")
+> **代码文件**: c01_extract.py · c02_query.py
+
+> 环境准备: 见 root README §快速开始 — `pip install openai pypdf python-docx` + `.env` 配 `LLM_API_KEY` (仅代码 1 需要, 代码 2 纯内存离线跑)
 
 ---
 
-## 一、章节介绍
+## 问题
 
-**GraphRAG(Graph-based Retrieval-Augmented Generation)** 是一种把"段落检索"补充为"图谱查询"的范式：把每段文字里的实体和实体间关系抽出来，建一张知识图谱；查的时候先定位起点实体、再沿着边（关系）走 N 跳邻居，最后把邻居信息拼成上下文喂给 LLM。它的核心思想是——**段落的"相似度"只回答"哪段相关"，而图的"邻接关系"才能回答"实体之间有什么关系"**。
+s06-s09 都把"找相关段落"当终点 — 向量召回 + rerank + 拼 prompt, 答"X 是什么"、"X 的关键参数"这类问题很稳。但有一类问题, **段落相关性根本不够**: "X 和 Y 有什么关系?"、"提到 Z 的产品都有哪些?"、"A 公司投资了谁、被谁投资?"。这三种问题拆开看, 都是同一类的不同切面 — 答案不在"某一段的文字里", 而在"实体与实体之间的那条边上"。
 
-```
-   chunk 段落文字                (head, rel, tail) 三元组                1 跳邻居查询
-   "R3630 G5 支持 32 条 DDR4"    ┌───────────────────────────┐         query_graph(graph, "R3630 G5")
-        │                        │ (R3630 G5, 支持内存, DDR4 3200)      │
-        │  EXTRACT_PROMPT + LLM   │ (R3630 G5, 面向场景, AI 推理)         ▼
-        ▼                        │ (R3630 G5, 适配行业, 金融)         [("支持内存", "DDR4 3200"),
-   list[dict]                     └───────────────────────────┘          ("面向场景", "AI 推理"),
-   每段一次 LLM 抽取                                              ("适配行业", "金融")]
-        │
-        ▼
-   build_graph → dict[head] → set[(rel, tail)]   ← O(1) dict.get
-        │
-        ▼
-   save_graph → _graph.jsonl (持久化, 离线可重查)
-```
+**第一, "X 和 Y 之间什么关系"答不上**。向量检索给你"包含 X 的段"和"包含 Y 的段", 但**不会告诉你 X 和 Y 之间那条边**。如果 X 和 Y 之间的"版权所有 / 投资 / 合作"关系只在第 3 段被一笔带过, top-k 不一定命中那一段; 即便命中, LLM 也得从散落的文字里自己拼出关系。这是余弦相似度的固有盲区: 它衡量"文字像不像", 不衡量"实体连没连"。
 
-> 💡 **一句话总结**：GraphRAG 是 Modular RAG 框架里"图谱范式"的落地形态（详见 s00 §1.3 三代演进）。让 RAG 从"找相似的段"补充为"沿着边走的图查询"——既能查"X 和 Y 之间什么关系"，也能查"Z 的所有合作伙伴"。
+**第二, "提到 Z 的所有产品"召回不全**。向量检索靠相似度打分, 可能漏掉"和 Z 距离远但关系明确"的段落 — 一份文档里 Z 出现在开头, 相关产品散在后面十几段, top-k 只捞回最相似的几段, 剩下的静默丢失。用户以为"我问了全集", 实际拿到子集。图谱里 Z 是一个节点, 所有"提及 / 包含 Z"的边都是显式的, 一次 `dict.get` 拿到全集。
 
-`extract_triples(text)` + `build_graph(triples_list)` + `query_graph(graph, entity)` 加一起 80 行就能跑出"图谱 + 1 跳查询"。看起来不值得单独一章。但把它放进 s08 的"向量召回"对照看会发现：**"段落相似度"和"实体邻接关系"答的是两类不同问题**——这道鸿沟由 3 类典型失败堆起来。
+**第三, 宏观问题"文档集主要在讲什么"答不好**。这需要跨实体聚合 — 把整份文档里所有实体和关系汇总成主题。向量检索只能召回 top-k 段落, 没有"全局视野"; 段落相似度对"宏观概括"这类问题天然无力。这是 GraphRAG 的进阶用法 (hierarchical Leiden 社区检测 + community summary), MVP 不做, 但问题本身要先看清。
 
-### 1.1 GraphRAG 与向量检索的本质区别
+这三种失败有一个共同解法 — **把"段落检索"补充为"图谱查询"**: 把每段文字里的实体和实体间关系抽成 `(head, rel, tail)` 三元组, 建一张知识图谱; 查的时候先定位起点实体, 再沿着边 (关系) 走 N 跳邻居, 把邻居信息拼成上下文喂给 LLM。这就是 **GraphRAG (Graph-based Retrieval-Augmented Generation)**。它**不是替代向量检索, 而是在向量检索答不全的地方补一刀** — 一个看相似度, 一个看邻接关系, 在 RAG 系统里是互补关系。
 
-GraphRAG 不是替代向量检索，而是在向量检索**答不全**的地方补一刀。两者的职责清晰分工：
+s10 的任务就是把"抽三元组 → 建图 → 1 跳查询"用 **80 行 Python 跑通一遍**: 手写 prompt 抽三元组 + 内存 `dict` 建图 + `dict.get` 查 1 跳邻居 — 不做 entity resolution、不做并发、不做社区检测。目标不是解决上面三个问题, 而是把它们显式暴露出来, 让你看清纯向量检索的边界, 以及"图这一刀"补在哪里。
 
-> 💡 "图"和"向量"在 RAG 系统里是**互补关系**——一个看相似度，一个看邻接关系。
+---
 
-把它放进 RAG 全景看：**s06-s08 是"段落相似度 → 生成"的检索范式**，**s10 是"实体邻接 → 生成"的图检索范式**。同一问题两种处理对比：
+## 解决方案
 
-| 维度 | 向量检索 (s04-s08) | 图检索 (s10) |
-|---|---|---|
-| **答得好的问题** | "X 是什么"、"X 的关键参数"、"X 和 Y 类似吗" | "X 的 1 跳 / N 跳邻居"、"X 出发走哪条关系链能到 Y"、"X 所属的社区里有谁" |
-| **答不好的问题** | "X 和 Y 之间什么关系"、"提到 Z 的所有产品"、"A 公司的供应链有哪些环节" | "X 是什么"(没有节点信息时图也不知道)、长段落里的细粒度语义 |
-| **索引单元** | 文本块(chunk) | 实体 + 关系边(triple) |
-| **匹配方式** | 余弦相似度(embed → top-k) | 邻接关系(dict.get → 1 跳 / BFS → N 跳) |
-| **适合问题** | "X 是什么"、"X 的关键参数" | "X 和 Y 什么关系"、"X 的合作伙伴" |
-| **索引成本** | 一次 embed(秒级/段) | 每段一次 LLM 抽取(秒级/段,token 贵) |
-| **查询成本** | 一次 embed + 向量召回(毫秒) | 内存 dict.get(微秒) |
-| **失败模式** | 召回不到、相似段不含答案 | 实体名歧义、图谱不连通、三元组抽取不全 |
-| **实现成本** | 30 行 embed + Chroma 查询 | 30 行 LLM prompt + 30 行 dict 图构建 |
-
-本章只演示**最小图检索**——手写 prompt 抽三元组 + 1 跳 `dict.get`；RAGFlow `general/extractor.py` 把"抽取"做成并发 `asyncio.Semaphore(MAX_CONCURRENT=10)`，把"图存储"做成 Elasticsearch 倒排索引（`knowledge_graph_kwd` 区分 entity / relation / community_report），见 §四。
-
-### 1.2 知识图谱的三元组 schema
-
-GraphRAG 的图谱基础数据长这样——`(head, rel, tail)` 三元组列表：
+s10 用 **两个递进的脚本** 把 GraphRAG 的"写图"和"读图"两半边跑起来。每一步解决前一步的局限, 但也留下新的脆弱性。
 
 ```
-(head="紫光恒越技术有限公司", rel="版权所有", tail="紫光恒越 R3630 G5 双路机架式服务器 产品白皮书 v1.0")
-(head="紫光恒越 R3630 G5",     rel="支持内存", tail="DDR4 3200 内存(最大 32 条)")
-(head="紫光恒越 R3630 G5",     rel="面向场景", tail="AI 推理")
+   chunk 段落文字                (head, rel, tail) 三元组           1 跳邻居查询
+   代码 1 (写图)                                                    代码 2 (读图)
+   ┌──────────────────┐        ┌───────────────────────┐         ┌──────────────────┐
+   │ 每段喂 LLM       │        │ (R3630 G5, 支持内存, DDR4) │        │ load_graph        │
+   │ EXTRACT_PROMPT   │ ─────▶ │ (R3630 G5, 面向场景, AI)   │ ─────▶ │ query_graph       │
+   │       │          │        │ (公司, 版权所有, 白皮书)    │        │  dict.get(entity) │
+   │       ▼          │        └───────────────────────┘         │  O(1) 1 跳邻居    │
+   │ build_graph      │                    │                     └──────────────────┘
+   │ dict[head]→set   │                    ▼
+   │       │          │        save_graph → _graph.jsonl (持久化)
+   └──────────────────┘         ← c01 写, c02 读, 通过 JSONL 解耦
 ```
 
-把同一段文字里所有三元组合并，就得到一张**有向图**——`dict[head] → set[(rel, tail)]`。边的方向**永远是 head → tail**，"X 拥有 Y" 和 "Y 被 X 拥有" 是两条不同边（不能因为 tail 相同就合并）。MVP 把这条约束写进 `build_graph` 的 `graph[t["head"]].add((t["rel"], t["tail"]))`——`set` 里 `(rel, tail)` 是联合键，**关系不同就算同一对实体也是两条边**。
+| 脚本 | 解决什么 | 留下什么局限 | 何时用 |
+|---|---|---|---|
+| `c01_extract.py` | LLM 抽三元组 → 内存合并 `dict[head] → set[(rel, tail)]` → 落盘 `_graph.jsonl` | 无 entity resolution (同名异写各是各); 无并发 / 重试 / 缓存; 无节点合并 | 教学 / 快速原型 / 离线 ETL |
+| `c02_query.py` | 读 `_graph.jsonl` 回内存, `dict.get` 跑 O(1) 1 跳查询 | 无多跳; 严格 `name == name` 匹配; 无方向语义 / 路径权重 | 离线可重跑 / 调抽取 prompt 的回归对照 |
 
-> 💡 三元组 schema 不是 GraphRAG 独有——它来自知识图谱领域的 Resource Description Framework (RDF) 标准。GraphRAG 是把这个 schema 套到 RAG 检索管线上的产物。
+两脚本的关系是一条**写-读主干**: 代码 1 把"文字 → 三元组 → 图 → JSONL"做出来, 暴露"LLM 抽取抖动 + 同名异写分裂"的局限 — `紫光恒越` 和 `紫光恒越技术有限公司` 是两个节点; 代码 2 把落盘的图读回内存做 1 跳查询, 暴露"只能查 1 跳 + 严格字符匹配"的局限 — "X 的竞争对手的合作伙伴"这种 3 跳问题答不了。**写-读拆开的价值**: 代码 2 离线零成本可重跑, 调代码 1 的抽取 prompt 时反复重抽, 代码 2 不用每次重走 LLM。
 
-### 1.3 从三元组到图查询：1 跳邻居最小例子
+---
 
-把上面 3 条三元组喂给 `build_graph` + `query_graph`：
+## 代码 1: LLM 抽实体关系三元组 ([c01_extract.py](c01_extract.py))
+
+### 工作原理
+
+**做一件事**: 把每个 chunk 喂给 LLM, 让它吐 `(head, rel, tail)` 三元组, 合并成内存图, 落盘到 `_graph.jsonl` 供代码 2 离线查询。
+
+**5 步**:
+1. `EXTRACT_PROMPT` — 喂文字给 LLM, 要求吐 JSON, 每项 `{head, rel, tail}`, 没有就返 `[]`
+2. `_llm_json(prompt)` — 调 OpenAI 兼容接口, 对 MiniMax-M3 的坏输出做兜底: 剥 `<think>...</think>` 推理块、剥 ` ```json ``` ` 围栏、容忍 `dict / list` 两种 JSON 顶层结构。任一失败返 `[]` **不抛异常**, 让上游当"这个 chunk 没抽到"继续
+3. `extract_triples(text)` — 一段文字 → 一组三元组 (`_llm_json` 套 prompt)
+4. `build_graph(triples_list)` — 把所有 chunk 的结果合并成 `dict[head] → set[(rel, tail)]`; `set` 里 `(rel, tail)` 是联合键, 关系不同就算同一对实体也是两条边
+5. `save_graph(graph, path)` — 落盘 JSONL, 每行一个 triple (便于追加 / grep / 不加载整图就能复查)
 
 ```python
-graph = build_graph([[
-    {"head": "紫光恒越技术有限公司", "rel": "版权所有",   "tail": "R3630 G5 白皮书"},
-    {"head": "R3630 G5",            "rel": "支持内存",   "tail": "DDR4 3200"},
-    {"head": "R3630 G5",            "rel": "面向场景",   "tail": "AI 推理"},
-]])
-query_graph(graph, "R3630 G5")
-# → [("支持内存", "DDR4 3200"),
-#    ("面向场景", "AI 推理")]
-query_graph(graph, "紫光恒越技术有限公司")
-# → [("版权所有", "R3630 G5 白皮书")]
-query_graph(graph, "不存在的实体")
-# → []   # 1 跳查不到 = (空集)
+# 中间片段: build_graph 把三元组合并成有向图, set 自动去重
+for triples in triples_list:
+    for t in triples:
+        for node in (t["head"], t["tail"]):
+            graph.setdefault(node, set())
+        graph[t["head"]].add((t["rel"], t["tail"]))
 ```
 
-**关键观察**：从 `R3630 G5` 出发能拿到 2 条边（1 跳邻居），从 `紫光恒越技术有限公司` 出发能拿到 1 条边；不存在的实体直接返空——**O(1) `dict.get` 的硬约束，不调 LLM、不查向量库**，纯内存结构遍历。MVP 就这一条最简单的"图查询"。
+**完整函数**:
 
-### 1.4 真实世界的问题 (3 条典型）
+```python
+def _llm_json(prompt: str) -> list[dict]:
+    """调 OpenAI 兼容 LLM, 期望返回 JSON 数组或带 'triples' 键的 dict。
+    失败一律返回 []——让上层 build_graph 当成"没抽到"继续, 而不是 crash。"""
+    from openai import OpenAI
+    client = OpenAI(api_key=os.environ["LLM_API_KEY"],
+                    base_url=os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1"))
+    resp = client.chat.completions.create(
+        model=os.environ.get("LLM_MODEL", "gpt-4o-mini"),
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0,
+        response_format={"type": "json_object"},
+    )
+    raw = resp.choices[0].message.content
+    raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()   # 剥推理块
+    raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.DOTALL).strip()  # 剥围栏
+    try:
+        obj = json.loads(raw)
+        if isinstance(obj, list):
+            return obj
+        if isinstance(obj, dict):
+            return obj.get("triples", [])
+        return []
+    except json.JSONDecodeError:
+        return []
 
-每条失败模式都对应一种工业级解法——双路召回（图 + 向量）、实体邻接扩展、社区检测 + summary。**s10 的目标不是解决它们，而是把它们显式暴露出来，让你看到纯向量检索的边界**。这跟 s08 把"toy prompt 在哪里会塌"显式对比是同一种思路——**叙述载体从"4 条 prompt 硬约束"换成"3 个图函数 + 1 跳 query"**，但"先跑通 toy、再讲清楚 toy 在哪里会塌"的教学哲学是一致的。
 
-1. **"X 和 Y 之间什么关系"答不上**——向量检索给你"包含 X 的段"和"包含 Y 的段"，但**不会告诉你 X 和 Y 之间那条边**。如果 X 和 Y 之间的"版权所有 / 投资 / 合作"关系只在第 3 段被一笔带过，top-k 不一定命中那一段；但**图谱里这条边是显式存在的**，`query_graph(graph, X)` 直接拿到。**生产解法**：双路召回——向量 + 图同时跑，命中任一即返回。RAGFlow `KGSearch` 走的就是这条路（见 §四）。
-2. **"提到 Z 的所有产品"召回不全**——向量检索靠相似度，可能漏掉"和 Z 距离远但关系明确"的段落；图谱里 Z 是节点，所有"rel： 提及 / 包含 Z"的边都是显式的，`query_graph(graph, Z)` 一次拿到全集。**生产解法**：实体名 → 邻接边列表 一步搞定，O(1) `dict.get` 比向量召回更准更便宜。
-3. **宏观问题"文档集主要在讲什么"答不好**——这是 GraphRAG 的进阶用法：把图做 hierarchical Leiden 社区检测，每个社区生成一段 `community_report` summary，存为 `knowledge_graph_kwd="community_report"` 的块，用来回答"文档集宏观主题是什么"这种需要跨实体聚合的问题。**MVP 不做社区检测**，留作 RAGFlow 对照项（见 `docs/reference/ragflow-notes/graph_extraction.md`）。**生产解法**：hierarchical Leiden + LLM summary 喂宏观问题。
+def extract_triples(text: str) -> list[dict]:
+    """对一段文字跑抽取, 返回 [{head, rel, tail}, ...]。"""
+    return _llm_json(EXTRACT_PROMPT.format(text=text))
 
----
 
-## 二、LLM 抽实体关系三元组：[c01_extract.py](c01_extract.py)
+def build_graph(triples_list: list[list[dict]]) -> dict:
+    """把所有 chunk 的三元组合并成 dict[head] -> set[(rel, tail)]。"""
+    graph: dict[str, set[tuple[str, str]]] = {}
+    for triples in triples_list:
+        for t in triples:
+            for node in (t["head"], t["tail"]):
+                graph.setdefault(node, set())
+            graph[t["head"]].add((t["rel"], t["tail"]))
+    return graph
 
-> 把每个 chunk 喂给 LLM 让它吐 `(head, rel, tail)` 三元组，合并成图，写到 `s10_graphrag/_graph.jsonl` 供下一节离线查询。
-> 2.2 只读 JSONL，不再调 LLM。
 
-[`c01_extract.py`](c01_extract.py)
+def save_graph(graph: dict, path: Path) -> None:
+    """把图持久化成 JSONL(每行 {head, rel, tail}), set 转 list 便于 JSON 序列化。"""
+    with path.open("w", encoding="utf-8") as f:
+        for head, edges in graph.items():
+            for rel, tail in edges:
+                f.write(json.dumps({"head": head, "rel": rel, "tail": tail}, ensure_ascii=False) + "\n")
+```
 
-### 2.1 LLM 抽取 + JSON 容错 + 内存合并 + 落盘
-
-`c01_extract.py` 是一个"LLM 抽取 + 容错解析 + 内存合并 + 落盘"的小教学版 GraphRAG 抽取器：
-
-- `EXTRACT_PROMPT` —— 喂文字给 LLM，要求吐 JSON 数组，每项 `{head, rel, tail}`，没有就 `[]`；
-- `_llm_json(prompt)` —— 调 OpenAI 兼容接口，**对 MiniMax-M3 的三种坏输出做兜底**：剥 `<think>...</think>` 推理块、剥 ```json``` 围栏、再容忍 `dict / list` 两种 JSON 顶层结构。任一失败返 `[]`，**不抛异常**，让上游 `build_graph` 当作"这个 chunk 没抽到"继续；
-- `extract_triples(text)` —— 一段文字 → 一组三元组；
-- `build_graph(triples_list)` —— 把所有 chunk 的结果合并成 `dict[head] → set[(rel, tail)]`；
-- `save_graph(graph, path)` —— 落盘到 JSONL，每行一个 triple（便于追加 / 复查 / 不加载整图就能 grep）；
-- `main()` —— **self-contained**：内联 pypdf + python-docx + 简化版 chunking（双换行分段 + 500 字 cap + 取前 8 段），跑固定输入，打印节点 / 边数，落盘。
-
-### 2.2 抽取-落盘的执行命令
+### 试一下
 
 ```bash
 python s10_graphrag/c01_extract.py
 ```
 
-输出示例（MiniMax-M3 over minimaxi.com，samples = server_whitepaper.pdf + disclosure.docx，只取前 8 个 chunk）：
+实测输出 (MiniMax-M3 over minimaxi.com, samples = `server_whitepaper.pdf` + `disclosure.docx`, 只取前 8 个 chunk):
 
 ```
 chunks: 8
@@ -127,11 +143,7 @@ chunks: 8
 持久化: s10_graphrag/_graph.jsonl
 ```
 
-不同次跑节点 / 边数会小幅抖动（LLM 在 temperature=0 下对长 prompt 仍有少量随机性；chunk 0/1/2 是封面 + 目录，信息密度低，模型决定抽不抽也有差异）——这是 LLM 抽取的固有现象，不是 bug。
-
-### 2.3 落盘 `_graph.jsonl` 的样例与节点边数
-
-把 2.1 跑在仓库自带的 `samples/` 上，落盘的 `_graph.jsonl` 长这样（实测，`MiniMax-M3 over minimaxi.com`，samples = `server_whitepaper.pdf` + `disclosure.docx`，只取前 8 个 chunk）：
+落盘的 `_graph.jsonl` 长这样 (实测):
 
 ```jsonl
 {"head": "紫光恒越 R3630 G5", "rel": "适配行业", "tail": "金融"}
@@ -141,57 +153,69 @@ chunks: 8
 {"head": "紫光恒越 R3630 G5", "rel": "支持内存", "tail": "DDR4 3200 内存(最大 32 条)"}
 ```
 
-节点 / 边数抖动属于 LLM 抽取的固有现象——生产做法（`temperature=0` + retry + LLM cache）见 `docs/reference/ragflow-notes/graph_extraction.md` §2。
+**观察**: 不同次跑节点 / 边数会小幅抖动 — `temperature=0` 下 LLM 对长 prompt 仍有少量随机性, 且 chunk 0/1/2 是封面 + 目录、信息密度低, 模型决定抽不抽也有差异。这是 LLM 抽取的固有现象, **不是 bug**。生产做法 (retry + LLM cache) 见 `docs/reference/ragflow-notes/graph_extraction.md` §2。
 
-### 2.4 抽取的局限：实体对齐 / 并发 / 合并策略
+### 为什么不只写这一种
 
-本段做对了什么 — 用 LLM 把非结构化文本里的实体关系抽成 (head, rel, tail) 三元组,落盘成可查询的图节点/边。
-
-
-- **没有 entity resolution**：`"紫光恒越"` / `"紫光恒越技术有限公司"` / `"紫光恒越技术"` 是 3 个独立节点，3 条独立边——召回只有命中其中一个名字时才能拿到边。生产里要 entity resolution(embedding 聚类 + LLM 判断合并）；
-- **没有 entity_types 白名单**：模型可能把章节标题（`"3.1 技术规格"`）当成实体，抽到一堆噪声节点。RAGFlow 的 `DEFAULT_ENTITY_TYPES = ["organization", "person", "geo", "event", "category"]` 就是这一刀；
-- **每 chunk 一次 LLM**：8 段 8 次同步调用，顺序阻塞；生产里走 `asyncio.Semaphore(10)` + LLM cache，几千段也不超时；
-- **没有并发、没有重试、没有缓存**：LLM 偶尔抽到空、超时、限流，我们的实现一律当成"没抽到"；生产要 retry + cache，同一 chunk 重跑不重抽；
-- **没有节点 / 边合并策略**：同实体跨段出现时，`build_graph` 直接当新节点处理；生产要走 merge_nodes(type 取 Counter 最大值、description 拼 `<SEP>`）和 merge_edges(weight 累加、keywords 并集）。
-
-
-- `KeyError: 'LLM_API_KEY'`：2.1 必填 key，`.env` 加 `LLM_API_KEY=sk-...`；2.2 不依赖 key 但需要先跑过 2.1。
-- `_llm_json` 返回 `[]` / 图节点数抖动大：LLM 没 honor `response_format=json_object`，把 `<think>...</think>` 推理块或 ```json``` fence 当 JSON 解析失败。MVP 已做 `re.sub` 剥除，但仍可能因模型输出版本不同失败——切到结构化分隔符（`<SEP>` 三段式）能从源头解决，参考 `docs/reference/ragflow-notes/graph_extraction.md`。
-- `pypdf / docx` 解析空：PDF 是扫描件（无文本层），需要 OCR；DOCX 是图片型。s11 专门讲多模态。
-- `UnicodeEncodeError: 'gbk' codec can't encode character`：Windows 控制台编码问题，跑前 `set PYTHONIOENCODING=utf-8`(s05-s09 同问题）。
-- "紫光恒越" 和 "紫光恒越技术有限公司" 召回不全：MVP 不做 entity resolution，两个名字是两个节点。生产里走 `entity_resolution.py` 两阶段管线（粗筛 + LLM 精审），详见 `docs/reference/ragflow-notes/graph_extraction.md` §4。
+代码 1 只做"抽 + 建 + 存", 留下三个大坑: 没有 **entity resolution** (`紫光恒越` / `紫光恒越技术有限公司` 是 3 个独立节点, 召回只命中其中一个名字才拿得到边); 没有 **entity_types 白名单** (模型可能把章节标题 `"3.1 技术规格"` 当实体抽成噪声节点); 没有**并发 / 重试 / 缓存 / 节点合并** (8 段 8 次同步调用顺序阻塞, 同实体跨段出现直接当新节点)。这张图能写出来, 但还查不了 — 见代码 2 把它读回内存做 1 跳查询。
 
 ---
 
+## 代码 2: 1 跳图查询 (纯内存, 无 LLM) ([c02_query.py](c02_query.py))
 
-下一章 — 这一节把"召回 → 排序 → 生成 → 服务化"中的某一环跑通,留下 +1 章填下一档的实现;每加一档,缺失上层就越明显,直到 s12 把所有环节收敛到 FastAPI 服务。
+### 工作原理
 
-## 三、1 跳图查询（纯内存，无 LLM)：[c02_query.py](c02_query.py)
+**做一件事**: 加载代码 1 落盘的 `_graph.jsonl` 回内存, 在 `dict[head] → set[(rel, tail)]` 上跑 O(1) 的 1 跳邻居查询, 全程不调 LLM。
 
-> 加载 2.1 那步落盘的 `_graph.jsonl`，在 `dict[head] → set[(rel, tail)]` 上跑 O(1) 的 1 跳邻居查询。
-> 这是 GraphRAG 的"读"半边——和 2.1 的"写"半边分开，便于离线调试。
+**3 步**:
+1. `load_graph(path)` — 按行读 JSONL, 反向重建 `dict[head] → set[(rel, tail)]`; 同时把 `tail` 也注册成节点 (即便它没有出边也能被 query 命中, 便于"这个实体存在但孤立"的诊断); 缺失 / 空文件返空图
+2. `query_graph(graph, entity)` — `graph.get(entity, set())`, O(1); 返回前按 `(rel, tail)` 字母序排, 便于对比不同次抽取的结果
+3. `main()` — 加载 → 打印节点 / 边数 → 循环输入实体打印 1 跳邻居, 直到空行退出。**完全不调 LLM**, 只要 `_graph.jsonl` 存在就跑得起
 
-[`c02_query.py`](c02_query.py)
+```python
+# 中间片段: 1 跳查询就是一次 dict.get + sorted
+def query_graph(graph: dict, entity: str) -> list[tuple[str, str]]:
+    """从 entity 出发取 1 跳邻居, 按 (rel, tail) 字母序排, 便于对照。"""
+    return sorted(graph.get(entity, set()))
+```
 
-### 3.1 加载 JSONL + O(1) 邻居查询
+**完整函数**:
 
-`c02_query.py` 把 2.1 写出的 JSONL 重新加载回内存的图结构，提供最朴素的 1 跳查询：
+```python
+def load_graph(path: Path) -> dict[str, set[tuple[str, str]]]:
+    """从 JSONL 读回 dict[head] -> set[(rel, tail)]。缺失 / 空文件返空图。"""
+    graph: dict[str, set[tuple[str, str]]] = {}
+    if not path.exists():
+        return graph
+    import json
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            t = json.loads(line)
+            graph.setdefault(t["head"], set()).add((t["rel"], t["tail"]))
+            # 顺手把 tail 也注册成节点(就算它没出边, 也让它"存在", 便于 query 命中)。
+            graph.setdefault(t["tail"], set())
+    return graph
 
-- `load_graph(path)` —— 按行读 JSONL，反向重建 `dict[head] → set[(rel, tail)]`；同时把 `tail` 也注册成节点，即便它没有出边也能被 query 命中（便于"这个实体存在但孤立"的诊断）；
-- `query_graph(graph, entity)` —— `graph.get(entity, set())`，O(1）；返回前按 `(rel, tail)` 字母序排，便于对比不同次抽取的结果；
-- `main()` —— 加载 → 打印节点 / 边数 → 循环输入实体 → 打印 1 跳邻居，直到空行退出。**完全不调 LLM**，只要 `_graph.jsonl` 存在就跑得起。
 
-### 3.2 查询的执行命令（不调 LLM）
+def query_graph(graph: dict, entity: str) -> list[tuple[str, str]]:
+    """从 entity 出发取 1 跳邻居, 按 (rel, tail) 字母序排, 便于对照。"""
+    return sorted(graph.get(entity, set()))
+```
+
+### 试一下
 
 ```bash
-# 1. 先跑一次抽取(生成 _graph.jsonl)
+# 1. 先跑一次抽取 (生成 _graph.jsonl)
 python s10_graphrag/c01_extract.py
 
-# 2. 再跑查询(可重复跑,不调 LLM)
+# 2. 再跑查询 (可重复跑, 不调 LLM)
 python s10_graphrag/c02_query.py
 ```
 
-实测（MiniMax-M3 抽完 8 个 chunk 后的图）：
+交互输入实体, 看 1 跳邻居 (实测, MiniMax-M3 抽完 8 个 chunk 后的图):
 
 ```
 图节点数: 8, 边数: 6
@@ -204,112 +228,25 @@ python s10_graphrag/c02_query.py
 查哪个实体 (回车退出):
 ```
 
-### 3.3 "读/写 拆开"的好处与 trace 含义
+**观察**: 从 `紫光恒越技术有限公司` 出发拿到 1 条边, 不存在的实体直接返空 — **O(1) `dict.get` 的硬约束, 不调 LLM、不查向量库**, 纯内存结构遍历。写-读拆开的好处在这里最明显: 同一份 `_graph.jsonl` 跑 N 次结果完全一致, 适合做"prompt 改了之后, 看 query 输出有没有变"的回归对照。
 
-跟 2.1 拆开的好处：**2.2 离线 / 零成本 / 可重跑**，调试抽取 prompt 时反复改 2.1 重抽，2.2 不用每次重新走 LLM；同 `_graph.jsonl` 跑 N 次结果完全一致，适合做"prompt 改了之后，看 query 输出有没有变"的回归对照。具体 trace（节点 / 边数 + 两次 query + 退出）见上节 `### 3.2`。
+### 为什么不只写这一种
 
-### 3.4 1 跳查询的局限：多跳 / 对齐 / 方向
-
-本段做对了什么 — 把离线抽好的图在线做 O(1) 邻居查询,无需再付一次 LLM 成本,适合反复调试抽取 prompt 的回归对照。
-
-
-- **没有多跳**：`"X 的竞争对手的合作伙伴"` 是 3 跳，1 跳答不全。要 BFS 自己写，而且 3 跳以上必须上 community summary（否则 LLM 拿到的 context 拼接成本太高）；
-- **没有 entity resolution / 语义匹配**：见 `c01` 上面的"没有 entity resolution" 展开——MVP 用 `name == name` 严格匹配，"紫光恒越" / "紫光恒越技术有限公司" 各是各的节点；生产走 `entity_resolution.py` 两阶段管线（粗筛 + LLM 精审）。
-- **没有路径权重 / 方向语义**：`set[(rel, tail)]` 不记录反向边、不记录 confidence，复杂关系（`"A 投资 B"` vs `"B 被 A 投资"`）分不清谁主动谁被动；
-- **没有图遍历可视化 / 解释**：`query_graph` 只返边列表，不出"为什么是这条边"、"这条边来自哪个 chunk"——bad case 排查要回到 `_graph.jsonl` 里手 grep；
-- **节点孤立时看不出来**：`graph.get("孤立实体")` 直接返空集，虽然 2.1 已经把 tail 注册成节点（让"存在但孤立"能被命中），但**没有入边的节点**和**不存在的节点**在我们的实现里都返回空集，提示完全一样。
-
-
-- 图为空或缺失： `_graph.jsonl` 不在 / 2.1 没跑过；按"先跑一次抽取"步骤执行。
-- `EOFError` on piped input：`input()` 在 `< /dev/null` 管道下抛 EOFError——交互模式是主用模式；想脚本化跑就改 `sys.argv` 接收 entity 或 `argparse`(MVP 不做）。
-- 节点名歧义："紫光恒越" 查不到 "紫光恒越技术有限公司"的边，因为 MVP 不做 entity resolution；生产里走 RAGFlow 两阶段管线。
-- 想看反向边：2.2 没建反向索引；自己 `graph.get(tail)` 看是否有对应反向节点——但仍然不能查出"哪些实体引用了我"(`rank_fea` 之类）。
+代码 2 只做 1 跳查询, 留下几个硬边界: **没有多跳** (`"X 的竞争对手的合作伙伴"` 是 3 跳, 要 BFS 自己写, 且 3 跳以上必须上 community summary 否则 context 拼接成本爆炸); **没有 entity resolution / 语义匹配** (严格 `name == name`, `紫光恒越` 查不到 `紫光恒越技术有限公司` 的边); **没有方向语义 / 路径权重** (`set[(rel, tail)]` 不记反向边、不记 confidence, `"A 投资 B"` vs `"B 被 A 投资"` 分不清主被动)。这些都指向 s11 (多模态补全表格 / OCR) 和生产级 GraphRAG (双路召回 + 社区检测) — 见"接下来"。
 
 ---
 
-## 四、核心函数一览
+## 接下来
 
-| 函数 | 文件 | 输入 | 输出 | 一句话解释 |
-|---|---|---|---|---|
-| `_llm_json(prompt)` | `c01_extract.py` | `str` | `list[dict]` | OpenAI 兼容 `/chat/completions` + `response_format={"type":"json_object"}`;剥 `<think>...</think>` 推理块;无 key 时 `KeyError` |
-| `extract_triples(text)` | `c01_extract.py` | `str` | `list[{head, rel, tail}]` | 调 LLM 抽实体关系三元组;prompt 走裸 JSON |
-| `build_graph(triples_list)` | `c01_extract.py` | `list[list[dict]]` | `dict[head] → set[(rel, tail)]` | 把每段抽出的三元组合并到 dict;用 `set` 自动去重 |
-| `save_graph(graph, path)` | `c01_extract.py` | `(dict, Path)` | — | `json.dumps` 写 `_graph.jsonl`(每行一段) |
-| `main()` (01) | `c01_extract.py` | — | 写 `_graph.jsonl` + 打印图大小 | 01 演示入口:走完 extract → build → save 整条离线 ETL |
-| `load_graph(path)` | `c02_query.py` | `Path` | `dict[str, set[tuple[str, str]]]` | `jsonl` 读回 `dict[head] → set[(rel, tail)]`;纯内存,无 LLM |
-| `query_graph(graph, entity)` | `c02_query.py` | `(dict, str)` | `list[(rel, tail)]` | 1 跳查 `dict.get(entity, set())` + `sorted()` 排 |
-| `main()` (02) | `c02_query.py` | — | 打印实体 + 邻居 | 02 演示入口;默认 `紫光恒越` / `紫光集团` |
+s10 是 GraphRAG 的**最小骨架**: 手写 prompt 抽三元组 + 内存 `dict` 建图 + `dict.get` 查 1 跳。它把"关系面"这一刀补在了向量检索答不全的地方, 但每一步都极简, 这些脆弱性是生产级 GraphRAG 的填空目标:
 
-环境变量：
+- **代码 1 无 entity resolution** — `紫光恒越` / `紫光恒越技术有限公司` 是独立节点, 召回被撕碎。生产走两阶段管线 (embedding 聚类粗筛 + LLM 精审), RAGFlow 的 `general/entity_resolution.py` 就是这条路 — 错误率比"一次性抽 + 合并"低 30-50%。
+- **代码 1 无并发 / 无 entity_types 白名单** — 8 段顺序阻塞、章节标题被当噪声实体。生产走 `asyncio.Semaphore(10)` + `DEFAULT_ENTITY_TYPES = ["organization", "person", "geo", "event", "category"]` 白名单过滤。
+- **代码 2 只有 1 跳 + 严格字符匹配** — 多跳问题答不了、同名异写查不全。生产走双路召回 (向量 + 图同时跑, 命中任一即返回, RAGFlow `KGSearch`) + hierarchical Leiden 社区检测 (答"文档集在讲什么"这种跨实体聚合的宏观问题)。
 
-- `LLM_API_KEY` — OpenAI 兼容 API key；**必填**，2.1 那步调 LLM 抽实体。无 key 时 2.1 会 `KeyError`。
-- `LLM_BASE_URL` — 默认 `https://api.openai.com/v1`，可换任意 OpenAI 兼容 endpoint(MiniMax / DeepSeek / 智谱 / 月之暗面等）。
-- `LLM_MODEL` — 默认 `gpt-4o-mini`，可换 `MiniMax-M3`、`deepseek-chat` 等。
+s11 **多模态**: 代码 1 的 self-contained loader 内联了 pypdf + python-docx, 遇到扫描件 PDF / 图片型 DOCX 会解析空 — s11 专门讲多模态, 用 `VisionParser` + OCR 兜底, 让 GraphRAG 的抽取输入不再依赖"有文本层"的文档。这是把"玩具图谱"推向"工业图谱"的输入侧加固。
 
-无 key / 离线环境跑 2.2：
-
-```bash
-python s10_graphrag/c02_query.py   # 不调 LLM,只读 _graph.jsonl
-# 图为空或缺失: .../s10_graphrag/_graph.jsonl
-# 请先跑: python s10_graphrag/c01_extract.py
-```
-
-## 五、跨代码 schema 设计取舍
-
-为什么 schema 用 `(head, rel, tail)` 三元组 + `dict[head] → set[(rel, tail)]`、而不是别的？几个常见取舍的折中：
-
-- **三元组 vs N 元组**——MVP 走 3 元组，够演示"实体 + 关系"的核心点；N 元组（带时间 / 强度 / 来源）能携带更多信息但 prompt 复杂度翻倍。**生产里 RAGFlow 用 4 元组**(head / tail / rel / description + strength），见 `docs/reference/ragflow-notes/graph_extraction.md`。
-- **`dict[head]` vs `dict[(head, tail)]`**——MVP 走 `dict[head] → set[(rel, tail)]`，**从 head 出发查 1 跳邻居是 O(1) `dict.get`**；从 tail 反查会变成 O(N) 遍历（"被 X 投资的所有公司"要扫所有 edges）。**生产里要建双向索引**（同时存 `dict[tail] → set[(rel, head)]`），RAGFlow 的 `n_hop_with_weight` 字段就是预先展开的双向邻接表。
-- **JSON vs 结构化分隔符**——MVP 走裸 JSON(`response_format={"type": "json_object"}` + `<think>` 剥除）；RAGFlow 走**三段式分隔符**(`{tuple_delimiter}` + `{record_delimiter}` + `{completion_delimiter}`，默认 `<SEP>` / `##` / `<|COMPLETE|>`），见 `docs/reference/ragflow-notes/graph_extraction.md` §1。**分隔符格式正确率 >90%**（实测 Claude / GPT-4），裸 JSON 在中文 / MiniMax-M3 / qwen 这一档模型上格式正确率 <30%——MVP 走裸 JSON 是为了让 prompt 足够简单、能跑通核心点；生产请切分隔符。
-- **`set` vs `list` 存邻接边**——MVP 用 `set`，**同一 `(rel, tail)` 多次出现自动去重**；`list` 简单但会在"同段重复抽到同一三元组"时污染边集合。代价是 `set` 不保证顺序，c02 用 `sorted(graph.get(entity, set()))` 显式排。
-- **`build_graph` 单层 vs 多层**——MVP 走单层 dict（节点名即 key）；RAGFlow 把同一实体名跨段出现时**合并 description**(`<SEP>` 拼接，超过 12 段送 LLM 摘要压缩），并按 `entity_type` 分桶做 entity resolution。**MVP 完全不做合并**——`紫光恒越` 和 `紫光恒越技术有限公司` 是两个节点，召回时只能命中其中一个。
-
-## 六、跨代码调度与契约
-
-c01 写图（`extract_triples` → `build_graph` → `save_graph`），c02 读图（`load_graph` → `query_graph`）。两者通过 `_graph.jsonl` 解耦——c02 离线可重跑、调试抽取 prompt 时反复改 c01 重抽，c02 不需要每次重新走 LLM。**生产里也走这个模式**：c01 离线 ETL pipeline 跑完之后可以常关，在线 service 只跑 c02（扩展为多跳 / entity resolution），LLM 成本不会每次 query 都付一次。
-
-## RAGFlow 实现
-
-RAGFlow 的 GraphRAG 在 `general/extractor.py` 和 `general/entity_resolution.py` 两步：先用 LLM 抽 `(head, rel, tail)` 三元组（light path），再做 entity resolution 把同名实体合并（两阶段管线）。query 时 `dict[head] → set[(rel, tail)]` 1 跳查表。
-
-**设计取舍**：两阶段比"一次性抽 + 合并"稳——LLM 在 light path 阶段专心抽，entity resolution 阶段用规则 / 相似度合并同名实体。错误率比一次性方案低 30-50%。
-
-**整体拓扑**：(1) 2.1 走 `samples/ → 段落切分 → LLM 抽 (head, rel, tail) 三元组 → build_graph(dict) → save_graph(_graph.jsonl)` → (2) 2.2 离线读 `_graph.jsonl` → (3) 接收 entity query → (4) `dict.get(entity, set())` O(1) 拿 1 跳邻居 → (5) `sorted()` 排后返回。**生产差异**：RAGFlow 在 `general/extractor.py`(抽) + `general/entity_resolution.py`(合并) 两阶段管线,先 light path 抽、再 entity resolution 合并同名实体(`紫光恒越` vs `紫光恒越技术有限公司`);s10 toy 完全不做合并,同名异写是两个独立节点。
-
-详细摘录与 5-15 行 "为什么这样写" 的分析见 [`docs/reference/ragflow-notes/graph_extraction.md`](../docs/reference/ragflow-notes/graph_extraction.md)。
-
----
-
-## 选型速记
-
-### 主流 GraphRAG 范式速览
-
-下面这张表把 GraphRAG 系统的实现路径按"prompt 形式 / 抽取并发度 / 图存储 / 查询路径 / 社区检测"列出来：
-
-| 范式 | prompt 形式 | 抽取并发度 | 图存储 | 查询路径 | 社区检测 | 适用场景 |
-|---|---|---|---|---|---|---|
-| **手写 JSON prompt + 内存 dict(本章 MVP)** | JSON `response_format` | 串行 | 进程内 dict + JSONL | `dict.get` 1 跳 | 无 | 教学 / 快速原型 / 离线可复现 |
-| **结构化分隔符 prompt + 倒排索引(LightRAG / RAGFlow light)** | `<SEP>` 三段式 | 可并发 | Elasticsearch / Infinity | 向量召回实体 + 多跳扩展 | 无 | 生产单租户 / 几万 chunks |
-| **微软 GraphRAG 原版 + community summary(general)** | few-shot + 分隔符 | `asyncio.Semaphore(10)` | 倒排索引 + `community_report` chunk | `KGSearch` + 多跳 `n_hop_with_weight` | hierarchical Leiden | 答宏观问题 / 跨实体聚合 |
-| **Neo4j / TigerGraph 工业图数据库** | 任意 | 任意 | 独立图数据库 | Cypher / Gremlin | 内置 Louvain / Leiden | 图遍历密集 / 大规模实体 |
-
-我们的 toy `extract_triples` + `query_graph` 在范式复杂度上只占第一行——**手写 JSON + 内存 dict**；RAGFlow 走完整 general 路径，**多一道抽象就多一道观测点 + 一个失败模式**。教学 demo 选 MVP 因为它跑通快、依赖少、依赖全在 prompt 里可见；**生产请按"格式正确率 / 抽取成本 / 是否答宏观问题"做 tier 选型**(MVP → 切分隔符 → RAGFlow general → Neo4j）。
-
-- **教学 / 快速原型 / 离线可复现** → 本章 MVP（手写 JSON prompt + 内存 dict + 1 跳 query），无并发、无 merge、无社区检测，代码 ≤ 150 行；
-- **生产单租户 / 几万 chunks** → 切 LightRAG / RAGFlow light(`<SEP>` 三段式 + 倒排索引），格式正确率 + 抽取并发度上来了，代码 +200 行换 +300% 鲁棒性；
-- **答宏观问题 / 跨实体聚合** → RAGFlow general(hierarchical Leiden + community summary），加一层抽象换"能答'文档集在讲什么'"的能力，token 成本翻倍；
-- **图遍历密集 / 大规模实体** → Neo4j / TigerGraph 工业图数据库，Cypher / Gremlin 比 `dict.get` 表达力强，运维成本 10x 但可观测性 +10x；
-- **要先看清每个边界再选** → 用本章 2.1 把"手写 JSON"和"切分隔符"各跑一次，对比格式正确率——这是最简单的"抽取 prompt A/B"实验。
-
-### 扩展指南
-
-加一种新 graph source（数据库 schema 抽取 / CSV 转 RDF / 已有 Neo4j 数据导入）或改 schema（加 entity type / 加 weight 字段）只要三步：
-
-1. **加 source**：写一个 `extract_triples_from_sql(schema_sql: str) -> list[dict]` 或 `extract_triples_from_csv(rows: list[dict]) -> list[dict]`，**返回的 triple dict 必须沿用 `{head, head_type, rel, tail, tail_type}` 五键 schema**，`build_graph()` 不改一行；**改 schema**：在 `extract_triples()` 的 `_llm_json` prompt 里把 `head_type` / `tail_type` 候选枚举扩成新类型（`公司 / 产品 / 合同 / 交易` → + `人 / 部门 / 项目`），下游 `_merge_entity()` 自动 follow；
-2. **加 source**：在 `c01_extract.py` 的 `main()` 里按 `GRAPH_SOURCE` env 选 source（默认 `text`），不要在 `extract_triples` 里写 `if source == "sql": ...`；**改 schema**：在 `_llm_json` prompt 里扩枚举即可，`build_graph` / `query_graph` 都按 head_type / tail_type 字符串自由组合；
-3. 给代码文件 README 加一段"它跟纯文本抽取比，赢在哪 / 输在哪"的对照（SQL：结构化精确 / 依赖 DDL 文档；CSV：批量 / 缺实体类型）。
-
-不要把多 source / 多 schema 的判断塞进 `extract_triples()`——它只懂"对一段文本做 JSON 抽取"。本章 MVP 只跑纯文本 + 5 个候选 entity type，但 source 维度留好了挂 SQL / CSV 不动抽取逻辑。
+详细摘录与"为什么这样写"的分析见 [`docs/reference/ragflow-notes/graph_extraction.md`](../docs/reference/ragflow-notes/graph_extraction.md)。
 
 ---
 
