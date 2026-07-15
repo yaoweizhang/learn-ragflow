@@ -1,121 +1,163 @@
 # s09 Agent 与工具 — 把"要不要查"这个决策还给 LLM
 
-> **本章定位**：s09 是 RAG 的"控制面"。前面 s01-s08 把"先检索 → 拼 context → 调 LLM"做成了一条硬管线；本章把"**要不要走这条管线**"这个决策**从代码搬到 LLM 自己手里**——用 ReAct 循环 + 2 个工具（`retrieve` / `finish`）让模型自己挑走哪条路。详细定位见 s00 §1.4；RAGFlow 实现见本章末"## RAGFlow 实现"。
+[上一章 s08 → · 下一章 s10 → ... → s12]
+
+> *"前面 s01-s08 把'先检索 → 拼 context → 调 LLM'做成了一条硬管线；本章把'**要不要走这条管线**'这个决策**从代码搬到 LLM 自己手里**——用 ReAct 循环 + 2 个工具（`retrieve` / `finish`）让模型自己挑走哪条路"*
+>
+> **链路位置**: s08 (硬管线) → s09 (把"是否走管线"做成模型可决策的 step) → s10 (graphrag)
+> **代码文件**: c01_tool_call.py · c02_react_loop.py
+
+> 环境准备: 见 root README §快速开始 — `pip install -r requirements.txt` + `.env` 配 `LLM_API_KEY`(可选,无 key 走 graceful-skip 只打印 trace 形状)。s09 需要 s04-s07 整条检索管线已跑通(`python s04_embedding/...` → `s05_vector_index/...` → `s06_retrieval/...` → `s07_rerank/...` 顺序建好 `_chroma` 索引)。
 
 ---
 
-## 一、章节介绍
+## 问题
 
-### 1.1 核心定义：什么是 Agent + 工具调用？
+Agent(智能体)在 RAG 语境里指的是一种**让 LLM 自己控制程序流的范式**——模型不再是"被喂 context 然后回答"的应答者，而是"看问题 → 决定要不要查 → 调工具 → 看结果 → 再决定"的决策者。它要解决一个硬管线解决不了的问题:**不是每个问题都该先检索**。
 
-**Agent（智能体）** 在 RAG 语境里指的是一种**让 LLM 自己控制程序流的范式**——模型不再是"被喂 context 然后回答"的应答者，而是"看问题 → 决定要不要查 → 调工具 → 看结果 → 再决定"的决策者。它要解决一个硬管线解决不了的问题：**不是每个问题都该先检索**。
+s01-s08(以及 s09 之外的整条硬管线)用了一条固定管线:用户问 → 检索 → 拼 context → LLM 答。这条管线对"资料里能找到答案"的问题很有效,但对三类典型问题**反咬一口**:
 
-经典 RAG(s01-s08）用了一条固定管线：用户问 → 检索 → 拼 context → LLM 答。这条管线对"资料里能找到答案"的问题很有效，但对三类典型问题**反咬一口**：
+**第一,简单问题 ——"你好"、"1+1等于几"。**根本没文档能查,检索是浪费,还可能把不相关片段塞进 prompt 把 LLM 带偏。LLM 直接答就行。
 
-- **简单问题**——"你好"、"1+1等于几"——根本没文档能查，检索是浪费，还可能把不相关片段塞进 prompt 把 LLM 带偏；
-- **闲聊 / 已知知识**——"Python 是动态类型吗"——直接答就行，查文档反而会引入噪声和错误引用；
-- **多跳 / 反问语境**——"刚才那个 PDF 第几页讲的内存？"——可能要先答后查，或者查了再查，固定管线处理不了。
+**第二,闲聊 / 已知知识 ——"Python 是动态类型吗"。**直接答就行,查文档反而会引入噪声和错误引用。这是 LLM 训练数据充足就能回答的范畴,不该被检索打断。
 
-**ReAct(Reason + Act)** 是当前最主流的 agent 范式之一：模型在每轮生成 `Thought / Action / ActionInput` 三行，代码解析这三行、路由到对应工具、把工具结果当 `Observation` 写回 messages，让模型下一轮再决定。**Thought 让模型"先想再做"——这是把决策从代码搬到 LLM 的关键**；没有 Thought 的纯 function-calling 容易"乱调工具"，有 Thought 后模型至少在文本里能"先解释为什么调"。
+**第三,多跳 / 反问语境 ——"刚才那个 PDF 第几页讲的内存"。**可能要先答后查,或者查了再查,固定管线处理不了多轮反思。需要 LLM 自己判断"先查 A 还是先查 B / 查到了再查 C"。
 
-#### 本章的工具集：`retrieve` + `finish`
+把这三种失败合起来看,**"LLM 默认会怎么决策"和"我们需要模型怎么决策"之间也隔着一道悬崖**——这道悬崖由三类典型故障堆起来:
 
-agent 的**工具集**就是它能调用的"动作"——本章最小化到 2 个，够演示"决策权在 LLM"这个核心点：
+- **LLM 不停 retrieve 不 finish**——LLM 训练数据里"helpful assistant 应该是先查再答"的偏置很强,又因为 retrieve 的 observation 总是非空(哪怕不相关),模型找不到"应该停"的信号,会一路 retrieve 到 `max_steps` 撞顶;
+- **`Action: retrieve` 漏 `ActionInput` / JSON 解析失败**——模型可能吐 `Action: retrieve` 但漏 ActionInput,或者多写一段解释把 JSON 冲断。MVP 的 regex `r"Action:\s*(\w+)\b\s*ActionInput:\s*(.+)"` 是脆弱的;
+- **工具爆炸 / 选错工具**——工具一多 system prompt 装不下,模型选择准确率暴跌(每多 1 个工具 LLM 选择难度指数级上升),需要分组路由 + 互斥描述 + 多层 agent 治理。
 
-| 工具名 | 签名 | 作用 | 触发场景 |
+s09 的任务不是**解决**它们,而是把它们**显式暴露出来**——让你看到硬管线的边界,把"工具选择权"从代码搬到 LLM 自己手里。这是和 s08 把"toy prompt 在哪里会塌"显式对比是同一种思路:**先跑通 toy,再讲清楚 toy 在哪里会塌**,再把工业加固项列在末尾。
+
+---
+
+## 解决方案
+
+s09 用 **两个递进的脚本** 把"agent 决策"跑起来。每一步展示前一步的局限,引出下一步的加固方向:
+
+```
+代码 1 (单步 agent)              代码 2 (ReAct 循环)
+┌──────────────────┐         ┌──────────────────────────┐
+│ TOOLS_DESC       │         │ 复用 01 的底座          │
+│ + _llm           │         │ + run_agent 循环         │
+│ + _retrieve      │ ───▶   │   (max_steps=5)         │
+│ + single_shot    │         │   messages 维护         │
+│                  │         │   JSON 失败自愈          │
+│ 1 轮 LLM 决策    │         │ 多轮 LLM 决策              │
+└──────────────────┘         └──────────────────────────┘
+  "选哪个工具"可见             "边看结果边决策" 闭环
+```
+
+| 脚本 | 解决什么 | 留下什么局限 | 何时用 |
 |---|---|---|---|
-| `retrieve` | `(query: str) -> str` | 把 s05-s07 整条管线(embed → hybrid_search → rerank)打包成一次检索,返回 top-3 命中渲染的字符串 | 用户问题里**包含需要查资料的关键词** —— 服务器型号、产品规格、API 参数等 |
-| `finish` | `(answer: str) -> str` | 把 `answer` 字段当最终答案返回,终止循环 | LLM 已经能答了(闲聊 / 已知知识) **或** 资料里查到了该 finish |
+| `c01_tool_call.py` | 单步:LLM 一次输出 `Thought + Action + ActionInput` → 正则解析 → 跑工具 → 输出 observation | 只能走 1 轮,observation 出来就停了;没有循环控制 | 教学 / 验证 LLM 真能选工具 / 单步 demo |
+| `c02_react_loop.py` | 多步:循环 `_llm → parse → execute → observation`,`max_steps=5` 兜底,JSON 失败把原文当 Observation 反馈让模型自愈 | 单链循环,没有 DAG 分支;没有并行工具;没有 plan-first | 完整 ReAct 演示 / 多跳问题骨架 / 接到 FastAPI 服务前的最后一环 |
 
-工具集写到 `TOOLS_DESC` 常量里，改了 prompt 不用动主循环——这是 MVP 的关键解耦：RAGFlow 用 OpenAI 兼容的 `tool_calls` 字段把这一步结构化了（模型直接返回 `name + arguments`，不再"打字"给代码），但本章 MVP 走 prompt 内嵌 + 正则解析，把"为什么这样"暴露得更明显。
+两脚本的关系是一条**教学主干**: 代码 1 把"LLM 真的能挑工具"这件事演示出来——同一个 system prompt,问"1+1等于几" LLM 一轮 `finish`,问"R3630 G5 内存插槽数量" LLM 选 `retrieve`,**同一个 prompt 下"工具选择权"真的回到模型手里**。但 代码 1 是单步的——observation 出来就停,没有"看了结果再决定下一步"的循环。代码 2 把 代码 1 包成 `while step < max_steps` 循环,新增 30 行只关心"循环控制 + 终止条件 + JSON 失败反馈"——LLM 拿到 observation 后还能再选一次 `retrieve` 改写 query,或者 `finish` 收尾;撞 `max_steps=5` 强制终止防死循环。
 
-#### ReAct 循环的"三行式"格式
-
-每轮 LLM 输出长这样（示例，见 code_02 的 `run_agent` 主循环）：
-
-```
-Thought: 用户问的是 R3630 G5 的内存插槽数量,文档里应该有。
-Action: retrieve
-ActionInput: {"query": "R3630 G5 内存插槽数量"}
-```
-
-代码侧正则 `r"Action:\s*(\w+)\b\s*ActionInput:\s*(.+)"` 抠出 `Action` + `ActionInput`，路由：
-
-- `Action: retrieve` → 调 `_retrieve(payload["query"])` → 把返回的字符串当 `Observation` 写回 messages
-- `Action: finish` → 返回 `payload["answer"]`，循环结束
-- JSON 解析失败 → 把"原文"当 `Observation` 反馈回去，让 LLM 下一轮自己修正（code_02 的硬约束）
-- `max_steps` 撞顶 → 强制返回 "Max steps reached。"，防止死循环
-
-**关键观察**：同一个 system prompt 下，模型**对"1+1等于几"会一轮直接 finish**、**对"R3630 G5 的内存插槽数量"会先 retrieve 再 finish**——"工具选择权"真的回到了 LLM 手里。这是从"硬管线"到"agent"的最小跨越。
-
-#### Agent 与硬管线的本质区别
-
-把它放进 RAG 全景看：**s01-s08 是"检索 → 生成"的固定链路**，**s09 把"要不要走这条链路"做成模型可决策的 step**。下面是同一问题的两种处理对比：
-
-| 维度 | 硬管线 (s01-s08) | Agent (s09) |
-|---|---|---|
-| **流程** | 离线:索引 / 在线:无差别先检索 → 拼 prompt → LLM 答 | 离线:索引 / 在线:LLM 决策 → 调工具 → 拿 observation → 再决策 → ... → finish |
-| **简单问题 ("1+1")** | 强制检索 → 把噪声塞进 prompt → LLM 容易答非所问 | LLM 判 "不需要查" → 直接 `finish` |
-| **复杂问题 (多跳)** | 一次检索 + 一次生成,资料不够就答错 | LLM 多轮 retrieve + 反思 + 改写 query |
-| **拒答** | prompt 软约束("答'我不知道'"),依赖模型听话 | LLM 自己选 `finish("我不知道")`,决策显式 |
-| **失败模式** | 检索坏了整条管线塌 | retrieve 失败 → LLM 看到 observation 还能改写 query 再试 |
-| **实现成本** | 100 行 prompt 拼装 | 30 行 TOOLS_DESC + 50 行 run_agent 循环 |
-
-本章只演示**最小 agent**——2 个工具 + 5 轮上限 + 手写 prompt 解析；LangChain AgentExecutor / RAGFlow `agent/component/agent_with_tools.py` 把这套结构化了（用 `tool_calls` 字段、async DAG、Categize 失败跳走），见 §四。
-
-### 1.2 真实世界的问题
-
-`_retrieve(query)` 调起来 30 行，`run_agent(question)` 写完 50 行——加一起不到 100 行就能跑出"LLM 自己决定查不查"。看起来不值得单独一章。但把它放进 s08 的"先检索再答"硬管线对照看会发现：**"模型默认会怎么决策"和"我们需要模型怎么决策"之间也隔着一道悬崖**——这道悬崖由 3 类典型失败堆起来。
-
-#### 真实世界的问题 (3 条典型）
-
-1. **LLM 不停 retrieve / 不 finish**——LLM 训练数据里"helpful assistant 应该是先查再答"的偏置很强，又因为 retrieve 的 observation 总是非空（哪怕不相关），模型找不到"应该停"的信号，会一路 retrieve 到 `max_steps` 撞顶。**生产解法 3 层**：
-   - ① `max_steps` 上限——MVP 已经做了，硬天花板，治不住"模型本来可以答对但就是停不下来"；
-   - ② prompt 软约束——在 `TOOLS_DESC` 里写"每个问题**最多调用一次 retrieve**，再调用一次还没有答案就用已有 observation 给出 finish，否则答'我不知道'并 finish"；对主流模型（GPT-4o / Claude / Qwen-Max）效果不错，缺点是 prompt 越长越稀释；
-   - ③ 重复 action 检测——运行时加"前两步 `Action / ActionInput` 对是不是一模一样"的检查，命中强制 `finish`(`observation = "我重复了同一次检索,无法获取更多新信息"`），硬约束、不依赖模型听话。**MVP 只做 ①**，② ③ 留作生产加固项。详见「思考题答案」。
-2. **LLM 输出的 `Action: retrieve` 漏 `ActionInput` / JSON 解析失败**——模型可能吐 `Action: retrieve` 但漏 ActionInput，或者多写一段解释把 JSON 冲断。MVP 的 regex `r"Action:\s*(\w+)\b\s*ActionInput:\s*(.+)"` 是脆弱的——**生产里用 OpenAI / Anthropic 的 `tool_calls` 字段让 API 帮你解析**，模型不再"打字"给你，而是结构化返回参数（`tool_calls[0].function.name + arguments`）。RAGFlow 的 `LLMToolPluginCallSession` 走的就是这条路（见 `docs/reference/ragflow-notes/agent_tools.md`）。
-3. **工具爆炸 / 选错工具**——工具一多 system prompt 装不下，模型选择准确率暴跌（每多 1 个工具 LLM 选择难度指数级上升）。**生产治理 3 招**：
-   - ① **按"用户意图"分组路由**——先分类器决定走哪组工具（检索组 / 计算组 / 查询组 。。。），不把所有工具一次塞给 LLM；
-   - ② **工具描述写得"互斥"**——不同工具的描述之间**不重叠**，别让模型在"A 也能做、B 也能做"之间纠结；
-   - ③ **拆成多层 agent(supervisor + sub-agent)**——sub-agent 只看到自己的工具集，supervisor 决定调哪个 sub-agent。RAGFlow 用 `Agent` 组件嵌套（`self._load_tool_obj` 接子组件）实现 "agent-as-tool"。
-
-#### 为什么必须在 agent 上显式投入
-
-每条失败模式都对应一种工业级解法——`max_steps` 兜底 + prompt 软约束 + 重复检测、`tool_calls` 结构化字段、意图路由 + 工具互斥 + 多层 agent。**s09 的目标不是解决它们，而是把它们显式暴露出来，让你看到硬管线的边界**。这跟 s08 把"toy prompt 在哪里会塌"显式对比是同一种思路——**叙述载体从"prompt 4 条硬约束"换成"agent 2 工具 + 5 轮循环"**，但"先跑通 toy，再讲清楚 toy 在哪里会塌"的教学哲学是一致的。
-
-这也是为什么本章有 2 个代码文件而不是 1 个：
-
-- **code_01**——跑通最小骨架（`TOOLS_DESC` + `_llm` + `_retrieve` + `single_shot(question)`），演示"1 轮 LLM 就能自己选工具"。把工具调用和 ReAct 循环拆成 2 段是为了让"LLM 真的能挑工具"和"LLM 怎么多轮推理"分两段讲——单步看到决策能力，多步看到循环控制。
-- **code_02**——在 code_01 之上加 `run_agent(question, max_steps=5)` 主循环，演示完整 ReAct。复用 code_01 的所有底座（importlib 加载，代码零重复），新增的 30 行只关心"循环控制 + 终止条件 + JSON 失败反馈"。
+**关键设计取舍**(展开见 代码 1/代码 2 的「为什么这样写」):**2 工具 vs N 工具**——MVP 只放 `retrieve` + `finish` 两个,够演示"LLM 自己决策"这个核心点;**Thought vs 无 Thought**——`Thought: ...` 这一行让模型"先解释为什么调",trace 里能看到模型决策逻辑;**prompt 内嵌 vs `tool_calls` 字段**——MVP 走 prompt 内嵌 + 正则解析,生产可切 OpenAI / Anthropic 的 `tool_calls` 字段让 API 帮你解析;**`max_steps=5` 兜底**——LLM 没"应该停"的信号时可能死循环,经验值 3-7 步;**JSON 失败反馈**——`json.loads` 失败时把原文当 Observation 写回 messages,让 LLM 下一轮自愈,不直接报错。**MVP 选 toy 把"为什么这样"暴露在 README 里;生产选 `tool_calls` 换鲁棒性**。
 
 ---
 
-## 二、工具调用（单步）：[c01_tool_call.py](c01_tool_call.py)
+## 代码 1: 工具调用单步 ([c01_tool_call.py](c01_tool_call.py))
 
-入口：[`c01_tool_call.py`](c01_tool_call.py)
+### 工作原理
 
-把 2 个工具塞进 system prompt，调一次 LLM，正则抠 `Action / ActionInput`，跑工具。
-code_02 会把这一轮包成 `Thought → Action → Observation` 循环，跑多步。
+**做一件事**: 把 2 个工具 (`retrieve` / `finish`) 写进 system prompt,调一次 LLM,正则抠 `Action / ActionInput`,跑工具,展示 observation——**首次证明 LLM 能自己决定选哪个工具**。
 
-### 2.1 `TOOLS_DESC` 拼接与正则解析
+**4 步**:
+1. `TOOLS_DESC` 常量把工具集 (`retrieve(query: str)` / `finish(answer: str)`) + 三行式输出格式 (`Thought / Action / ActionInput`) 写进 system prompt——LLM 没看到函数签名,只能按这段文字的格式输出,这是 MVP 的硬约束,RAGFlow 用 OpenAI/Anthropic 的 `tool_calls` 字段结构化了这一步
+2. `_llm(messages)` 调 OpenAI 兼容 `/chat/completions`,`temperature=0`;剥掉 MiniMax / DeepSeek R1 的 `思考.../思考` 推理块(`re.sub(r"思考.*?/思考", "", raw, flags=re.DOTALL)`);无 key 时返回 `[skipped: ...]` 走 graceful-skip
+3. 同款 regex `r"Action:\s*(\w+)\b\s*ActionInput:\s*(.+)"` (DOTALL 兼容 ActionInput 跨行) 从 LLM 原话里抠出工具名 + 参数,剥 markdown 围栏 (` ```json ... ``` `) 后 `json.loads`
+4. `single_shot(question)` 把原话、解析的 action、解析的 payload、工具返回的 observation 一并打印成 trace——便于看到 LLM 决策的**每一步**
 
-本节只走**一轮** agent 决策：
+```python
+# 中间片段: regex + JSON 解析 + 工具路由
+m = re.search(r"Action:\s*(\w+)\b\s*ActionInput:\s*(.+)", text, re.DOTALL)
+if not m:
+    return {"text": text, "action": None, "payload": None,
+            "observation": "(no Action line parsed — LLM 直接答了?)"}
+action, raw = m.group(1), m.group(2).strip()
+raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.DOTALL).strip()
+try:
+    payload = json.loads(raw)
+except json.JSONDecodeError:
+    return {"text": text, "action": action, "payload": None,
+            "observation": f"(JSON 解析失败: {raw[:120]})"}
+if action == "finish":
+    obs = payload.get("answer", "(finish 但没给 answer)")
+elif action == "retrieve":
+    obs = _retrieve(payload.get("query", ""))
+```
 
-1. `TOOLS_DESC` 把 2 个工具（`retrieve(query)` / `finish(answer)`）和输出格式（`Thought` / `Action` / `ActionInput`）写进 system prompt；
-2. `_llm(messages)` 调 OpenAI 兼容接口（无 key 时降级，演示假设 retrieve），并剥掉 MiniMax / DeepSeek R1 的 `<think>...</think>` 推理块；
-3. 用同款 regex `r"Action:\s*(\w+)\b\s*ActionInput:\s*(.+)"`(DOTALL）从 LLM 原话里抠出工具名 + 参数；
-4. `single_shot(question)` 把原话、解析的 action、解析的 payload、工具返回的 observation 一并打印。
+**完整函数**:
 
-跑过 `python s09_agent_tools/c01_tool_call.py` 会看到：问"内存插槽数量"时 LLM 选 `retrieve`；问"1+1 等于几"时 LLM 直接选 `finish`——**同一个 system prompt，LLM 自己决定要不要查文档**。
+```python
+TOOLS_DESC = """你可以用以下工具:
+1. retrieve(query: str) — 从文档库检索相关段落
+2. finish(answer: str) — 给出最终答案
 
-### 2.2 单步 LLM 调用的执行命令
+按以下格式回答(每轮一步):
+Thought: <你的思考>
+Action: <retrieve 或 finish>
+ActionInput: <JSON 字符串>
+"""
+
+
+def _llm(messages: list[dict]) -> str:
+    """OpenAI 兼容接口 + 剥 思考.../思考 推理块(MiniMax / DeepSeek R1)."""
+    from openai import OpenAI
+    client = OpenAI(
+        api_key=os.environ["LLM_API_KEY"],
+        base_url=os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1"),
+    )
+    resp = client.chat.completions.create(
+        model=os.environ.get("LLM_MODEL", "gpt-4o-mini"),
+        messages=messages,
+        temperature=0,
+    )
+    raw = resp.choices[0].message.content
+    return re.sub(r"思考.*?/思考", "", raw, flags=re.DOTALL).strip()
+
+
+def single_shot(question: str) -> dict:
+    """调一次 LLM, 解析 Action/ActionInput, 执行工具, 返回 trace."""
+    import json
+    messages = [
+        {"role": "system", "content": TOOLS_DESC},
+        {"role": "user", "content": question},
+    ]
+    text = _llm(messages)
+    m = re.search(r"Action:\s*(\w+)\b\s*ActionInput:\s*(.+)", text, re.DOTALL)
+    if not m:
+        return {"text": text, "action": None, "payload": None,
+                "observation": "(no Action line parsed — LLM 直接答了?)"}
+    action, raw = m.group(1), m.group(2).strip()
+    raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.DOTALL).strip()
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"text": text, "action": action, "payload": None,
+                "observation": f"(JSON 解析失败: {raw[:120]})"}
+    if action == "finish":
+        obs = payload.get("answer", "(finish 但没给 answer)")
+    elif action == "retrieve":
+        obs = _retrieve(payload.get("query", ""))
+    else:
+        obs = f"Unknown action: {action}"
+    return {"text": text, "action": action, "payload": payload, "observation": obs}
+```
+
+### 试一下
 
 ```bash
 python s09_agent_tools/c01_tool_call.py
 # 问: R3630 G5 的内存插槽数量
 ```
 
-无 `LLM_API_KEY` 时打印演示（假设 LLM 选 retrieve 并跑检索管线）：
+实测输出 (无 `LLM_API_KEY`, graceful-skip 演示 trace 形状):
 
 ```
 [Q] R3630 G5 的内存插槽数量
@@ -123,228 +165,171 @@ python s09_agent_tools/c01_tool_call.py
 [skipped: LLM_API_KEY not set] — 演示假设 LLM 选了 retrieve:
 
 [LLM raw]
-Thought: 用户问的是 R3630 G5 的内存插槽数量,文档里应该有。
+Thought: 用户问的是 R3630 G5 的内存插槽数量。
 Action: retrieve
-ActionInput: {"query": "R3630 G5 内存插槽数量"}
+ActionInput: {"query": "R3630 G5 的内存插槽数量"}
 
 [Parsed action] retrieve
-[Parsed payload] {'query': 'R3630 G5 内存插槽数量'}
+[Parsed payload] {'query': 'R3630 G5 的内存插槽数量'}
 
 [Observation]
-- (server_whitepaper.pdf#1) 紫光恒越 R3630 G5 双路机架式服务器 ...
-- (server_whitepaper.pdf#2) 配备 32 个 DIMM 内存插槽 ...
-...
+- (无 LLM_API_KEY;真实 retrieval 需 chroma + embed,见 _retrieve())
 ```
 
-### 2.3 演示 trace 形状与字段说明
+- 交互输入, 看 LLM 选哪个工具 + observation 形状
+- 无 key 时不真跑检索,只演示 trace 形状;有 key 时(实测 `MiniMax-M3 over minimaxi.com`)LLM 会真去 retrieve,observation 来自 s05-s07 整条管线
 
-无 `LLM_API_KEY` 时打印的演示 trace（`[Q] → [LLM raw] → [Parsed action] → [Observation]`）见上节 `### 2.2`；有 key 时（实测 MiniMax-M3 over minimaxi.com）：LLM 会真去 retrieve，observation 来自 s05-s07 整条管线，后续 c02 才会真发起 1 跳查询。
+**观察**: **同一个 system prompt 下,LLM 自己选 `retrieve` 还是 `finish`**——问"R3630 G5 内存插槽数量"它选 `retrieve`,问"1+1等于几"它一轮直接 `finish`,**"工具选择权"真的回到了 LLM 手里**。这是从"硬管线(s01-s08)"到"agent(s09)"的最小跨越。但 代码 1 是单步的——observation 出来就停了,没有"看了结果再决定下一步"的循环,也没办法让 LLM 拿到 observation 后**改写 query 再试**——这是 代码 2 的入口。
 
-### 2.4 单步调用的边界与故障排查
+### 为什么不只写这一种
 
-本段做对了什么 — 演示了"LLM 决定调 retrieve → 拿到 context → 一次性答"这一最简闭环,首次把工具选择权交回给模型。
-
-
-- **只能走一轮**：observation 出来就停了，没有"看了结果再决定下一步"的循环——这就是 code_02 要解决的；
-- **没有 plan / execute 分层**：LLM 想回答复杂多跳问题（先查 A 再查 B 再总结）做不了；
-- **LLM 输出格式仍然脆弱**：regex 抓不到时本节就退化成"打印原话"——生产里应该用 OpenAI / Anthropic 的 `tool_calls` 字段让 API 帮你解析；
-- **没有死循环防护**：单步问题，但已经能看出"LLM 一直选 retrieve 不 finish"在多步场景下是定时炸弹。
-
-
-- `openai.AuthenticationError`： `LLM_API_KEY` 没设或失效；`.env` 加 `LLM_API_KEY=sk-...` 兜底，或 `unset LLM_API_KEY` 走 graceful-skip 分支。
-- `openai.APIConnectionError`： 网络不可达；设 `LLM_BASE_URL=https://...` 走代理，或暂时 `unset LLM_API_KEY` 验证非 LLM 链路（retrieval/rerank/agent 循环）正常。
-- `UnicodeEncodeError: 'gbk' codec can't encode character`： Windows 控制台编码问题，跑前 `set PYTHONIOENCODING=utf-8`(s05-s09 同问题）。
-- `JSON 解析失败`：LLM 偶尔吐错格式；code_02 会自动反馈回 Observation 自愈，code_01 走 graceful 打印原话。
+代码 1 只能跑 1 轮,observation 出来就停了——LLM 拿到"不相关 observation"没办法再反思,拿到"部分 observation"也没法再查——**没有"边看结果边决策"的循环**。代码 2 把这 1 轮包成 `while step < max_steps` 循环,让 LLM 看到 observation 后还能再选一次 `retrieve` 改写 query,或者 `finish` 收尾,撞 `max_steps=5` 兜底。
 
 ---
 
+## 代码 2: ReAct 循环 ([c02_react_loop.py](c02_react_loop.py))
 
-下一章 — 这一节把"召回 → 排序 → 生成 → 服务化"中的某一环跑通,留下 +1 章填下一档的实现;每加一档,缺失上层就越明显,直到 s12 把所有环节收敛到 FastAPI 服务。
+### 工作原理
 
-## 三、ReAct 循环：[c02_react_loop.py](c02_react_loop.py)
+**做一件事**: 在 代码 1 的底座(工具 + LLM + 检索)上加 `run_agent` 循环——`while step < max_steps: _llm → parse → execute → observation → step += 1`,让 LLM 每轮根据上一步 observation 决定下一步,JSON 解析失败时把原文当 Observation 反馈让模型自愈,**演示完整的"Thought → Action → Observation" 自循环**。
 
-入口：[`c02_react_loop.py`](c02_react_loop.py)
+**6 步**:
+1. `importlib` 加载 代码 1 的 `TOOLS_DESC` / `_llm` / `_retrieve`(目录以数字开头,普通 import 报 SyntaxError)——复用,不重写
+2. `run_agent(question, max_steps=5)` 维护 `messages` 列表,每轮:调 `_llm(messages)` → regex 抠 `Action / ActionInput` → 剥 markdown 围栏 → `json.loads`
+3. **JSON 解析失败**时把"上一次 ActionInput 不是合法 JSON,原文已回显: ..." 当 Observation 反馈回 `messages`,让 LLM 下一轮自己修正——5-10% 的轮次会触发这种自愈路径,**不直接报错**
+4. `Action == "finish"` → 返回 `payload["answer"]`,循环结束;`Action == "retrieve"` → 调 `_retrieve(payload["query"])`,把结果当 Observation 写回 messages
+5. **`max_steps=5` 兜底**——超过强制返回 `"Max steps reached."`,防 LLM 不停 retrieve 的死循环
+6. 返回 `{answer, trace}`,每条 trace 是 `{step, thought, action, obs}`,便于打印 / 调试 / 单元测试
 
-把 code_01 的"单步工具调用"包成循环，跑多步，JSON 失败时让 LLM 自己修正。
+```python
+# 中间片段: ReAct 主循环 + JSON 失败自愈
+for step in range(1, max_steps + 1):
+    text = _llm(messages)
+    messages.append({"role": "assistant", "content": text})
+    m = re.search(r"Action:\s*(\w+)\b\s*ActionInput:\s*(.+)", text, re.DOTALL)
+    if not m:
+        # 没抓到 Action —— 把 LLM 原话当 final answer 返回
+        return {"answer": text, "trace": trace + [{"step": step, "thought": text,
+                                                    "action": None, "obs": None}]}
+    action, raw = m.group(1), m.group(2).strip()
+    raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.DOTALL).strip()
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        # JSON 解析失败:把原文当 Observation 反馈回去,让模型下一轮自己修正
+        obs = f"上一次 ActionInput 不是合法 JSON,原文已回显: {raw[:200]}\n请严格按规范输出 JSON。"
+        trace.append({"step": step, "thought": text, "action": action, "obs": obs})
+        messages.append({"role": "user", "content": f"Observation: {obs}"})
+        continue
+```
 
-### 3.1 `run_agent` 循环与 JSON 自愈
+**完整函数**:
 
-本节是 s09 章节的**主要概念**——agent 循环：
+```python
+def run_agent(question: str, max_steps: int = 5) -> dict:
+    """Thought/Action/Observation 循环, 最多 max_steps 轮.
 
-1. 用 code_01 的 `TOOLS_DESC` / `_llm` / `_retrieve`(importlib 加载，不依赖 chapter-root）；
-2. `run_agent(question, max_steps=5)` 维护 messages 列表，每轮：调 LLM → regex 抠 `Action / ActionInput` → `json.loads` → 路由 `retrieve` 或 `finish` → 把结果写回 messages 当 `Observation`；
-3. **JSON 解析失败**时把原文当 Observation 反馈回去（"上一次 ActionInput 不是合法 JSON，原文已回显： 。。。"），让 LLM 下一轮自己修正；
-4. **`max_steps=5` 兜底**——超过就返回 `"Max steps reached."`，防 LLM 死循环；
-5. 返回 `{answer, trace}`，`trace` 是每轮的 `{step, thought, action, obs}`，便于打印 / 调试 / 单元测试。
+    返回 dict 含: `answer`(最终答案)、`trace`(每轮的 thought/action/observation
+    列表, 便于打印 / 调试 / 单元测试).
+    """
+    messages = [
+        {"role": "system", "content": TOOLS_DESC},
+        {"role": "user", "content": question},
+    ]
+    trace = []
+    for step in range(1, max_steps + 1):
+        text = _llm(messages)
+        messages.append({"role": "assistant", "content": text})
+        m = re.search(r"Action:\s*(\w+)\b\s*ActionInput:\s*(.+)", text, re.DOTALL)
+        if not m:
+            return {"answer": text, "trace": trace + [{"step": step, "thought": text,
+                                                        "action": None, "obs": None}]}
+        action, raw = m.group(1), m.group(2).strip()
+        raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.DOTALL).strip()
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            obs = f"上一次 ActionInput 不是合法 JSON,原文已回显: {raw[:200]}\n请严格按规范输出 JSON。"
+            trace.append({"step": step, "thought": text, "action": action, "obs": obs})
+            messages.append({"role": "user", "content": f"Observation: {obs}"})
+            continue
+        if action == "finish":
+            ans = payload.get("answer", text)
+            trace.append({"step": step, "thought": text, "action": action, "obs": ans})
+            return {"answer": ans, "trace": trace}
+        if action == "retrieve":
+            q = payload.get("query", "")
+            obs = _retrieve(q)
+        else:
+            obs = f"Unknown action: {action}"
+        trace.append({"step": step, "thought": text, "action": action, "obs": obs})
+        messages.append({"role": "user", "content": f"Observation: {obs}"})
+    return {"answer": "Max steps reached.", "trace": trace}
+```
 
-跑 `python s09_agent_tools/c02_react_loop.py` 会看到：问"内存插槽" → retrieve → finish 两步；问"1+1" → finish 一步直接结束。
-
-### 3.2 多步循环的执行命令
+### 试一下
 
 ```bash
 python s09_agent_tools/c02_react_loop.py
 # 问: R3630 G5 的内存插槽数量
 ```
 
-无 `LLM_API_KEY` 时打印演示 trace：
-
-```
-[Q] R3630 G5 的内存插槽数量
-
-[skipped: LLM_API_KEY not set] — 演示 trace 形状:
-
---- step 1 ---
-Thought: 用户问的是 R3630 G5 的内存插槽数量。
-Action:  retrieve
-Obs:     - (server_whitepaper.pdf#2) 配备 32 个 DIMM 内存插槽 ...
-
---- step 2 ---
-Thought: 找到了。
-Action:  finish
-Obs:     R3630 G5 配备 32 个 DIMM 内存插槽。
-
-[A] R3630 G5 配备 32 个 DIMM 内存插槽。
-```
-
-### 3.3 真实 trace 与"是否走 retrieve"分支
-
-把 code_02 跑在仓库自带的 `samples/` 上，`run_agent` 返回的 trace 长这样（实测，`MiniMax-M3 over minimaxi.com`）：
+实测输出 (有 `LLM_API_KEY`, 实跑 `MiniMax-M3 over minimaxi.com`, 完整 ReAct 循环 2 步):
 
 ```
 Q: R3630 G5 的内存插槽数量
 
---- step 1 ---
-Thought: 用户问的是 R3630 G5 的内存插槽数量,文档里应该有。
-Action:  retrieve
-Obs:     - (server_whitepaper.pdf#1) 二、关键特性 计算密度:单台 2U 机箱内集成两颗处理器、32 条内存 DIMM 与 10 个 PCIe 4.0 扩展槽位...
+--- trace (2 step(s)) ---
 
---- step 2 ---
-Thought: 找到了。
-Action:  finish
-Obs:     R3630 G5 配备 32 个 DIMM 内存插槽。
+[step 1]
+  Thought: 用户问的是 R3630 G5 的内存插槽数量,文档里应该有。
+  Action:  retrieve
+  Obs:     - (server_whitepaper.pdf#1) 二、关键特性 计算密度:单台 2U 机箱内集成两颗处理器、32 条内存 DIMM 与 10 个 PCIe 4.0 扩展槽位...
 
-A: R3630 G5 配备 32 个 DIMM 内存插槽。
+[step 2]
+  Thought: 找到了。
+  Action:  finish
+  Obs:     R3630 G5 配备 32 个 DIMM 内存插槽。
+
+[A] R3630 G5 配备 32 个 DIMM 内存插槽。
 ```
 
-跳过检索的对照（"1+1等于几"）：
+跳过检索的对照 (无 LLM_API_KEY,graceful-skip 演示 trace 形状):
 
 ```
-Q: 1+1等于几
+[Q] 1+1等于几
+
+[skipped: LLM_API_KEY not set] — 演示 trace 形状:
+
 --- step 1 ---
 Thought: 这是个简单算术,不需要查文档。
 Action:  finish
 Obs:     1+1等于2。
 
-A: 1+1等于2。
+[A] 1+1等于2。
 ```
 
-**关键观察**：同一个 system prompt 下，模型**对"1+1等于几"会一轮直接 finish**、**对"R3630 G5 的内存插槽数量"会先 retrieve 再 finish**——"工具选择权"真的回到了 LLM 手里。这就是从"硬管线"到"agent"的最小跨越。`graceful-skip` 的 trace 形状见上节 `### 3.2`。
+- 交互输入,看 LLM 走几步 + 每步 Thought / Action / Obs 形状
+- 同一个 prompt 下,问"R3630 G5 内存插槽数量"——`retrieve → finish` 两步;问"1+1等于几"——`finish` 一步直接结束
 
-### 3.4 多步循环的局限与稳定性增强
+**观察**: **`run_agent` 把"Thought → Action → Observation"循环显式暴露在 trace 里**——LLM 每一轮在干嘛一眼可见,production 调试直接看 Thought 比看 Action 更有用。无 LLM_API_KEY 时 graceful-skip,只演示 trace 形状不真跑检索。撞 `max_steps=5` 兜底防死循环;JSON 解析失败时把原文当 Observation 反馈让 LLM 自愈(不直接报错)。
 
-本段做对了什么 — 把 "Thought → Action → Observation → 重复" 的循环显式暴露在 trace 里,让模型每一轮在干嘛一眼可见。
+### 为什么不只写这一种
 
-
-- **没有 DAG 分支**：循环是单链——"先 retrieve 后 finish"，没法表达"先 categorize，按类别走不同路径"；
-- **没有 plan-first**：LLM 不会先输出"我要先查 X 再查 Y"再执行——每轮只看上一步 observation 决定下一步，多跳问题容易跑偏；
-- **没有并行工具**：一次只能调一个工具，不能"同时查 A 和 B"；
-- **没有"反思"组件**：observation 不相关时模型只能靠 prompt 里一句"找不到就 finish"自保，没有"主动改写 query 再试"的反射动作；
-- **死循环防护弱**：只靠 `max_steps` 兜底，没检测"同一个 Action 重复出现 N 次"——`max_steps=5` 够短所以问题不显，但放大到 `max_steps=20` 就明显；
-- **外部中断不支持**：没法像 RAGFlow 那样写 Redis `cancel` 标记让前端主动中断。
-
-
-- `openai.AuthenticationError`： `LLM_API_KEY` 没设或失效；`.env` 加 `LLM_API_KEY=sk-...` 兜底，或 `unset LLM_API_KEY` 走 graceful-skip 分支。
-- `openai.APIConnectionError`： 网络不可达；设 `LLM_BASE_URL=https://...` 走代理，或暂时 `unset LLM_API_KEY` 验证非 LLM 链路（retrieval/rerank/agent 循环）正常。
-- `UnicodeEncodeError: 'gbk' codec can't encode character`： Windows 控制台编码问题，跑前 `set PYTHONIOENCODING=utf-8`(s05-s09 同问题）。
-- `LLM 一路 retrieve 不 finish`： 撞 `max_steps=5` 兜底，见「思考题答案」第 1 题的 3 种解法（`max_steps` + prompt 软约束 + 重复 action 检测）。
-- `LLM 输出 `Action： retrieve` 但漏 ActionInput`： code_02 会把"原文"当 Observation 反馈回去让模型下一轮自愈；若连续失败，把 `TOOLS_DESC` 里的格式说明加粗（`**严格按以下格式**`）提升遵从度。
+代码 2 是"单链 ReAct 循环"——所有 query 都走同一条管线,**没有 DAG 分支**(没法表达"先 categorize,按类别走不同路径")、**没有 plan-first**(LLM 不会先输出"我要先查 X 再查 Y"再执行)、**没有并行工具**(一次只能调一个)。生产走 RAGFlow Canvas DAG 编排(`agent/` 目录下可视化拖拽节点、加边、调权重),可以根据 query 类型走不同路径(FAQ / RAG / 工具调用)。死循环防护目前只靠 `max_steps`,没做"重复 Action 检测"+ prompt 软约束,放大到 `max_steps=20` 就明显。LLM 一路 retrieve 不 finish 的工业加固项见「思考题」第 1 题的 3 种解法。
 
 ---
 
-## 四、核心函数一览
+## 接下来
 
-| 函数 | 文件 | 输入 | 输出 | 一句话解释 |
-|---|---|---|---|---|
-| `_llm(messages)` | `c01_tool_call.py` | `list[dict]` (role/content) | `str` (LLM 输出) | OpenAI 兼容 `/chat/completions`;`temperature=0`;无 key 时返回 `[skipped: ...]` |
-| `_embed_model()` / `_embed(texts)` | `c01_tool_call.py` | `list[str]` | `list[list[float]]` | 复制 s04 BGE-small-zh-v1.5 |
-| `_cosine(a, b)` | `c01_tool_call.py` | `(list[float], list[float])` | `float` | 内积(cosine ≡ inner_product 已 L2 归一化) |
-| `_hybrid_topk(docs, query, query_vec, dense_score_fn, k, alpha)` | `c01_tool_call.py` | `(list, str, list, callable, int, float)` | `list[dict]` | 复制 s06 fusion 公式:`α * vec + (1-α) * bm25_norm` |
-| `_reranker()` / `rerank(query, hits, top_k=3)` | `c01_tool_call.py` | — / `(str, list, int)` | `FlagReranker` / `list[dict]` | 复制 s07 cross-encoder rerank |
-| `_retrieve(query)` | `c01_tool_call.py` | `str` | `str` | s04 + s06 + s07 串联的检索函数(返回格式化文本) |
-| `single_shot(question)` | `c01_tool_call.py` | `str` | `dict{action, observation, final}` | 01 单步:LLM 一次输出 `Thought + Action + ActionInput` → 解析 → 跑工具 → 输出 |
-| `main()` (01) | `c01_tool_call.py` | — | 打印 trace | 01 演示入口;默认 query `"内存"` |
-| `run_agent(question, max_steps=5)` | `c02_react_loop.py` | `(str, int)` | `dict{trace, answer}` | 02 多步 ReAct:循环 `_llm → parse → execute → observation`,`max_steps` 兜底 |
-| `main()` (02) | `c02_react_loop.py` | — | 打印多步 trace | 02 演示入口;同样走 graceful-skip(无 key 时只打印 trace 形状) |
+s09 是把"是否走检索管线"做成模型可决策的 step——但 agent 决策本身的脆弱性也暴露出来,这些是后续章节的填空入口:
 
-- `LLM_API_KEY` — OpenAI 兼容 API key；**可选**，无 key 时走 graceful-skip 分支，只打印 trace 形状 + 演示用 observation。
-- `LLM_BASE_URL` — 默认 `https://api.openai.com/v1`，可换任意 OpenAI 兼容 endpoint(MiniMax / DeepSeek / 智谱 / 月之暗面等）。
-- `LLM_MODEL` — 默认 `gpt-4o-mini`，可换 `MiniMax-M3`、`deepseek-chat` 等。
-- `EMBED_MODEL` — 默认 `BAAI/bge-small-zh-v1.5`，同 s04-s08。
+- **`max_steps=5` 撞顶 / LLM 不停 retrieve** — `max_steps` 是硬天花板,治不住"模型本来可以答对但就是停不下来"。生产加固 3 层: ① `max_steps` 上限(MVP 已做);② prompt 软约束(`TOOLS_DESC` 里写"每个问题**最多调用一次 retrieve**");③ 重复 action 检测(运行时检查"前两步 `Action / ActionInput` 对是否重复",命中强制 `finish`)。三招全做才是生产级,见「思考题」第 1 题
+- **`Action: retrieve` 漏 `ActionInput` / JSON 解析失败** — regex 抓格式是脆弱的。生产里用 OpenAI / Anthropic 的 `tool_calls` 字段让 API 帮你解析,模型直接结构化返回 `tool_calls[0].function.name + arguments`,正则解析归零。RAGFlow `LLMToolPluginCallSession` 走的这条路
+- **工具爆炸 / 选错工具** — 工具一多 LLM 选择难度指数级上升。生产治理 3 招: ① 按"用户意图"分组路由(分类器先决定走哪组工具);② 工具描述写得"互斥"(不重叠,别让模型在"A 也能做、B 也能做"之间纠结);③ 拆多层 agent(supervisor + sub-agent 嵌套,RAGFlow 用 `Agent` 组件嵌套实现 "agent-as-tool")
+- **agent 单线循环 → DAG 分支** — s09 toy 是"先 retrieve 后 finish"单链;生产 RAGFlow Canvas 把"按 query 走不同路径"做成可视化 DAG,UI 里拖拽节点、加边、调权重,不改代码就能调整 agent 行为
 
-无 key / 离线环境跑 code_01 / code_02：
-
-```bash
-unset LLM_API_KEY && python s09_agent_tools/c01_tool_call.py
-# 走 graceful-skip:打印 trace 形状 + 假设的 LLM 输出,不调检索管线
-```
-
-## 五、跨代码 schema 设计取舍
-
-为什么 `TOOLS_DESC` 写成"2 工具 + 三行式"、而不是别的？几个常见取舍的折中：
-
-- **2 工具 vs N 工具**——MVP 只放 `retrieve` + `finish` 两个，够演示"LLM 自己决策"。**多 1 工具，选择难度指数级上升**(LLM 需要在更多选项里挑对）；**少 1 工具，agent 退化成硬管线**。生产里 5-8 个工具是经验上限，超过要拆多层 agent(§2.1 第 3 条）。
-- **Thought vs 无 Thought**——`Thought: ...` 这一行**让模型"先解释为什么调"**，降低乱调工具的概率。代价是 token +20-30%（每轮多一句思考）；收益是"模型偶尔选错工具"的可观测性 +300%——你能在 trace 里看到"模型为什么选 retrieve"，production 调试时**直接看 Thought 比看 Action 更有用**。
-- **prompt 内嵌工具 vs `tool_calls` 字段**——MVP 走 prompt 内嵌 + 正则解析；OpenAI / Anthropic 的 `tool_calls` 字段让 API 直接返回结构化 `name + arguments`，**正则解析的脆弱性归零**。代价是依赖特定 API(provider lock-in），且 prompt 里看不到工具描述（变成"代码侧 schema"）。**MVP 选 prompt 内嵌**是为了把"工具描述怎么写"暴露在 README 里；**生产选 tool_calls** 是为了鲁棒性。
-- **`max_steps=5` 兜底 vs 无上限**——LLM 没"应该停"的信号时可能死循环，**`max_steps` 是必须的硬天花板**。经验值 3-7 步：少于 3 步，多跳问题答不完；多于 7 步，token 成本指数级上升且准确率反降（模型在长 context 里"忘掉"自己应该 finish）。MVP 选 5 是 RAGFlow `max_rounds=5` 的同款默认值。
-- **JSON 失败反馈 vs 直接报错**——MVP 的 `run_agent` 在 `json.loads` 失败时**把"原文"当 Observation 写回 messages**，让 LLM 下一轮自己修正（给 `obs = "上一次 ActionInput 不是合法 JSON,原文已回显: ... 请严格按规范输出 JSON。"`）。**不直接报错**是为了让 agent 在"模型偶尔吐错 JSON"时自愈——生产里 5-10% 的轮次会触发这种自愈路径，直接报错会让用户体验断崖式下降。
-- **graceful skip vs hard fail**——同 s08，`run_agent` 在无 `LLM_API_KEY` 时返回 "Max steps reached。" + 演示 trace 形状，**不抛异常**。pipeline 在没配 key 的环境下也能跑、只展示 agent 决策形状。生产上**应该 fail-fast**，但教学 demo 走 graceful skip 让初学者少踩坑。
-
-## 六、跨代码调度与契约
-
-c01 跑单步（`single_shot`），c02 跑多步（`run_agent` + `max_steps` 循环）。`run_agent` 通过 `importlib` 加载 c01 的工具描述、LLM 客户端、检索函数——**单步-多步两层完全共用同一份底座**，c02 只新增 30 行循环控制代码。把"工具定义 + LLM 调用 + 检索函数"和"循环控制"解耦的好处：换循环策略（改成 DAG / supervisor-subagent）不动底层工具描述；加新工具（加 `calculate` / `web_search`）不动循环控制。
-
-## RAGFlow 实现
-
-RAGFlow 的 Agent 在 `agent/` 目录下用 Canvas DAG 编排：每个节点是一个 tool 或 LLM 调用，节点之间用 `bind_tools()` 绑定依赖。Canvas 不强制按 linear 顺序执行，可以根据 query 类型走不同路径（FAQ / RAG / 工具调用）。
-
-**设计取舍**：Canvas 把"按 query 走不同路径"做成可视化 DAG，而不是 hard-coded 流程。开发者可以在 UI 里拖拽节点、加边、调权重，不改代码就能调整 agent 行为。s09 toy 的 ReAct 循环是单线直连版，Canvas 是它的可视化升级。
-
-**整体拓扑**：(1) 01 把 `TOOLS_DESC`(工具描述 + 输入 schema) + `_llm()`(LLM 客户端) + `_retrieve()`(s04+s06+s07 串联的检索)封装在一个文件里 → (2) 02 通过 `importlib` 加载 01 的这三块,只新增循环控制(`while step < max_steps: llm → parse → execute → observation → step += 1`) → (3) trace 输出 `{step, thought, action, action_input, observation}` 给调试器/UI。**生产差异**：RAGFlow 的 Agent 走 Canvas DAG 编排(`agent/` 目录下可视化拖拽节点、加边、调权重),可以根据 query 类型走不同路径(FAQ / RAG / 工具调用);s09 toy 是单线 ReAct 循环,所有 query 都走同一条管线。
-
-详细摘录与 5-15 行 "为什么这样写" 的分析见 [`docs/reference/ragflow-notes/agent_tools.md`](../docs/reference/ragflow-notes/agent_tools.md)。
-
----
-
-## 选型速记
-
-### 主流 agent 范式速览
-
-下面这张表把 RAG 系统的 agent 范式按"工具描述形式 / 解析方式 / 死循环防护 / 工具数量"列出来：
-
-| 范式 | 工具描述形式 | 解析方式 | 死循环防护 | 工具数量 | 适用场景 |
-|---|---|---|---|---|---|
-| **手写 ReAct (本章 MVP)** | system prompt 内嵌文字 | 正则抠 `Action / ActionInput` | `max_steps=5` 一道线 | 2-5 个 | 教学 / 快速原型 / 离线可复现 |
-| **OpenAI `tool_calls` 字段** | 代码侧 schema(JSON) | API 直接返回 `tool_calls[0].function` | `tool_choice` + `max_rounds` | 5-15 个 | 生产单 agent(无嵌套) |
-| **RAGFlow Canvas DAG** | DSL 存工作流 + `bind_tools` | 异步生成器按 path 跑 | `max_rounds=5` + `is_canceled()` + `Categorize` | 10-30 个(嵌套) | 生产多 agent / 多租户 / UI 编排 |
-| **LangChain AgentExecutor** | `Tool` 类 + `tools=[]` | `agent_scratchpad` 解析 | `max_iterations` + `early_stopping_method` | 5-10 个 | 已有 LangChain 栈的工程 |
-| **LlamaIndex ReActAgent** | `QueryEngineTool` 包装 | 同 LangChain | `max_iterations` + verbose trace | 5-10 个 | 已有 LlamaIndex 栈的工程 |
-
-我们的 toy `run_agent` 在范式复杂度上只占第一行——**手写 ReAct**；RAGFlow 走完整 DAG，**多一道抽象就多一道观测点 + 一个失败模式**。教学 demo 选 MVP 因为它跑通快、依赖少、依赖全在 prompt 里可见；**生产请按"可观测性 vs 复杂度"做 tier 选型**(MVP → `tool_calls` → RAGFlow DAG → 多层 agent）。
-
-- **生产单 agent（无嵌套）** → 切 OpenAI / Anthropic `tool_calls` 字段，正则解析归零，工具数可以涨到 10-15 个，代码 +50 行换 +300% 鲁棒性；
-- **生产多 agent / 多租户 / UI 编排** → RAGFlow Canvas DAG，异步生成器 + `Categorize` 失败跳走，工具数 10-30 个，实现成本 10x 但可观测性 +10x；
-- **已有 LangChain / LlamaIndex 栈** → 复用框架的 `AgentExecutor` / `ReActAgent`，不重写 prompt 解析、不自己接 LLM 客户端；
-- **要先看清每个边界再选** → 用本章 code_02 把"手写 ReAct"和"加重复 action 检测"各跑一次，对比"模型一路 retrieve 不 finish"的稳定性——这是最简单的"agent A/B"实验。
-
-### 扩展指南
-
-加一个新 tool（API 调用 / 计算器 / code execution）只要三步：
-
-1. 写一个 `def call_api(query: str) -> str` 或 `def calculator(expr: str) -> str`（code exec 走 `subprocess.run([...], timeout=5)`），**返回 str**——agent 不关心工具内部细节，只关心"输入 → 输出"；
-2. 在 `c01_tool_call.py` 的 `TOOLS_DESC` 字符串里加一段工具描述（名称 + 何时调用 + 输入格式），`run_agent()` 的 prompt 解析会通过正则自动识别 `Action: <tool_name>` 调用，不要在 `_llm()` 里塞工具判断；
-3. 给代码文件 README 加一段"它跟 retrieve 比，赢在哪 / 输在哪"的对照（API：实时数据 / 网络依赖；计算器：精确算术 / 沙箱安全；code exec：任意计算 / 注入风险）。
-
-不要把新工具的 schema 塞进 `TOOLS_DESC` 里搞嵌套 dict——它是给 LLM 看的纯文本，结构化在 `_parse_action()` 里完成。本章 MVP 只跑 `retrieve` 一个 tool，但 `TOOLS_DESC` 是开放清单，加 5 个 tool 不改解析逻辑。
+s10 **graphrag**: 把 s09 的"决策权交给 LLM"扩到"决策权交给图遍历"——RAG 检索从"向量召回 top-k"扩成"向量召回 + 实体关系图遍历",回答多跳问题不再依赖 LLM 一次性 retrieve 全部上下文,而是先 retrieve 种子实体,再沿边扩到 n-hop 邻居,适合"关联关系 / 多次引用"类问题(法务合同条款串联、学术论文引文网络)。
 
 ---
 
