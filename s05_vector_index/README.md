@@ -144,7 +144,7 @@ indexed 34 chunks into _chroma/ (collection=docs, dim=512)
 **做一件事**: 把代码 1 持久化的 collection 重新打开，对 query 文本做同空间 BGE embed，用 cosine 距离取 top-k，把 `1 - distance` 翻成 `[0, 1]` 区间的 `score`。
 
 **4 步**:
-1. `_open_collection()` — `PersistentClient(path=DB_DIR).get_collection("docs")`；`_chroma/` 不存在或 collection 没建出来就返 `None`，让 `main()` 提示"先跑 code_01"
+1. `_open_collection()` — `PersistentClient(path=DB_DIR).get_collection("docs")`；`_chroma/` 不存在或 collection 没建出来就返 `None`，让 `main()` 提示"先跑 c01_chroma_build.py"
 2. `_embed([query])` — 内联本地 BGE (跟 c01 同款)，保证 query 向量落在跟索引**同款空间** (否则余弦无意义)
 3. `search(col, query_vec, k)` — `col.query(query_embeddings=[...], n_results=k)` 拿 `documents / metadatas / distances` 三列，`page` 从字符串还原回 `int` 或 `None`，`1 - cosine_distance` 翻成 `score`
 4. 统一返回 `list[{text, source, page, score}]` —— 下游 s06+ 不需要知道背后是 Chroma / Milvus / FAISS，只关心这四个字段
@@ -262,7 +262,7 @@ hits = col.query(
 )
 ```
 
-就这么一行。Chroma 0.5。x 的 `where` 支持 `{"字段": "值"}` 这种最简形（隐式 `$eq`），也会翻译成 `$eq` 内部表示。
+就这么一行。Chroma 0.5.x 的 `where` 支持 `{"字段": "值"}` 这种最简形（隐式 `$eq`），也会翻译成 `$eq` 内部表示。
 
 #### 2. 想要"只搜 PDF，排除扫描件"怎么写？
 
@@ -287,7 +287,7 @@ hits = col.query(
 
 #### 3. 元数据 schema 约束
 
-加进去的 `metadatas=[{"source": ..., "page": ...}]` 字段在 Chroma 里是**强类型 + 全 string** —— 我们 `code.py` 第 33 行把 `page` 转成 `str(c.get("page", ""))` 后再塞，因为 Chroma 1.5 拒绝 int+string 混合，0.5。x 拒绝 None（直接抛 `Cannot convert None to MetadataValue`）。如果忘了这步，`col.add` 会当场 segfault（在 Windows + chroma-hnswlib 0.7.6 上是真的 native crash，见 commit message 备注）。
+加进去的 `metadatas=[{"source": ..., "page": ...}]` 字段在 Chroma 里是**强类型 + 全 string** —— 我们 `c01_chroma_build.py` 第 33 行把 `page` 转成 `str(c.get("page", ""))` 后再塞，因为 Chroma 0.5.x 拒绝 int+string 混合、拒绝 `None`（直接抛 `Cannot convert None to MetadataValue`）。如果忘了这步，`col.add` 会当场 segfault（在 Windows + chroma-hnswlib 0.7.6 上是真的 native crash，见 commit message 备注）。
 
 #### 4. 一句话总结
 

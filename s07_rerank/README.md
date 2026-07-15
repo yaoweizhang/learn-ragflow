@@ -241,6 +241,5 @@ if top > 0:
 - **不稳**：LLM 输出的"前 3 名"格式需要后处理解析，且对长 chunk 容易"前部偏置"（chunk 开头被看得多、结尾被看得少）。
 
 所以生产代码把 LLM 风格的 rerank 做成**多 provider 抽象**（Jina / Cohere / Voyage / Qwen / 本地 HF cross-encoder），让租户按预算选；cross-encoder 的"快 + 准 + 便宜"组合通常是默认推荐——我们的 MVP 也是这个选择。
-下一章 — 这一节把"召回 → 排序 → 生成 → 服务化"中的某一环跑通,留下 +1 章填下一档的实现;每加一档,缺失上层就越明显,直到 s12 把所有环节收敛到 FastAPI 服务。
 
 > 排错事项（`ModuleNotFoundError` / OSError / `rerank_score` 取值 等）见 `c01` / `c02` 的 `### 局限与下一步`。

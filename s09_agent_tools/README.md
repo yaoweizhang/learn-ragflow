@@ -367,6 +367,5 @@ ReAct **每轮让模型先输出 Thought（思考过程）再选 Action**，func
 
 三招：① **按"用户意图"分组路由**——先分类器决定走哪组工具（检索组 / 计算组 / 查询组），不把所有工具一次塞给 LLM；② **工具描述写得"互斥"**——不同工具描述之间不重叠，别让模型在"A 也能做、B 也能做"之间纠结；③ **拆多层 agent**——supervisor 决定调哪个 sub-agent，sub-agent 只看到自己工具集，RAGFlow 用 `Agent` 组件嵌套实现 "agent-as-tool"。
 
-下一章 — 这一节把"召回 → 排序 → 生成 → 服务化"中的某一环跑通,留下 +1 章填下一档的实现;每加一档,缺失上层就越明显,直到 s12 把所有环节收敛到 FastAPI 服务。
 
 > 排错事项（`AuthenticationError` / `APIConnectionError` / `Action: retrieve` 缺 `ActionInput` 等）见 `c01` / `c02` 的 `### 局限与下一步`。

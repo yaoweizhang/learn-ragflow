@@ -290,7 +290,6 @@ s11 **多模态**: 代码 1 的 self-contained loader 内联了 pypdf + python-d
 
 BFS 自己写 2-3 跳。`graph.get(x)` 拿到 1 跳邻居后，把邻居当起点再 `graph.get(邻居)` 拿到 2 跳……用 `visited` set 防环、`queue` 维护待访问节点即可。但 N 跳查询有 2 个边界：① token 爆炸——一跳 50 条边、2 跳 2500 条、3 跳 125000 条，喂 LLM 前要 rerank + cap top-k；② 召回失真——跳得越远、信号越弱，生产上 2-3 跳是经验上限。3 跳以上走社区 summary(hierarchical Leiden）才合算。
 
-下一章 — 这一节把"召回 → 排序 → 生成 → 服务化"中的某一环跑通,留下 +1 章填下一档的实现;每加一档,缺失上层就越明显,直到 s12 把所有环节收敛到 FastAPI 服务。
 
 > 图为空 / 节点名歧义 / entity resolution 等现象详见 `c01` / `c02` 的 `### 局限与下一步`。
 
