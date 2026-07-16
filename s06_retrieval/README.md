@@ -187,7 +187,7 @@ def hybrid_topk(
     """对 docs 算 BM25 分 + dense 分, 各自归一 [0,1] 后 alpha 加权融合, 返回 top-k.
 
     `dense_score_fn(chunk) -> float` 由调用方注入 (可以是 chroma query、暴力
-    遍历、自己实现的近似 KNN 等), 保证 unit 02 不绑死任何具体向量库.
+    遍历、自己实现的近似 KNN 等), 保证 hybrid_fusion.py 不绑死任何具体向量库.
     """
     bm = BM25(docs)
     bm_scores = bm.score(query)

@@ -168,7 +168,7 @@ hits.append({
 
 ```python
 def _open_collection():
-    """打开 unit 01 持久化的 collection;不存在就返回 None 让 main 提示。"""
+    """打开 chroma_build.py 持久化的 collection;不存在就返回 None 让 main 提示。"""
     import chromadb
     if not DB_DIR.exists():
         return None
