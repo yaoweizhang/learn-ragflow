@@ -116,7 +116,13 @@ def call_llm(prompt: str) -> str:
 
 def main() -> None:
     paragraphs = load_paragraphs(SAMPLE)
-    q = input("问点啥: ").strip()
+    # 默认 query: 演示"有内容时如何工作";stdin closed 时 (CI / pipe) 走同一路径
+    try:
+        q = input("问点啥: ").strip()
+    except EOFError:
+        q = "营业收入"
+    if not q:
+        q = "营业收入"
 
     hits = retrieve(q, paragraphs, k=3)
     print(f"\n[retrieve] 召回 {len(hits)} 段")

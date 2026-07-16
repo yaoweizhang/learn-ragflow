@@ -64,7 +64,13 @@ def top_k(query: str, paragraphs: list[str], k: int = 3) -> list[tuple[str, floa
 
 def main() -> None:
     paragraphs = load_paragraphs(SAMPLE)
-    q = input("问点啥: ").strip()
+    # 默认 query: 演示"有内容时如何工作";stdin closed 时 (CI / pipe) 走同一路径
+    try:
+        q = input("问点啥: ").strip()
+    except EOFError:
+        q = "营业收入"
+    if not q:
+        q = "营业收入"
     print(f"\nTop-3 与你的问题最相关的段落（按向量余弦排序）：")
     for rank, (text, score) in enumerate(top_k(q, paragraphs, k=3), 1):
         snippet = text[:120].replace("\n", " ")

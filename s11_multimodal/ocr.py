@@ -16,7 +16,11 @@ WORKDIR = Path(__file__).resolve().parents[1]
 
 def main() -> None:
     # 默认无图：演示 tesseract 不可用 / 输入缺失时的优雅跳过路径
-    img_path = input("可选: 输入图片路径跑 OCR (回车跳过): ").strip()
+    try:
+        img_path = input("可选: 输入图片路径跑 OCR (回车跳过): ").strip()
+    except EOFError:
+        print("OCR skipped: 未提供图片路径 (stdin closed)")
+        return
     if not img_path:
         print("OCR skipped: 未提供图片路径")
         return
