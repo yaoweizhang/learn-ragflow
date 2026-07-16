@@ -4,7 +4,7 @@ s02 / unit 01 — 最小可跑加载：pypdf + python-docx → list[{text, page,
 
 unit 02 会复用这里的 load_pdf / load_docx 并展示真实样本上的失败。
 
-运行: python s02_doc_loading/c01_basic_load.py
+运行: python s02_doc_loading/basic_load.py
 需要: pip install pypdf python-docx；samples/{server_whitepaper.pdf,disclosure.docx}
 """
 from pathlib import Path

@@ -10,7 +10,7 @@ cap 切块、内联 s04 unit 01 的本地 BGE embed、内联 s06 unit 02 的 BM2
 对比。不跨章节 import,也不跨 unit import(直接 importlib 加载同章节的
 s06 unit 01 BM25)。
 
-运行: python s07_rerank/code_01_cross_encoder_rerank.py
+运行: python s07_rerank/cross_encoder_rerank.py
 需要: pip install pypdf python-docx sentence-transformers chromadb FlagEmbedding;
 samples/{server_whitepaper.pdf,disclosure.docx};首次跑会下载 BAAI/bge-reranker-base (~1GB)
 """
@@ -37,7 +37,7 @@ except Exception:
     pass
 
 # 复用 s06 unit 01 的 BM25/tokenize/chunker/loader(importlib 加载,不跨章节)。
-_UNIT01 = WORKDIR / "s06_retrieval" / "code_01_bm25.py"
+_UNIT01 = WORKDIR / "s06_retrieval" / "bm25.py"
 _spec01 = importlib.util.spec_from_file_location("s06_unit01_bm25", _UNIT01)
 _mod01 = importlib.util.module_from_spec(_spec01)
 sys.modules[_spec01.name] = _mod01

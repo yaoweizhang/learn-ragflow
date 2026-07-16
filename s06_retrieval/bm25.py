@@ -9,7 +9,7 @@ python-docx + 500 字符 cap 中英句界切来构造 chunk 集合,在内存里�
 unit 02 (hybrid_fusion) 会复用这里的 BM25/tokenize,叠加 dense cosine
 做加权融合。
 
-运行: python s06_retrieval/code_01_bm25.py
+运行: python s06_retrieval/bm25.py
 需要: pip install pypdf python-docx;samples/{server_whitepaper.pdf,disclosure.docx}
 """
 import math

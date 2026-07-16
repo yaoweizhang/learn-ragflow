@@ -39,7 +39,7 @@ ls -lh samples/
 # disclosure.docx
 ```
 
-随后进入任意章节目录运行 `code.py` 即可开始实验。
+随后进入任意章节目录运行对应的 `<topic>.py` 脚本即可开始实验。
 
 ## 关于虚构内容的说明
 

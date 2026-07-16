@@ -9,7 +9,7 @@ s03 / unit 01 — 文本分块最小解法：500 字符 cap + 中英句界切。
 unit 02 会把同一套函数跑在真实样本上,展示 3 类典型失败
 (表格切碎 / 父子块缺失 / 跨段引用断裂)。
 
-运行: python s03_chunking/code_01_basic_chunk.py
+运行: python s03_chunking/basic_chunk.py
 需要: 跑通 s02;samples/{server_whitepaper.pdf,disclosure.docx}
 """
 import re
@@ -21,7 +21,7 @@ from pathlib import Path
 # 里是上游契约,不重新实现)。
 import importlib.util
 
-_S02_UNIT01 = Path(__file__).resolve().parents[1] / "s02_doc_loading" / "code_01_basic_load.py"
+_S02_UNIT01 = Path(__file__).resolve().parents[1] / "s02_doc_loading" / "basic_load.py"
 _spec = importlib.util.spec_from_file_location("s02_unit01_basic_load", _S02_UNIT01)
 _mod = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = _mod

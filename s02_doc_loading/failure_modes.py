@@ -5,7 +5,7 @@ s02 / unit 02 — 失败模式：把 unit 01 的 loader 跑在真实样本上,
 
 对照 RAGFlow 的 deepdoc/parser/：用 XGBoost 版面分析 + table-aware 解析修这些问题。
 
-运行: python s02_doc_loading/c02_failure_modes.py
+运行: python s02_doc_loading/failure_modes.py
 需要: 同 unit 01 + samples/{server_whitepaper.pdf,disclosure.docx}
 """
 import importlib.util
@@ -14,7 +14,7 @@ from pathlib import Path
 
 # 复用 unit 01 的 loader（章节内 import 是允许的——这就是为什么要拆 unit）。
 # 目录以数字开头，普通 `import` 报 SyntaxError，改用 importlib 加载。
-_UNIT01_PATH = Path(__file__).resolve().parents[0] / "c01_basic_load.py"
+_UNIT01_PATH = Path(__file__).resolve().parents[0] / "basic_load.py"
 _spec = importlib.util.spec_from_file_location("s02_unit01_basic_load", _UNIT01_PATH)
 _mod = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = _mod

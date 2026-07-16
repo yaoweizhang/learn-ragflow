@@ -9,7 +9,7 @@ hits 塞进 `<context>...</context>` 块、调 OpenAI 兼容接口生成答案 +
 chapter-root)。LLM 调用走 OpenAI SDK(已在 requirements.txt),无
 `LLM_API_KEY` 时优雅降级,返回 `[skipped: LLM_API_KEY not set]`。
 
-运行: python s08_prompt_generate/code_01_prompt_template.py
+运行: python s08_prompt_generate/prompt_template.py
 需要: 跑通 s07; .env 里有 LLM_API_KEY(可选,无也能跑)
 """
 import importlib.util
@@ -94,7 +94,7 @@ def answer(question: str, hits: list[dict]) -> dict:
 
 def main() -> None:
     # 复用 s06 的 BM25/tokenize/chunker/loader(importlib 加载,Round 4 后改用 chapter-root 入口)。
-    _S06_U01 = WORKDIR / "s06_retrieval" / "code_01_bm25.py"
+    _S06_U01 = WORKDIR / "s06_retrieval" / "bm25.py"
     spec = importlib.util.spec_from_file_location("s06_unit01_bm25", _S06_U01)
     m = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = m

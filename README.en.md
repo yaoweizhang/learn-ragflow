@@ -8,7 +8,7 @@ A hands-on, engineering-focused RAG (Retrieval-Augmented Generation) tutorial ai
 
 Two layers (双层):
 
-- **Main chapters**: each chapter ships one `README.md` plus N descriptive `code_NN_<topic>.py` files at the chapter root (30–80 lines each); modify one line, see the output change, and validate "does a higher alpha give better recall?" in 5 minutes.
+- **Main chapters**: each chapter ships one `README.md` plus N descriptive `<topic>.py` files at the chapter root (30–80 lines each); modify one line, see the output change, and validate "does a higher alpha give better recall?" in 5 minutes.
 - **Industrial reference (default reading path; sole industrial comparison)**: [RAGFlow](https://github.com/infiniflow/ragflow) is one of GitHub's highest-star open-source RAG engines, with each RAG-pipeline stage engineered as an independent, swappable module. This tutorial uses RAGFlow as its **sole** industrial reference — every chapter ends with a `## RAGFlow 实现` section excerpting RAGFlow's implementation at that layer, with detailed source analysis in [`docs/reference/ragflow-notes/`](./docs/reference/ragflow-notes/) (chapter-aligned at the repo top: 5–15 line key excerpts + line numbers + "why this design" commentary, read when you want to go deep, not duplicated in each chapter README). **ragflow-notes is not supplementary material — it's the second half of the learning path**.
 
 Every chapter contains:
@@ -26,7 +26,7 @@ cd learn-ragflow
 pip install -r requirements.txt
 cp .env.example .env       # then edit .env and set LLM_API_KEY / LLM_BASE_URL / LLM_MODEL
 # Chapter 0 (preface) is prose-only — read s00_concepts/README.md to build the RAG mental model
-python s01_what_is_rag/c01_naive_keyword.py
+python s01_what_is_rag/substring_match.py
 ```
 
 Requires Python 3.10+ and at least 8 GB RAM (16 GB recommended for BGE embeddings). GPU optional.
@@ -89,12 +89,12 @@ The tutorial has two tracks — pick by your time budget:
 
 **Full path (10–12 hours):** s01 → s02 → ... → s12, one chapter at a time.
 
-- Each chapter takes 30–60 minutes: run `code_NN_<topic>.py` + modify `code_NN_<topic>.py` to see the change + read the matching `docs/reference/ragflow-notes/<topic>.md`.
+- Each chapter takes 30–60 minutes: run `<topic>.py` + modify `<topic>.py` to see the change + read the matching `docs/reference/ragflow-notes/<topic>.md`.
 - Focus is **design tradeoffs in each layer**; suitable for engineers planning to build, select, or extend a RAG system.
 
 ## Detailed outline
 
-The tutorial is split into **5 parts and 12 chapters**, each chapter shipping one `README.md` plus N descriptive `code_NN_<topic>.py` files at the chapter root.
+The tutorial is split into **5 parts and 12 chapters**, each chapter shipping one `README.md` plus N descriptive `<topic>.py` files at the chapter root.
 
 ### Part 0 — Concept primer
 
@@ -232,9 +232,9 @@ learn-ragflow/
 │   └── README.md
 ├── s01_what_is_rag/             # Chapter 1
 │   ├── README.md
-│   ├── c01_naive_keyword.py
-│   ├── c02_vector_basics.py
-│   └── c03_augmented_llm.py
+│   ├── substring_match.py
+│   ├── bag_of_words.py
+│   └── rag_pipeline.py
 ├── s02_doc_loading/             # Chapter 2
 ├── ...
 └── s12_deployment/              # Chapter 12

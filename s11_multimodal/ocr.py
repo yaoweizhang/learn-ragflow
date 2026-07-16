@@ -2,10 +2,10 @@
 """
 s11 / unit 02 — OCR：用 pytesseract + Pillow 跑中英文 OCR。
 
-对照 s11/code.py 聚合入口；本单元聚焦"图像里的字"这一类多模态输入，
+本单元聚焦"图像里的字"这一类多模态输入，
 把扫描件 / 图片型 PDF 的像素转成可检索文本。
 
-运行: python s11_multimodal/code_02_ocr.py
+运行: python s11_multimodal/ocr.py
 需要: pip install pytesseract Pillow + 系统装 tesseract 二进制 + chi_sim 语言包。
       缺任何一项脚本会优雅跳过，打印提示而不是炸栈。
 """

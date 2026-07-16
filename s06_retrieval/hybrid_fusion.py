@@ -11,7 +11,7 @@ s06 / unit 02 — 混合召回 fusion:BM25 + dense cosine 加权融合。
 (BGE 归一化后)。默认 alpha=0.95 偏向量,mirrors ragflow 的
 FusionExpr("weighted_sum", {"weights": "0.05,0.95"})。
 
-运行: python s06_retrieval/code_02_hybrid_fusion.py
+运行: python s06_retrieval/hybrid_fusion.py
 需要: pip install pypdf python-docx sentence-transformers chromadb;
 samples/{server_whitepaper.pdf,disclosure.docx}
 """
@@ -36,7 +36,7 @@ except Exception:
     pass
 
 # 复用 unit 01 的 BM25/tokenize/chunker/loader(importlib 加载,不跨章节)。
-_UNIT01 = Path(__file__).resolve().parent / "code_01_bm25.py"
+_UNIT01 = Path(__file__).resolve().parent / "bm25.py"
 _spec01 = importlib.util.spec_from_file_location("s06_unit01_bm25", _UNIT01)
 _mod01 = importlib.util.module_from_spec(_spec01)
 sys.modules[_spec01.name] = _mod01

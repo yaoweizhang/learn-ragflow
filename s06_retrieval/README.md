@@ -5,7 +5,7 @@
 > *"纯 dense 漏字面 (型号 / 编号), 纯 BM25 漏同义 (营收 / 营业收入) — 两路并行 + 加权融合才稳"*
 >
 > **链路位置**: 在线检索链路的召回入口 (s05 索引 → **s06 召回** → s07 精排)
-> **代码文件**: c01_bm25.py · c02_hybrid_fusion.py
+> **代码文件**: bm25.py · hybrid_fusion.py
 
 > 环境准备: 见 root README §快速开始 — 代码 1 纯 stdlib; 代码 2 需 `pip install sentence-transformers` + 本地 BGE (`HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1` 走缓存)
 
@@ -45,14 +45,14 @@ s06 用 **两个递进的脚本** 把混合检索跑起来。代码 1 先把 BM2
 
 | 脚本 | 解决什么 | 留下什么局限 | 何时用 |
 |---|---|---|---|
-| `c01_bm25.py` | 手写 BM25 字面召回 (tf + idf + 长度归一) | 漏同义 (`内存` ≠ `RAM`); 中文分词 naive; 无倒排索引 | BM25-only baseline / 关键词型检索 / 教学 |
-| `c02_hybrid_fusion.py` | BM25 + dense cosine α 加权融合 | `α` 写死 0.95; 无第三层信号; 无精排 | 教学混合检索 / 粗排入口 / s07 精排的底座 |
+| `bm25.py` | 手写 BM25 字面召回 (tf + idf + 长度归一) | 漏同义 (`内存` ≠ `RAM`); 中文分词 naive; 无倒排索引 | BM25-only baseline / 关键词型检索 / 教学 |
+| `hybrid_fusion.py` | BM25 + dense cosine α 加权融合 | `α` 写死 0.95; 无第三层信号; 无精排 | 教学混合检索 / 粗排入口 / s07 精排的底座 |
 
 两脚本的关系是一条**主干**: 代码 1 把"chunk 集合 → BM25 top-k"做出来, 暴露"漏同义"的死穴 — `营收` 找不到 `营业收入`; 代码 2 把 代码 1 的 BM25 分和 s04 BGE 的 dense cosine 在 `hybrid_topk` 里按 `α` 加权融合, 暴露"`α` 写死 + 无精排"的局限 — 同一个 `α` 对术语型和概念型 query 一刀切, 粗排 top-k 还没经过 cross-encoder 重打分。**每一步的局限, 都是下一步 (代码 2 / s07) 要解决的入口**。
 
 ---
 
-## 代码 1: BM25 词法召回 ([c01_bm25.py](c01_bm25.py))
+## 代码 1: BM25 词法召回 ([bm25.py](bm25.py))
 
 ### 工作原理
 
@@ -126,7 +126,7 @@ def bm25_topk(docs: list[dict], query: str, k: int = 5) -> list[dict]:
 ### 试一下
 
 ```bash
-python s06_retrieval/c01_bm25.py
+python s06_retrieval/bm25.py
 ```
 
 固定 query `应收账款 计提`, 打印 34 chunks 上的 BM25 top-5:
@@ -149,7 +149,7 @@ BM25 是纯字面召回 — `内存` 找不到 `RAM`, `营收` 找不到 `营业
 
 ---
 
-## 代码 2: 混合检索 fusion ([c02_hybrid_fusion.py](c02_hybrid_fusion.py))
+## 代码 2: 混合检索 fusion ([hybrid_fusion.py](hybrid_fusion.py))
 
 ### 工作原理
 
@@ -213,7 +213,7 @@ def hybrid_topk(
 ### 试一下
 
 ```bash
-HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python s06_retrieval/c02_hybrid_fusion.py
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python s06_retrieval/hybrid_fusion.py
 ```
 
 固定 query `应收账款 计提`, `alpha=0.95`, 打印含子分的 hybrid top-3:

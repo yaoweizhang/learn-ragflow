@@ -9,7 +9,7 @@ s05 / unit 01 — Chroma 持久化向量索引：把 chunks + embeddings + metad
 
 unit 02 会用同样的 DB_DIR 重新打开这个 collection,在它上面 query。
 
-运行: python s05_vector_index/code_01_chroma_build.py
+运行: python s05_vector_index/chroma_build.py
 需要: 跑通 s02/s03/s04 等价依赖;首次跑会写 s05_vector_index/_chroma/ 目录
       (已加 .gitignore:**/_chroma/,不入库)
 """

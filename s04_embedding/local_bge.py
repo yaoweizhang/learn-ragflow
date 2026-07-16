@@ -4,7 +4,7 @@ s04 / unit 01 — 本地 BGE Embedding：sentence-transformers 加载 BAAI/bge-s
 512 维,输出归一化向量,免 API key。本单元是章节的最小可跑 backbone,
 unit 02 的路由分发会把同款本地实现当成 EMBED_PROVIDER=local 的 default。
 
-运行: python s04_embedding/code_01_local_bge.py
+运行: python s04_embedding/local_bge.py
 需要: pip install sentence-transformers；首次运行会从 HF Hub 下载 ~100MB 模型到
 ~/.cache/huggingface/hub/，离线环境会失败——生产通常构建镜像时预下载并挂
 HF_HOME。

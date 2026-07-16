@@ -2,10 +2,10 @@
 """
 s11 / unit 01 — 表格抽取：用 pdfplumber 从 PDF 里抓所有非空表格，输出 list[{page, rows}]。
 
-对照 s11/code.py 聚合入口；本单元聚焦"结构化表格"这一类多模态输入，
+本单元聚焦"结构化表格"这一类多模态输入，
 把每个表格的行列按二维 list 原样吐出来——下游 chunking 时通常按行切。
 
-运行: python s11_multimodal/code_01_table_extract.py
+运行: python s11_multimodal/table_extract.py
 需要: pip install pdfplumber；samples/server_whitepaper.pdf 至少含 1 张表格
 """
 from pathlib import Path

@@ -5,7 +5,7 @@
 > *"`SentenceTransformer(...).encode(...)` 三行跑通的，是 s01 词袋模型留下'无语义'问题的最小答案；同一接口后挂 openai / ollama，是让 32 行代码能切后端不冲索引的最小扩容器"*
 >
 > **链路位置**: 离线索引链路第三步 (s02 → s03 → **s04** → s05)
-> **代码文件**: c01_local_bge.py · c02_provider_routing.py
+> **代码文件**: local_bge.py · provider_routing.py
 
 > 环境准备: 见 root README §快速开始 — `pip install sentence-transformers` (首次跑 c01/c02 会从 HuggingFace Hub 下载 `BAAI/bge-small-zh-v1.5` 约 100MB,后续命中本地 `~/.cache/huggingface/hub/`)；c02 切 openai / ollama 需要 `LLM_API_KEY` / `EMBED_BASE_URL`
 
@@ -48,14 +48,14 @@ s04 用 **两个递进的脚本** 把"chunk → 512 维向量"这条翻译层跑
 
 | 脚本 | 解决什么 | 留下什么局限 | 何时用 |
 |---|---|---|---|
-| `c01_local_bge.py` | chunk → 512 维 L2 归一化向量,免 API key,`@lru_cache` 不重载 | 单后端(BGE 中文);英文 / 多语言丢精度;首次依赖联网下载模型 | toy / 教学 / 中文 demo / 离线实验 |
-| `c02_provider_routing.py` | env-driven 在 local / openai / ollama 三家之间分发,统一 `list[list[float]]` schema | 无 retry / rate-limit;Ollama 逐文本 POST 没批处理;本地 BGE 仍要联网下载 | 生产 demo / 多后端 AB / provider 迁移过渡 |
+| `local_bge.py` | chunk → 512 维 L2 归一化向量,免 API key,`@lru_cache` 不重载 | 单后端(BGE 中文);英文 / 多语言丢精度;首次依赖联网下载模型 | toy / 教学 / 中文 demo / 离线实验 |
+| `provider_routing.py` | env-driven 在 local / openai / ollama 三家之间分发,统一 `list[list[float]]` schema | 无 retry / rate-limit;Ollama 逐文本 POST 没批处理;本地 BGE 仍要联网下载 | 生产 demo / 多后端 AB / provider 迁移过渡 |
 
 两脚本的关系是一条**教学主干**:代码 1 把"加载一个免费本地模型 + 归一化 + 返回纯向量"跑通,暴露"只用一家"的局限——多语言场景或生产 prompt 里没 key 怎么办;代码 2 把代码 1 的接口形状(`list[str] → list[list[float]]`)原封不动搬到"env-driven dispatcher",暴露"切后端"的工程成本——加 provider 写新函数 + 注册一行,失败时 graceful skip 不让 demo 机器全崩。**s04 看清新旧后端的边界条件,后续章节填空——s05 修 dim 锁死(Chroma collection 显式记录 `model_name`),s06 修单路 dense(sparse BM25 补一路),s07 修 rerank 缺位,BGE-reranker-large 是 dense 召回后的第二步精排**。
 
 ---
 
-## 代码 1: 本地 BGE Embedding ([c01_local_bge.py](c01_local_bge.py))
+## 代码 1: 本地 BGE Embedding ([local_bge.py](local_bge.py))
 
 ### 工作原理
 
@@ -132,7 +132,7 @@ def main() -> None:
 ### 试一下
 
 ```bash
-python s04_embedding/c01_local_bge.py
+python s04_embedding/local_bge.py
 ```
 
 实测输出(本机首次跑会先下载 ~100MB 模型,后续靠 `lru_cache` 秒回):
@@ -159,7 +159,7 @@ python s04_embedding/c01_local_bge.py
 
 ---
 
-## 代码 2: EMBED_PROVIDER 路由分发 ([c02_provider_routing.py](c02_provider_routing.py))
+## 代码 2: EMBED_PROVIDER 路由分发 ([provider_routing.py](provider_routing.py))
 
 ### 工作原理
 
@@ -274,20 +274,20 @@ def main() -> None:
 
 ```bash
 # 默认 local,免 key
-python s04_embedding/c02_provider_routing.py
+python s04_embedding/provider_routing.py
 ```
 
 切 OpenAI:
 
 ```bash
-EMBED_PROVIDER=openai LLM_API_KEY=sk-... python s04_embedding/c02_provider_routing.py
+EMBED_PROVIDER=openai LLM_API_KEY=sk-... python s04_embedding/provider_routing.py
 ```
 
 切 Ollama(`ollama pull bge-m3` + `ollama serve`):
 
 ```bash
 EMBED_PROVIDER=ollama EMBED_BASE_URL=http://localhost:11434 \
-  python s04_embedding/c02_provider_routing.py
+  python s04_embedding/provider_routing.py
 ```
 
 无 `LLM_API_KEY` / ollama 没起的输出(本机 demo 默认状态):

@@ -13,7 +13,7 @@ ENV:
   EMBED_BASE_URL    ollama 端点,默认 http://localhost:11434
   EMBED_MODEL       openai 默认 text-embedding-3-small,ollama 默认 bge-m3
 
-运行: python s04_embedding/code_02_provider_routing.py
+运行: python s04_embedding/provider_routing.py
 """
 import os
 from dotenv import load_dotenv

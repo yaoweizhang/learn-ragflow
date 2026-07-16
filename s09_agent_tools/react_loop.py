@@ -7,7 +7,7 @@ s09 / unit 02 — ReAct 循环:Thought → Action → Observation,跑多步,JSON
 unit 01 已经把"工具 + LLM + 检索"封装好,本单元只关心**循环控制**:维护
 messages、解析 action、路由工具、终止条件。
 
-运行: python s09_agent_tools/code_02_react_loop.py
+运行: python s09_agent_tools/react_loop.py
 需要: 跑通 s09 unit 01; .env 里有 LLM_API_KEY(可选,无也能跑骨架)
 """
 import importlib.util
@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 # 复用 unit 01 的工具定义 + LLM 客户端 + 检索函数(importlib,不依赖 chapter-root)
-_UNIT01 = Path(__file__).resolve().parent / "code_01_tool_call.py"
+_UNIT01 = Path(__file__).resolve().parent / "tool_call.py"
 _spec = importlib.util.spec_from_file_location("s09_unit01_tool_call", _UNIT01)
 _mod = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = _mod

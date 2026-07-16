@@ -10,7 +10,7 @@ self-contained: 内联 chroma + s04 unit 01 本地 BGE embed + s06 unit 02
 chapter-root)。LLM 走 OpenAI SDK,无 `LLM_API_KEY` 时打印示例响应让流程
 也能复现。
 
-运行: python s09_agent_tools/code_01_tool_call.py
+运行: python s09_agent_tools/tool_call.py
 需要: 跑通 s08; .env 里有 LLM_API_KEY(可选,无也能跑)
 """
 import importlib.util
@@ -63,7 +63,7 @@ def _llm(messages: list[dict]) -> str:
 
 # ---------- 检索工具(内联 s05-s07 管线,跟 s08 unit 01 同款) ----------
 # 复用 s06 unit 01 的 BM25/tokenize/chunker/loader(importlib 加载)。
-_S06_U01 = WORKDIR / "s06_retrieval" / "code_01_bm25.py"
+_S06_U01 = WORKDIR / "s06_retrieval" / "bm25.py"
 _spec = importlib.util.spec_from_file_location("s06_unit01_bm25", _S06_U01)
 _m = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = _m
