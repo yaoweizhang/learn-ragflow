@@ -134,7 +134,7 @@ DOCX 第 1 段前 100 字: 青蓝科技股份有限公司
 
 ### 为什么不只写这一种
 
-`c01` 在 toy / 文本型 PDF 上够用,但在真实样本上暴露出三类固有限制:
+``basic_load.py`` 在 toy / 文本型 PDF 上够用,但在真实样本上暴露出三类固有限制:
 
 - **DOCX 表格被吃掉**:`Document.paragraphs` 不含 `Document.tables`,所有表内文字静默丢弃 — 财报的"主营业务收入构成"表、合同的"违约责任"表,整张蒸发
 - **PDF 多栏排版错位**:双栏 PDF 抽出来的文本把左栏底部接到右栏顶部 — embedding 拿到"被切碎又乱拼"的字符串,retrieval top-k 召回碎段
@@ -153,11 +153,11 @@ DOCX 第 1 段前 100 字: 青蓝科技股份有限公司
 **4 步**:
 1. 用 `importlib.util.spec_from_file_location` 加载 `basic_load.py`(目录以数字开头,普通 `import` 报 SyntaxError) — 复用 `load_pdf` / `load_docx` 不重写
 2. `show_pdf_failure()`: 跑 `load_pdf` 拿到 4 段,逐段打印 `(page, len, first 60 字)` — 长度 / 内容让"多栏错位"肉眼可见
-3. `show_docx_table_loss()`: 直接打开 `Document(path)`,**额外**遍历 `doc.tables` 累加 `cell.text` 长度 — 这部分是 `c01` 的 `load_docx` 没读的
-4. 打印 "c01 的 load_docx 只读 paragraphs, 丢失 N 字符 (M 张表)" 量化结论 + 指向 RAGFlow 的 `deepdoc/parser/` 工业解法
+3. `show_docx_table_loss()`: 直接打开 `Document(path)`,**额外**遍历 `doc.tables` 累加 `cell.text` 长度 — 这部分是 ``basic_load.py`` 的 `load_docx` 没读的
+4. 打印 "`basic_load.py` 的 load_docx 只读 paragraphs, 丢失 N 字符 (M 张表)" 量化结论 + 指向 RAGFlow 的 `deepdoc/parser/` 工业解法
 
 ```python
-# 中间片段: DOCX 表格字符数累加 — c01 没做这部分
+# 中间片段: DOCX 表格字符数累加 — `basic_load.py` 没做这部分
 table_text_len = sum(
     len(cell.text)
     for tbl in doc.tables
@@ -165,14 +165,14 @@ table_text_len = sum(
     for cell in row.cells
 )
 print(f"[DOCX] paragraphs(非空)={para_count}, tables={table_count}, 表格内总字符={table_text_len}")
-print(f"  → c01 的 load_docx 只读 paragraphs，丢失 {table_text_len} 字符（{table_count} 张表）")
+print(f"  → `basic_load.py` 的 load_docx 只读 paragraphs，丢失 {table_text_len} 字符（{table_count} 张表）")
 ```
 
 **完整函数**:
 
 ```python
 def show_pdf_failure() -> None:
-    """跑 c01 的 load_pdf, 逐段打印 (page, len, first 60 字) — 让多栏错位肉眼可见."""
+    """跑 `basic_load.py` 的 load_pdf, 逐段打印 (page, len, first 60 字) — 让多栏错位肉眼可见."""
     pdf = load_pdf(SAMPLES / "server_whitepaper.pdf")
     print(f"[PDF] {len(pdf)} 页抽出的段落 (page, len, first 60 字):")
     for seg in pdf:
@@ -180,7 +180,7 @@ def show_pdf_failure() -> None:
 
 
 def show_docx_table_loss() -> None:
-    """额外遍历 doc.tables, 量化 c01 的 load_docx 丢多少字符 / 几张表."""
+    """额外遍历 doc.tables, 量化 `basic_load.py` 的 load_docx 丢多少字符 / 几张表."""
     from docx import Document
     path = SAMPLES / "disclosure.docx"
     doc = Document(path)
@@ -193,7 +193,7 @@ def show_docx_table_loss() -> None:
         for cell in row.cells
     )
     print(f"\n[DOCX] paragraphs(非空)={para_count}, tables={table_count}, 表格内总字符={table_text_len}")
-    print(f"  → c01 的 load_docx 只读 paragraphs，丢失 {table_text_len} 字符（{table_count} 张表）")
+    print(f"  → `basic_load.py` 的 load_docx 只读 paragraphs，丢失 {table_text_len} 字符（{table_count} 张表）")
 
 
 def main() -> None:
@@ -219,17 +219,17 @@ python s02_doc_loading/failure_modes.py
   page= 4 len= 744 | 五、可靠性与可维护性 冗余设计：电源、风扇、Boot 盘、PCIe 控制器均支持 N+1 冗余；内存支持镜像、备用与 纠
 
 [DOCX] paragraphs(非空)=27, tables=3, 表格内总字符=572
-  → c01 的 load_docx 只读 paragraphs，丢失 572 字符（3 张表）
+  → `basic_load.py` 的 load_docx 只读 paragraphs，丢失 572 字符（3 张表）
 ```
 
 - PDF 4 页都有内容 (861/562/413/744 字符) — 长度差异本身就在暗示"页内容密度不均",但**多栏错位藏在字符串内部,长度看不出来**(语义混乱在 embedding 层才暴露)
 - DOCX 27 段看着不少,但 3 张表的 572 字符蒸发 — 对财报类文档,这 572 字符往往就是"主营业务收入构成"这种核心结构化数据
 
-**观察**: `c02` 不生产新数据,只量化损失 — 这是它"demo 性质"的核心:不修,只量。它的存在意义是**教学动机** — 让读者在 s02 就看清"01 在 prod 上不够用,决策要不要跳 s11"。如果不量化,用户会以为 27 段 DOCX = "loader 跑通了",实际关键信息丢了 572 字符。如果你的真实语料 80% 是扫描件 PDF,02 的量化结果就是"01 完全不能用"的直接证据。
+**观察**: ``failure_modes.py`` 不生产新数据,只量化损失 — 这是它"demo 性质"的核心:不修,只量。它的存在意义是**教学动机** — 让读者在 s02 就看清"01 在 prod 上不够用,决策要不要跳 s11"。如果不量化,用户会以为 27 段 DOCX = "loader 跑通了",实际关键信息丢了 572 字符。如果你的真实语料 80% 是扫描件 PDF,02 的量化结果就是"01 完全不能用"的直接证据。
 
 ### 为什么不只写这一种
 
-`c02` 是"不修只量化"的 demo — 它**故意**不修任何问题,目的就是让你看清 01 的损失边界后再决定要不要跳到工业方案。它自身不解决任何问题:
+``failure_modes.py`` 是"不修只量化"的 demo — 它**故意**不修任何问题,目的就是让你看清 01 的损失边界后再决定要不要跳到工业方案。它自身不解决任何问题:
 
 - **多栏错位未修** — PDF 抽出来的字符串对 RAG 仍然是"被切碎又乱拼"的输入;切片粒度的重排留给 s03 chunking 在 token-cap 级小块上缓解,版面分析 + YOLO 检测留给 s11
 - **表格丢失未修** — 572 字符仍在蒸发;s11 多模态抽取(`deepdoc/parser/docx_parser.py` 同时遍历 `paragraphs + tables`)是工业解法,本章不动
@@ -241,13 +241,13 @@ python s02_doc_loading/failure_modes.py
 
 ## 接下来
 
-s02 是文档加载的**最小骨架 + 失败边界量化**:把"toy RAG"推向"工业 RAG"的第一步 — 没有稳定的文档加载,后面的 chunking / embedding / retrieval 全建立在沙滩上。`c01` 把"PDF / DOCX → 统一 `{text, page, source}` schema"做出来,`c02` 把"01 在真实样本上的损失"量化出来 — 这两件事合起来,给出了后续章节的填空入口:
+s02 是文档加载的**最小骨架 + 失败边界量化**:把"toy RAG"推向"工业 RAG"的第一步 — 没有稳定的文档加载,后面的 chunking / embedding / retrieval 全建立在沙滩上。``basic_load.py`` 把"PDF / DOCX → 统一 `{text, page, source}` schema"做出来,``failure_modes.py`` 把"01 在真实样本上的损失"量化出来 — 这两件事合起来,给出了后续章节的填空入口:
 
-- **PDF 多栏错位** — `c02` 看到的 861/562/413/744 长度看着正常,但字符串内部语义混乱,embedding 会把碎段当正常段处理。s03 chunking 在 token-cap 级小块上重排,让多栏错位的影响在切片粒度被吸收;s11 版面分析(YOLO / LayoutLMv3)做根因修复
+- **PDF 多栏错位** — ``failure_modes.py`` 看到的 861/562/413/744 长度看着正常,但字符串内部语义混乱,embedding 会把碎段当正常段处理。s03 chunking 在 token-cap 级小块上重排,让多栏错位的影响在切片粒度被吸收;s11 版面分析(YOLO / LayoutLMv3)做根因修复
 - **DOCX 丢表 572 字符** — 对财报 / 合同这类强结构化文档,丢表 = 核心信息蒸发。s11 `deepdoc/parser/docx_parser.py` 同时遍历 `paragraphs + tables` 是工业解法;本章只量化,不修
-- **扫描件静默丢** — `c01` 的 `if text.strip()` 过滤把整页丢掉,用户拿不到任何错误信号。s11 `VisionParser` + OCR(PaddleOCR / Tesseract / GOT-OCR2)兜底;本章识别问题不提供方案
+- **扫描件静默丢** — ``basic_load.py`` 的 `if text.strip()` 过滤把整页丢掉,用户拿不到任何错误信号。s11 `VisionParser` + OCR(PaddleOCR / Tesseract / GOT-OCR2)兜底;本章识别问题不提供方案
 
-s03 **chunking**: 把 c01 输出的 `{text, page, source}` schema 上的 `text` 单元按"句界 + token cap"切块 — 让 s04 的 embedding 拿到的是局部稠密的小块,而不是一整页的稀疏长文本;同时切片粒度上的重排能缓解 PDF 多栏错位的影响。
+s03 **chunking**: 把 `basic_load.py` 输出的 `{text, page, source}` schema 上的 `text` 单元按"句界 + token cap"切块 — 让 s04 的 embedding 拿到的是局部稠密的小块,而不是一整页的稀疏长文本;同时切片粒度上的重排能缓解 PDF 多栏错位的影响。
 
 ---
 

@@ -7,7 +7,7 @@
 > **链路位置**: 离线索引链路第三步 (s02 → s03 → **s04** → s05)
 > **代码文件**: local_bge.py · provider_routing.py
 
-> 环境准备: 见 root README §快速开始 — `pip install sentence-transformers` (首次跑 c01/c02 会从 HuggingFace Hub 下载 `BAAI/bge-small-zh-v1.5` 约 100MB,后续命中本地 `~/.cache/huggingface/hub/`)；c02 切 openai / ollama 需要 `LLM_API_KEY` / `EMBED_BASE_URL`
+> 环境准备: 见 root README §快速开始 — `pip install sentence-transformers` (首次跑 `local_bge.py`/`provider_routing.py` 会从 HuggingFace Hub 下载 `BAAI/bge-small-zh-v1.5` 约 100MB,后续命中本地 `~/.cache/huggingface/hub/`)；`provider_routing.py` 切 openai / ollama 需要 `LLM_API_KEY` / `EMBED_BASE_URL`
 
 ---
 
@@ -21,7 +21,7 @@ s01 的"字面匹配 + 词袋 + LLM"骨架跑通了整条 RAG 链路,但**召回
 
 **第三,真语义模型再强也只是召回一半**。即便 BGE 把"披露 / 公告 / 公开披露"压到向量空间的近邻位置,top-k 召回出来的 3 段还需要 s07 rerank 重排,prompt 还要 s08 工业模板拼装,embedding 不解决"挑最相关",更不解决"组织成答案"。把 embedding 当"装好了 RAG"是最常见的误解,s04 必须把这个边界显式画出来:embedding 是把"对的段落"找出来的**第一步,不是整条流水线**。
 
-把三条合起来看,**embedding 层的脆弱性不在 demo 上体现,在切后端 + 切语种 + 切维度时集中爆发**。s04 的任务就是先用 c01 跑通最小骨架(免 key、512 维归一化),再用 c02 把同一接口扩成"env 切换后端"的分发器——你看到本地 BGE / OpenAI / Ollama 三家在 prompt 级别是怎么被 if/elif 串起来的,生产里怎么避坑,以及**为什么 ChatGPT 那种"接好"体验背后是 `EmbeddingModel` 抽象类 + `EMBEDDING_FACTORY` 注册表**。如果不在 s04 看清 toy 后端的边界条件,后面 s06 hybrid 检索加任何一路 dense 都可能撞上一个本地 embedder 跑不动的沉默 500。
+把三条合起来看,**embedding 层的脆弱性不在 demo 上体现,在切后端 + 切语种 + 切维度时集中爆发**。s04 的任务就是先用 `local_bge.py` 跑通最小骨架(免 key、512 维归一化),再用 `provider_routing.py` 把同一接口扩成"env 切换后端"的分发器——你看到本地 BGE / OpenAI / Ollama 三家在 prompt 级别是怎么被 if/elif 串起来的,生产里怎么避坑,以及**为什么 ChatGPT 那种"接好"体验背后是 `EmbeddingModel` 抽象类 + `EMBEDDING_FACTORY` 注册表**。如果不在 s04 看清 toy 后端的边界条件,后面 s06 hybrid 检索加任何一路 dense 都可能撞上一个本地 embedder 跑不动的沉默 500。
 
 ---
 
@@ -148,7 +148,7 @@ python s04_embedding/local_bge.py
 
 ### 为什么不只写这一种
 
-`c01` 把 toy 后端跑通了,但只把"本地 BGE"这一家做了:
+``local_bge.py`` 把 toy 后端跑通了,但只把"本地 BGE"这一家做了:
 
 - **只对中文友好**:`bge-small-zh-v1.5` 是中文专用模型,英文 / 代码 / 多语言混合输入时向量空间失真——需要 `bge-m3` (1024 维多语言) 或 `bge-small-en` 才行;s04 不切语种路由,纯靠 `EMBED_MODEL` env 改,业务代码分不清"chunk 该走哪个模型"
 - **没 retry / rate-limit 包装**:HF Hub 在线下载时偶发 5xx 直接抛,生产环境应包 `tenacity` 指数退避;`@lru_cache` 同进程缓存有效,跨进程失效,微服务里每个 worker 都重新加载
@@ -199,7 +199,7 @@ def embed_ollama(texts: list[str]) -> list[list[float]]:
 
 ```python
 def _embed_local(texts: list[str]) -> list[list[float]]:
-    """EMBED_PROVIDER=local 时跑 sentence-transformers——和 unit 01 同款,但独立实现。"""
+    """EMBED_PROVIDER=local 时跑 sentence-transformers——和 local_bge.py 同款,但独立实现。"""
     from sentence_transformers import SentenceTransformer
     model = SentenceTransformer(os.environ.get("EMBED_MODEL", "BAAI/bge-small-zh-v1.5"))
     return [v.tolist() for v in model.encode(list(texts), normalize_embeddings=True)]
@@ -307,13 +307,13 @@ provider: openai, dim: 1536, count: 3
 ```
 
 - `provider: local/openai/ollama` 一行打当前路由 + dim + count——`dim` 让"切模型是否重建索引"的判断有具体数字可比
-- `[openai] skipped` / `[ollama] skipped` 是 **graceful fallback**——02 故意不抛异常,让你在 demo 机器上跑通整条 demo 链,缺哪个后端就只缺哪个;设上 env 后从 `skipped` 变 `ok`
+- `[openai] skipped` / `[ollama] skipped` 是 **graceful fallback**——代码 2 故意不抛异常,让你在 demo 机器上跑通整条 demo 链,缺哪个后端就只缺哪个;设上 env 后从 `skipped` 变 `ok`
 
 **观察**: `_REGISTRY` 字典 + env dispatcher 把"切后端"的工程成本降到最小——加 cohere / jina 一行注册,不动 `route()`。但有 key 也跑出 `provider=local, dim: 512` 而不是 `provider=openai, dim: 1536` 时,根因是 `EMBED_PROVIDER` 还停在 `local`——`route()` 是按 env **当前值**查表的,设了 key 没设 provider 它就还走 local。这是分布式配置(dotenv override + 服务端 env vars 共存)里的经典陷阱。**生产里这个错配会让"明明有 key 怎么还是本地 512 维"出现,s05 Chroma 写 1536 维时报 `Dimension mismatch`**。
 
 ### 为什么不只写这一种
 
-`c02` 把"切后端"工程化了,但仍有几类固有限制:
+``provider_routing.py`` 把"切后端"工程化了,但仍有几类固有限制:
 
 - **没 retry / rate-limit 包装**:openai 偶发 5xx / ollama 长连接 timeout 直接抛,生产环境应把所有异常包成统一 `EmbeddingError`,调用方看一种类型就能重试或换 provider
 - **没 batched ollama fallback**:本实现**逐文本 POST** Ollama,3 个句子 = 3 次请求;Ollama 原生支持 `inputs=[...]` 一把提交,大 batch 时延迟成倍放大
@@ -326,12 +326,12 @@ provider: openai, dim: 1536, count: 3
 
 ## 接下来
 
-s04 是 RAG 链路的**最小骨架 + provider 路由**:把 s03 的 chunk 翻译到向量空间,让 s05 的 Chroma 能接住、s06 的 dense 召回能跑通。`c01` 把"加载 BGE-small-zh + 归一化 + 返回纯向量"做出来,`c02` 把"切后端"的工程成本显式化——加 provider 一行注册、缺 key 不崩。这两件事合起来,给出了后续章节的填空入口:
+s04 是 RAG 链路的**最小骨架 + provider 路由**:把 s03 的 chunk 翻译到向量空间,让 s05 的 Chroma 能接住、s06 的 dense 召回能跑通。``local_bge.py`` 把"加载 BGE-small-zh + 归一化 + 返回纯向量"做出来,``provider_routing.py`` 把"切后端"的工程成本显式化——加 provider 一行注册、缺 key 不崩。这两件事合起来,给出了后续章节的填空入口:
 
-- **dim 错配沉默爆雷** — `c02` 暴露了"local=512 / openai=1536 / ollama=1024 三家维度不同"的现实,s05 Chroma collection 一旦用 `provider_a` embed 一批再用 `provider_b` embed 另一批,`collection.add(embeddings=vecs)` 直接 `Dimension mismatch`。s05 必须把 `model_name` + `dim` 写进 collection metadata,创建时校验,防止"分批 embed 跨模型"——这是 RAGFlow `BuiltinEmbed` 字典的工业形态
-- **单路 dense 召回天花板** — `c01` 的 BGE 把"披露 / 公告"压到向量近邻是修了 s01 的"无语义",但 BGE 不擅长精确词命中("青蓝科技" 这种 firm name 召回要靠 BM25 sparse 补)。s06 hybrid 检索 = dense BGE top-k + BM25 top-k → RRF / 加权融合,把两种语义侧召回都跑一遍,single-pass 双路
-- **缺 rerank 精排** — `c01` 的 512 维向量在 top-k 上给 cosine 排序,但"召回"≠"挑最相关"——BGE-reranker-large 是个 cross-encoder,对 query-doc 对重打 relevance 分,s07 用它做精排
-- **首跑联网 + 镜像构建成本** — `c01` 首次从 HF Hub 下 ~100MB 模型,CI / 离线内网环境直接挂。生产应在构建镜像阶段预下载 + 把 `HF_HOME` 指向挂载卷;真离线环境用 `HF_HUB_OFFLINE=1` 强制走本地缓存,这块在 s05 上线时一并处理
+- **dim 错配沉默爆雷** — ``provider_routing.py`` 暴露了"local=512 / openai=1536 / ollama=1024 三家维度不同"的现实,s05 Chroma collection 一旦用 `provider_a` embed 一批再用 `provider_b` embed 另一批,`collection.add(embeddings=vecs)` 直接 `Dimension mismatch`。s05 必须把 `model_name` + `dim` 写进 collection metadata,创建时校验,防止"分批 embed 跨模型"——这是 RAGFlow `BuiltinEmbed` 字典的工业形态
+- **单路 dense 召回天花板** — ``local_bge.py`` 的 BGE 把"披露 / 公告"压到向量近邻是修了 s01 的"无语义",但 BGE 不擅长精确词命中("青蓝科技" 这种 firm name 召回要靠 BM25 sparse 补)。s06 hybrid 检索 = dense BGE top-k + BM25 top-k → RRF / 加权融合,把两种语义侧召回都跑一遍,single-pass 双路
+- **缺 rerank 精排** — ``local_bge.py`` 的 512 维向量在 top-k 上给 cosine 排序,但"召回"≠"挑最相关"——BGE-reranker-large 是个 cross-encoder,对 query-doc 对重打 relevance 分,s07 用它做精排
+- **首跑联网 + 镜像构建成本** — ``local_bge.py`` 首次从 HF Hub 下 ~100MB 模型,CI / 离线内网环境直接挂。生产应在构建镜像阶段预下载 + 把 `HF_HOME` 指向挂载卷;真离线环境用 `HF_HUB_OFFLINE=1` 强制走本地缓存,这块在 s05 上线时一并处理
 
 s05 **向量索引**: 把任一 provider 输出的 `list[list[float]]` 持久化到 Chroma,带上 `chunk_id / text / page / source / model_name / dim` 五键元数据,让 s06 dense cosine 召回在数十万 chunk 上跑 ANN 检索而不是顺序扫。**provider 路由与存储层的边界在 s05 定型——换 provider 不冲索引、换索引库不动 provider**。
 
