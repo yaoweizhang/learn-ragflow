@@ -1,12 +1,14 @@
-# RAGFlow 怎么做: 文本分块 (parent-child + 版面 + token-aware + 上下文回填)
+# RAGFlow 文本分块
+
+## 一句话
+RAGFlow 把分块做成 4 层流水线：版面识别 → 父块 → token-aware 子块 → 媒体上下文回填；MVP s03 把这 4 层压成"500 字符 cap + 句界"一层，召回粒度直接受影响。
 
 ## 来源
-- 仓库: https://github.com/infiniflow/ragflow
-- 文件: `deepdoc/parser/pdf_parser.py`、`rag/nlp/__init__.py`
-- commit: `828c5789f651d4c4ebe4645190b8b8d244144fe0`
-- 引用日期: 2026-07-02
+- 仓库：https://github.com/infiniflow/ragflow
+- 模块：`deepdoc/parser/pdf_parser.py`（版面识别 + 父块）、`rag/nlp/__init__.py`（naive_merge / hierarchical_merge / attach_media_context）、`deepdoc/parser/resnet/updown_concat_xgb.model`（XGBoost 模型）
+- 关联：本仓库 s03 `basic_chunk.py` / `chunk_failures.py`
 
-RAGFlow 的分块是 **4 层流水线**，不是"段落 → 句子"两步就完事：
+4 层流水线：
 
 ```
 PDF 视觉识别 → 父块 (parent blocks) ─┬→ token-aware 子块 (child chunks)
@@ -14,11 +16,11 @@ PDF 视觉识别 → 父块 (parent blocks) ─┬→ token-aware 子块 (child 
                                       └→ attach_media_context (表格/图片回填上下文)
 ```
 
-下面 4 个 snippet 一块对应一层。MVP 把 4 层压成"500 字符 cap + 句界"一层，本文逐层展开。
+下面 5 个 snippet 一块对应一层。MVP 把 4 层压成"500 字符 cap + 句界"一层，本文逐层展开。
 
-## 1. 父块：XGBoost 驱动的版面合并 `_concat_downward`
+## 父块：XGBoost 驱动的版面合并
 
-[pdf_parser.py](https://github.com/infiniflow/ragflow/blob/828c5789/deepdoc/parser/pdf_parser.py)
+`_concat_downward`（`pdf_parser.py`）：
 
 ```python
 # concat between rows
@@ -58,9 +60,9 @@ while boxes:
 
 **关键点**：视觉相邻只是"候选"，最终合并交给 XGBoost（`updown_cnt_mdl.predict(...) <= 0.5` 则跳过）。
 
-## 2. 30 个特征：`_updown_concat_features`
+## 30 个特征
 
-[pdf_parser.py](https://github.com/infiniflow/ragflow/blob/828c5789/deepdoc/parser/pdf_parser.py)
+`_updown_concat_features`（`pdf_parser.py`）：
 
 ```python
 def _updown_concat_features(self, up, down):
@@ -101,9 +103,9 @@ self.updown_cnt_mdl.set_param({"device": "cpu"})
 self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
 ```
 
-## 3. 子块：token-aware + 可配重叠 `naive_merge`
+## 子块：token-aware + 可配重叠
 
-[nlp/__init__.py](https://github.com/infiniflow/ragflow/blob/828c5789/rag/nlp/__init__.py)
+`naive_merge`（`rag/nlp/__init__.py`）：
 
 ```python
 def naive_merge(sections: str | list, chunk_token_num=128,
@@ -123,11 +125,11 @@ def naive_merge(sections: str | list, chunk_token_num=128,
 
 `chunk_token_num=128`（不是字符）。token 数用 `num_tokens_from_string(...)`（tiktoken `cl100k_base`）算——这是 BGE / GPT 这类模型的真实额度单位，不是字符。`overlapped_percent=0` 关掉重叠；>0 时从上一个 chunk 切 `(100-percent)/100` 处当作 prefix 拼到下一个 chunk，并**重算 token 数**，否则容易超 cap。
 
-我们 MVP 是 `max_chars=500`，500 个中文字符 ≈ 1000-1500 个 token，BGE `max_seq_len=512` 直接爆掉。生产里分块必须用 token，不要用字符。
+MVP 是 `max_chars=500`，500 个中文字符 ≈ 1000-1500 个 token，BGE `max_seq_len=512` 直接爆掉。生产里分块必须用 token，不要用字符。
 
-## 4. 层级合并 `hierarchical_merge`
+## 层级合并
 
-[nlp/__init__.py](https://github.com/infiniflow/ragflow/blob/828c5789/rag/nlp/__init__.py)
+`hierarchical_merge`（`rag/nlp/__init__.py`）：
 
 ```python
 def hierarchical_merge(bull, sections, depth):
@@ -152,11 +154,11 @@ def hierarchical_merge(bull, sections, depth):
 
 `BULLET_PATTERN` 是一组按"标题级别"排序的正则：`"一、" → "1." → "1.1" → "1.1.1" → "- "` 这种有序匹配。函数把所有段落**按头部正则**分桶到对应级别，输出层级结构（`depth` 控制向下挖几层），让"召回到子段时把整节一起给 LLM"成为可能——这正是子句-父句回填的引擎。
 
-我们 s03 的 `chunk_by_paragraph` 完全是平铺：把所有段落平级切开。生产里如果你做 RAG 排版整齐的财报或白皮书，层级结构对召回准度提升明显。
+MVP s03 的 `chunk_by_paragraph` 完全是平铺：把所有段落平级切开。生产里如果你做 RAG 排版整齐的财报或白皮书，层级结构对召回准度提升明显。
 
-## 5. 媒体上下文回填 `attach_media_context`
+## 媒体上下文回填
 
-[nlp/__init__.py](https://github.com/infiniflow/ragflow/blob/828c5789/rag/nlp/__init__.py)
+`attach_media_context`（`rag/nlp/__init__.py`）：
 
 ```python
 def attach_media_context(chunks, table_context_size=0, image_context_size=0):
