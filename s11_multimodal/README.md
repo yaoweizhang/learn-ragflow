@@ -135,7 +135,7 @@ PDF 表格数: 1
 - **跨页表会断成两半**:白皮书里"长表翻页"很常见,本实现不会合并;真实场景要靠 page 坐标 + 行列结构相似度判定要不要拼
 - **没有表头检测**:第一行被当 header,但白皮书经常有"标题段 + 表格",`pdfplumber` 会把标题行吞进表里
 
-生产解法 → RAGFlow 的 `_table_transformer_job` 走视觉模型 + per-cell OCR(见 [RAGFlow 实现](RAGFlow-实现) 章节存档内容);`table_extract.py` 是 MVP,不修。
+生产解法 → RAGFlow 的 `_table_transformer_job` 走视觉模型 + per-cell OCR(详见 [`docs/reference/ragflow-notes/multimodal_parsing.md`](../docs/reference/ragflow-notes/multimodal_parsing.md));`table_extract.py` 是 MVP,不修。
 
 ---
 

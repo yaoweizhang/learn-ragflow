@@ -29,7 +29,7 @@ WORKDIR = Path(__file__).resolve().parents[1]
 SAMPLE = WORKDIR / "samples" / "disclosure.docx"
 
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
-LLM_BASE = os.environ.get("LLM_BASE", "https://api.minimaxi.com/v1")
+LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.minimaxi.com/v1")
 LLM_MODEL = os.environ.get("LLM_MODEL", "MiniMax-Text-01")
 
 
@@ -95,7 +95,7 @@ def call_llm(prompt: str) -> str:
 
     import json
     req = urllib.request.Request(
-        f"{LLM_BASE}/chat/completions",
+        f"{LLM_BASE_URL}/chat/completions",
         data=json.dumps(
             {
                 "model": LLM_MODEL,

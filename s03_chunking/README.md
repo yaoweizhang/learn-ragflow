@@ -389,4 +389,4 @@ RAGFlow 用 **parent-child 双层结构**：
 
 ### 参考
 
-- [`docs/reference/ragflow-notes/deepdoc_chunking.md`](../../docs/reference/ragflow-notes/deepdoc_chunking.md)：parent-child 在 RAGFlow `pdf_parser.py` / `rag/nlp/__init__.py:naive_merge` 的具体实现。
+- [`docs/reference/ragflow-notes/deepdoc_chunking.md`](../docs/reference/ragflow-notes/deepdoc_chunking.md)：parent-child 在 RAGFlow `pdf_parser.py` / `rag/nlp/__init__.py:naive_merge` 的具体实现。

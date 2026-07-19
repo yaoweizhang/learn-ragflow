@@ -280,7 +280,7 @@ s11 **多模态**: 代码 1 的 self-contained loader 内联了 pypdf + python-d
 
 **3) 让 LLM 在抽取阶段直接出 canonical name**（最准但最贵）——prompt 改成"请用 canonical name 写实体；如果同一实体出现多种写法，用出现频率最高的那个"。微软 GraphRAG 原版 prompt 不这么做，是图建好后单独跑 entity resolution——把"抽取"和"归一"解耦，归一阶段可以重跑、可以换策略。
 
-**生产推荐**：1 + 2 组合——规则先做一遍快速合并兜底常见中文后缀，剩余疑似冲突送 embedding + LLM 判断。RAGFlow 三种都做（`entity_resolution.py` + `normalize_node_names` 做 `upper().strip()` + `html.unescape`，见 `general/leiden.py:58`）。
+**生产推荐**：1 + 2 组合——规则先做一遍快速合并兜底常见中文后缀，剩余疑似冲突送 embedding + LLM 判断。RAGFlow 三种都做（`entity_resolution.py` + `normalize_node_names` 做 `upper().strip()` + `html.unescape`，见 `general/leiden.py`）。
 
 ### Q2. 三元组 schema 为什么是 `(head, rel, tail)` 而不是 `dict[entity, attrs]`?
 

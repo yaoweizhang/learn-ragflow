@@ -8,7 +8,6 @@ s10 / unit 02 — 1 跳图查询:加载 s10_graphrag/_graph.jsonl,在内存里�
 运行: python s10_graphrag/query.py
 需要: 先跑一次 s10_graphrag/extract.py(生成 _graph.jsonl)
 """
-import sys
 from pathlib import Path
 
 WORKDIR = Path(__file__).resolve().parents[1]
