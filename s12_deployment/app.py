@@ -89,3 +89,11 @@ def qa(req: QARequest) -> dict:
     cands = hybrid_topk(DOCS, req.question, qv, _dense_score, k=10, alpha=0.95)
     top = rerank(req.question, cands, top_k=3)
     return answer(req.question, top)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    # 也可 `uvicorn s12_deployment.app:app --host 0.0.0.0 --port 8000` 直接起;
+    # 这里保留 python app.py 起服务的方式,方便本地快速跑。
+    uvicorn.run(app, host="0.0.0.0", port=8000)
