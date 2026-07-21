@@ -18,6 +18,7 @@ SAMPLE = WORKDIR / "samples" / "disclosure.docx"
 
 # 极简中文 tokenizer —— 1-2 字滑动窗口。不是 jieba，但足够"向量检索"概念演示。
 def tokenize(text: str) -> list[str]:
+    """2-gram 滑动窗口 tokenize. 不是 jieba, 但足够"向量检索"概念演示."""
     text = re.sub(r"\s+", "", text)
     return [text[i : i + 2] for i in range(len(text) - 1)]
 
@@ -27,13 +28,9 @@ def load_paragraphs(path: Path) -> list[str]:
 
 
 def vectorize(text: str, vocab: dict[str, int]) -> list[float]:
-    """把段落转成词频向量，词表外 token 丢弃."""
+    """把段落转成词频向量, 词表外 token 丢弃."""
     counter = Counter(tokenize(text))
-    vec = [0.0] * len(vocab)
-    for tok, c in counter.items():
-        if tok in vocab:
-            vec[vocab[tok]] = c
-    return vec
+    return [float(counter.get(tok, 0)) for tok in vocab]
 
 
 def cosine(a: list[float], b: list[float]) -> float:

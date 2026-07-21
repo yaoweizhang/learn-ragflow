@@ -95,7 +95,13 @@ def fake_rag(question: str, paragraphs: list[str]) -> str:
 
 def main() -> None:
     paragraphs = load_paragraphs(SAMPLE)
-    q = input("问点啥: ").strip()
+    # 默认 query: 演示"有内容时如何工作";stdin closed 时 (CI / pipe) 走同一路径
+    try:
+        q = input("问点啥: ").strip()
+    except EOFError:
+        q = "营业收入"
+    if not q:
+        q = "营业收入"
     print(fake_rag(q, paragraphs))
 ```
 
@@ -130,7 +136,7 @@ python s01_what_is_rag/substring_match.py
 
 **6 步**:
 1. 用同款 `python-docx` 加载器读段落 (与 代码 1 共用 `load_paragraphs`)
-2. 对每段做 2-gram 切词 (`text[i:i+2] for i in range(len(text)-1)`, 滑动窗口) — 中文每 2 字 1 个 token, 单字粒度丢信息
+2. 对每段做 2-gram 切词 (`text[i:i+2] for i in range(len(text)-1)`, 滑动窗口) — 中文每相邻 2 字为 1 个 token, N 字输入产生 N-1 个 token, 保留所有 2 字组合的重叠
 3. 全部段落 token 组成全局词表 `vocab: {token: index}`, 用 `dict.setdefault(tok, len(vocab))` 自动分配索引
 4. 每段转成词频向量 `vec = [词频 in vocab]`, 长度 = `len(vocab)`, 用 `Counter(tokenize(text))` 计数
 5. query 用同款 2-gram 切, 转同样形状的向量 (query 词表外的 token 维度为 0)
@@ -190,7 +196,13 @@ def top_k(query: str, paragraphs: list[str], k: int = 3) -> list[tuple[str, floa
 
 def main() -> None:
     paragraphs = load_paragraphs(SAMPLE)
-    q = input("问点啥: ").strip()
+    # 默认 query: 演示"有内容时如何工作";stdin closed 时 (CI / pipe) 走同一路径
+    try:
+        q = input("问点啥: ").strip()
+    except EOFError:
+        q = "营业收入"
+    if not q:
+        q = "营业收入"
     print(f"\nTop-3 与你的问题最相关的段落(按向量余弦排序):")
     for rank, (text, score) in enumerate(top_k(q, paragraphs, k=3), 1):
         snippet = text[:120].replace("\n", " ")
@@ -310,7 +322,13 @@ def call_llm(prompt: str) -> str:
 
 def main() -> None:
     paragraphs = load_paragraphs(SAMPLE)
-    q = input("问点啥: ").strip()
+    # 默认 query: 演示"有内容时如何工作";stdin closed 时 (CI / pipe) 走同一路径
+    try:
+        q = input("问点啥: ").strip()
+    except EOFError:
+        q = "营业收入"
+    if not q:
+        q = "营业收入"
 
     hits = retrieve(q, paragraphs, k=3)
     print(f"\n[retrieve] 召回 {len(hits)} 段")
