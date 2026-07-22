@@ -7,7 +7,6 @@ venv/
 .env
 
 # Chapter artifacts
-samples/_derived/
 **/chroma_db/
 **/_chroma/
 **/cache/
@@ -19,9 +18,9 @@ samples/_derived/
 .DS_Store
 Thumbs.db
 
-# OpenAI lib retry-off patch (verification-only helper, not tutorial content)
-_openai_retry_off.py
-
 # Superpowers plugin scratch (local planning artifacts — not part of the tutorial)
 .superpowers/
 docs/superpowers/
+
+# CI / smoke run may leave HF model cache under repo root
+.huggingface/

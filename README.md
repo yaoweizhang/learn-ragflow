@@ -168,7 +168,14 @@ cp .env.example .env              # 编辑 .env，填入 LLM_API_KEY / LLM_BASE_
 source env.sh                     # 可选：HF_ENDPOINT=https://hf-mirror.com + LD_PRELOAD 修正
 # 第 0 章（序言）建议先读 README.md 建立 RAG 心智模型
 python s01_what_is_rag/substring_match.py         # 第 1 章 unit 1：朴素检索
+
+# 一键烟测:验完 s01-s07(s08+ 需 LLM_API_KEY);沙箱/CI 用 SMOKE_OFFLINE=1 走 HF 缓存
+bash scripts/smoke.sh                              # 含 s08-s12,需 .env 配 LLM_API_KEY
+SMOKE_NO_LLM=1 bash scripts/smoke.sh               # CI 路径,只跑 s01-s07
+SMOKE_OFFLINE=1 bash scripts/smoke.sh              # 沙箱路径,HF_HUB_OFFLINE=1
 ```
+
+> 注: 若环境无法访问 `huggingface.co`(沙箱/防火墙/企业网),且本地 `~/.cache/huggingface/` 已有 BGE + reranker 权重,可设 `export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1` 强制走缓存,免去每次下载或超时。GitHub Actions 上 `.github/workflows/smoke.yml` 会在 PR + push 时自动跑 `SMOKE_NO_LLM=1` 烟测。
 
 > 注: `env.sh`（项目自带的一键环境脚本,设 `HF_ENDPOINT` 指到 `hf-mirror.com` 国内镜像加速模型下载;用 `LD_PRELOAD` 临时替换新版 `libstdc++` 以兼容较老的 `pyarrow` / `datasets` 符号）;`OpenAI 兼容`（OpenAI-compatible,沿用 OpenAI Chat Completions API 协议的服务,如 DeepSeek / 智谱 GLM / 通义千问 / 自部署 vLLM 等都可填同一份 `LLM_BASE_URL + LLM_MODEL`）。
 

@@ -1,0 +1,48 @@
+# GitHub Actions smoke test for learn-ragflow
+#
+# 跑 SMOKE_NO_LLM=1 路径:覆盖 s01-s07(无外部依赖)。
+# s08+ 需要 LLM_API_KEY,本地读者跑 `bash scripts/smoke.sh` 即可。
+#
+# 安全说明:
+#   - 本 workflow 不引用任何 GitHub Secrets、不打印密钥、不读取 .env
+#   - BGE 模型 (~100MB) + bge-reranker (~1GB) 首次跑会下载,后续靠 cache 复用
+#   - 每次 run 用临时 ubuntu runner,跑完销毁,无状态泄露
+name: smoke
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  no-llm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # torch CPU 版足够(smoke 不需要 GPU);省 1GB+ wheels 下载
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+
+      - name: Run s01-s07 smoke (no LLM)
+        env:
+          SMOKE_NO_LLM: "1"   # CI 不调 LLM,跳过 s08/s09/s10/s12
+          HF_HUB_OFFLINE: "0" # CI 第一次跑要让 HF 下载模型,缓存复用
+        run: bash scripts/smoke.sh
+
+      - name: Cleanup HF cache (sandbox size hygiene)
+        if: always()
+        run: |
+          # 避免 workflow artifacts 误打 HF 缓存
+          du -sh ~/.cache/huggingface 2>/dev/null || true
