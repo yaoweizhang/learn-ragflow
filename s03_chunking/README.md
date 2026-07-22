@@ -385,7 +385,7 @@ RAGFlow 用 **parent-child 双层结构**：
 
 ### 为什么这是"最小解法"的升级
 
-我们 s03 的 500 字 cap 是教学原型，够跑通管道、够讲清"为什么需要分块"。但任何生产 RAG 系统要做到"长段落也能正确回答"，都绕不开 parent-child —— 这是 RAGFlow / LangChain `ParentDocumentRetriever`（LangChain 的父子检索器） / LlamaIndex `HierarchicalNodeParser`（LlamaIndex 的层级节点解析器） 的共同选择。
+我们 s03 的 500 字 cap 是教学原型，够跑通管道、够讲清"为什么需要分块"。但任何生产 RAG 系统要做到"长段落也能正确回答"，都绕不开 parent-child —— 这是 RAGFlow / **LangChain**（Python RAG / LLM 应用编排框架,主流工具链之一）`ParentDocumentRetriever`（LangChain 的父子检索器:小 chunk 检索、命中后回填大 chunk 给 LLM） / **LlamaIndex**（另一主流 RAG 框架,侧重索引 / 查询抽象）`HierarchicalNodeParser`（LlamaIndex 的层级节点解析器:按标题级别建父子节点树） 的共同选择。
 
 ### 参考
 

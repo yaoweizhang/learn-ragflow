@@ -4,6 +4,8 @@
 
 > *"`SentenceTransformer(...).encode(...)` 三行跑通的，是 s01 词袋模型留下'无语义'问题的最小答案；同一接口后挂 openai / ollama，是让 32 行代码能切后端不冲索引的最小扩容器"*
 >
+> 注: `SentenceTransformer`(Hugging Face 官方句向量库,一行代码加载预训练模型跑 `encode(texts)` 返回 512 维向量);`HuggingFace Hub`(HuggingFace 模型仓库,用 `BAAI/...` 这类 model_id 下载模型权重);`BAAI`(智源研究院 Beijing Academy of AI,BGE 系列模型的出品方)。
+>
 > **链路位置**: 离线索引链路第三步 (s02 → s03 → **s04** → s05)
 > **代码文件**: local_bge.py · provider_routing.py
 
