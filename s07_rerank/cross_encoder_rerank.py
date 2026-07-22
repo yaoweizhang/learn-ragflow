@@ -13,6 +13,15 @@ s06 unit 01 BM25)。
 运行: python s07_rerank/cross_encoder_rerank.py
 需要: pip install pypdf python-docx sentence-transformers chromadb FlagEmbedding;
 samples/{server_whitepaper.pdf,disclosure.docx};首次跑会下载 BAAI/bge-reranker-base (~1GB)
+
+术语速览 (本文件首次出现):
+- Rerank (重排序 / 精排): 在召回粗排基础上对候选重打分,提升 top-k 准确率
+- cross-encoder (交叉编码器): 把 query+doc 拼成一对送进 transformer,联合编码打分
+- bi-encoder (双编码器): query/doc 各自独立编码,只算向量距离;s05 用的就是双编码器
+- FlagReranker: BAAI FlagEmbedding 库提供的 cross-encoder 精排接口
+- BGE reranker: cross-encoder 系列模型,bge-reranker-base 是基础版,~1GB
+- compute_score(pairs): 把 [[q,d1],[q,d2],...] 一次性算相关分,比循环快
+- normalize=True: FlagReranker 把 sigmoid 输出归一到 [0,1],越接近 1 越相关
 """
 import importlib.util
 import os

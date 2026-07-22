@@ -14,6 +14,14 @@ FusionExpr("weighted_sum", {"weights": "0.05,0.95"})。
 运行: python s06_retrieval/hybrid_fusion.py
 需要: pip install pypdf python-docx sentence-transformers chromadb;
 samples/{server_whitepaper.pdf,disclosure.docx}
+
+术语速览 (本文件首次出现):
+- 混合检索 (hybrid retrieval): BM25 字面召回 + dense 语义召回并行 + 加权融合
+- 归一 (normalization): 把 BM25 累加分除以最大值,压到 [0,1] 才能跟 cosine 叠加
+- α (alpha): 融合权重,alpha 越大越偏向量,越小越偏字面;0.95 = 强向量主导
+- dense_score_fn: 由调用方注入的 dense 打分函数,解耦向量库实现
+- FusionExpr (RAGFlow): RAGFlow 的融合表达式 DSL,如 "weighted_sum"
+- weighted_sum: 各路分按权重线性求和,本教程 hybrid 的工业对应
 """
 import importlib.util
 import os

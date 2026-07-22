@@ -7,6 +7,13 @@ s11 / unit 01 — 表格抽取：用 pdfplumber 从 PDF 里抓所有非空表格
 
 运行: python s11_multimodal/table_extract.py
 需要: pip install pdfplumber；samples/server_whitepaper.pdf 至少含 1 张表格
+
+术语速览 (本文件首次出现):
+- pdfplumber: 基于 pdfminer.six 的 PDF 解析库,可读到字符/矩形/线条等底层对象
+- 表格抽取 (table extraction): 把 PDF 里的二维表格按行列原样抽出来
+- extract_tables(): pdfplumber 的启发式画线抽表 API,返回 list[list[cell]]
+- 双重空表过滤: 表本身非空 + 至少一行有非空白单元格,启发式排除"页眉伪表格"
+- 上下文管理器 (with): `with pdfplumber.open(...) as pdf` 自动关闭文件句柄
 """
 from pathlib import Path
 import pdfplumber

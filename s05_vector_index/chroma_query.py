@@ -9,6 +9,13 @@ query embedding 跟索引时的向量在同一空间。
 
 运行: python s05_vector_index/chroma_query.py
 需要: 先跑过 unit 01 让 _chroma/ 有数据;否则会打印提示并退出。
+
+术语速览 (本文件首次出现):
+- 向量召回 / ANN 检索 (Approximate Nearest Neighbor): 在亿级向量里快速找最近邻的近似算法
+- query embedding: 把查询文本也用同款模型转成向量,与索引向量在同一空间才可比
+- cosine distance → similarity: 1 - distance = similarity,值越大越相关
+- n_results (k): Chroma `query()` 返回 top-k 条结果
+- 索引不存在时 graceful skip: 检测 DB_DIR / collection 不存在就打印提示退出,不抛 traceback
 """
 import os
 import sys

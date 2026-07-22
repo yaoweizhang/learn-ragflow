@@ -11,6 +11,16 @@ unit 02 (hybrid_fusion) 会复用这里的 BM25/tokenize,叠加 dense cosine
 
 运行: python s06_retrieval/bm25.py
 需要: pip install pypdf python-docx;samples/{server_whitepaper.pdf,disclosure.docx}
+
+术语速览 (本文件首次出现):
+- BM25 (Best Matching 25): 经典信息检索打分公式,基于 TF-IDF + 长度归一
+- tf (term frequency): 词在文档里出现的次数
+- idf (inverse document frequency): 逆文档频率,词越罕见权重越高
+- k1 (TF 饱和参数): 控制 tf 增长到多大开始"封顶",默认 1.5
+- b (长度归一参数): 0=不归一、1=完全归一,默认 0.75
+- avgdl (average document length): 语料平均文档长度,BM25 长度归一的分母
+- TF-IDF: 词频 × 逆文档频率,BM25 的前身
+- 召回 / bm25_topk: 按 BM25 分降序返回前 k 条命中
 """
 import math
 import re

@@ -9,6 +9,14 @@ messages、解析 action、路由工具、终止条件。
 
 运行: python s09_agent_tools/react_loop.py
 需要: 跑通 s09 unit 01; .env 里有 LLM_API_KEY(可选,无也能跑骨架)
+
+术语速览 (本文件首次出现):
+- ReAct: Reasoning + Acting,LLM 交替输出 Thought/Action/Observation 的循环范式
+- Thought / Action / Observation: ReAct 三段式,思考→执行→观察反馈
+- max_steps: 最大循环轮数,防止 LLM 死循环把 token 烧光
+- JSON retry: ActionInput 解析失败时把原文当 Observation 回灌,让 LLM 自我修正
+- trace: 记录每轮 thought/action/obs 的列表,用于调试 / 单元测试 / 可视化
+- 终止条件: finish 动作 / 解析不到 Action / max_steps 用尽,任一即停
 """
 import importlib.util
 import json

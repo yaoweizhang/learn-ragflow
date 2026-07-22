@@ -3,6 +3,14 @@
 把 s04 本地 BGE embed + s06 混合检索 fusion + s07 BGE rerank + s08 prompt answer
 串成一条 POST /qa 链路:s04 embed_local(question) → s06 hybrid_topk(docs, q, qv,
 dense_score_fn, k=10, α=0.95) → s07 rerank(q, cands, top_k=3) → s08 answer(q, top)。
+
+术语速览 (本文件首次出现):
+- FastAPI: Python 的现代 Web 框架,基于 pydantic 强类型 + 自动生成 OpenAPI 文档
+- pydantic BaseModel: 用类型注解定义请求 schema,字段自动校验
+- HTTPException: FastAPI 抛 HTTP 错误的工具,如 503 表示服务暂不可用
+- lazy-load (懒加载): 第一次请求时才加载 collection,避免启动期就重
+- uvicorn: ASGI 服务器,FastAPI 的标准运行器
+- POST /qa: REST 端点,前端 fetch / curl 都能调用
 """
 import sys
 from pathlib import Path

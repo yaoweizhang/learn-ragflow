@@ -10,6 +10,14 @@ docker-compose.yml 的"一次启动"工作流。
 运行: python s12_deployment/fastapi_docker.py
 需要: Docker Desktop 已装；项目根 .env 配好 LLM_API_KEY；
       s05_vector_index/_chroma 索引已生成。
+
+术语速览 (本文件首次出现):
+- Docker Compose: 基于 YAML 的多容器编排工具,docker-compose.yml 声明服务/端口/卷
+- subprocess.run: Python 启动子进程的 API,check=True 让非零退出码抛异常
+- cwd (current working directory): 子进程的工作目录,让 compose 找到同名 yml
+- shutil.which: 查 PATH 上是否有某可执行文件,用于检测 docker 是否安装
+- gating (前置校验): 启动前先检查 .env / 索引是否存在,失败提前退出
+- 优雅降级 (graceful degradation): 环境不满足时不崩,只打印"该敲的命令"
 """
 import subprocess
 from pathlib import Path

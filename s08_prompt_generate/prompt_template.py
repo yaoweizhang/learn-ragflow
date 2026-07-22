@@ -11,6 +11,15 @@ chapter-root)。LLM 调用走 OpenAI SDK(已在 requirements.txt),无
 
 运行: python s08_prompt_generate/prompt_template.py
 需要: 跑通 s07; .env 里有 LLM_API_KEY(可选,无也能跑)
+
+术语速览 (本文件首次出现):
+- prompt 模板: 把 question 和 context 占位符拼成最终 prompt 的字符串模板
+- 引用角标 [i]: 在回答里给每条引用的资料编号,跟 _format_context 一一对应
+- citations: 返回结构里的引用列表,每条含 source/page,用于前端高亮
+- 拒答兜底: prompt 明确告诉 LLM "资料不足就回答我不知道",防止硬凑
+- <think>...</think> 块: MiniMax / DeepSeek R1 等推理模型的中间思考过程,正则剥离
+- temperature=0: 让 LLM 选最可能 token,生成结果稳定可复现
+- chat completions: OpenAI 兼容的多轮对话接口,一次 prompt 一次回复
 """
 import importlib.util
 import os

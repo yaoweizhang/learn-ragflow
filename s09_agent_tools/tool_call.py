@@ -12,6 +12,14 @@ chapter-root)。LLM 走 OpenAI SDK,无 `LLM_API_KEY` 时打印示例响应让流
 
 运行: python s09_agent_tools/tool_call.py
 需要: 跑通 s08; .env 里有 LLM_API_KEY(可选,无也能跑)
+
+术语速览 (本文件首次出现):
+- Agent / 工具调用: 让 LLM 自己决定调哪个工具(函数)而不是直接答
+- tool_calls 字段: OpenAI 兼容 API 的结构化工具调用字段,LLM 直接返回函数名+参数
+- 系统提示 (system prompt): 描述可用工具和输出格式的字符串,放在 messages[0]
+- retrieve / finish: 本章注册的两个工具,前者检索、后者收尾
+- ActionInput JSON: LLM 按规范输出的工具参数,正则解析或失败回退
+- 单步 (single_shot): 一次 LLM 调用就走完工具选择,完整循环留给 unit 02
 """
 import importlib.util
 import os

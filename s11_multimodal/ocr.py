@@ -8,6 +8,14 @@ s11 / unit 02 — OCR：用 pytesseract + Pillow 跑中英文 OCR。
 运行: python s11_multimodal/ocr.py
 需要: pip install pytesseract Pillow + 系统装 tesseract 二进制 + chi_sim 语言包。
       缺任何一项脚本会优雅跳过，打印提示而不是炸栈。
+
+术语速览 (本文件首次出现):
+- OCR (Optical Character Recognition): 光学字符识别,把图片里的字"读"成文本
+- pytesseract: Python 调用系统 tesseract 二进制的薄封装包,本身不做识别
+- Pillow (PIL 分支): Python 图像读写库,`Image.open` 打开图片
+- chi_sim + eng: tesseract 同时跑简体中文 + 英文模型,多语言一起识别
+- TesseractNotFoundError: pytesseract 在系统找不到 tesseract 二进制时抛的异常
+- 三类异常分别 catch: ImportError (缺包) / TesseractNotFoundError (缺二进制) / FileNotFoundError (缺图)
 """
 from pathlib import Path
 
