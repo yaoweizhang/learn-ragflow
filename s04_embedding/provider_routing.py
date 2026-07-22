@@ -14,6 +14,13 @@ ENV:
   EMBED_MODEL       openai 默认 text-embedding-3-small,ollama 默认 bge-m3
 
 运行: python s04_embedding/provider_routing.py
+
+术语速览 (本文件首次出现):
+- Provider 路由 / 工厂模式: 按配置选不同后端实现的分发层,新增 backend 只改注册表
+- OpenAI embeddings: OpenAI 的 text-embedding-3-small / text-embedding-3-large 等模型 API
+- Ollama: 本地运行开源 LLM / embedding 模型的工具,默认端口 11434
+- _REGISTRY: provider 名字到实现函数的字典,本教程的简易工厂
+- graceful fallback: 后端不可用时打印提示跳过,不抛 traceback
 """
 import os
 from dotenv import load_dotenv

@@ -11,6 +11,14 @@ unit 02 会把同一套函数跑在真实样本上,展示 3 类典型失败
 
 运行: python s03_chunking/basic_chunk.py
 需要: 跑通 s02;samples/{server_whitepaper.pdf,disclosure.docx}
+
+术语速览 (本文件首次出现):
+- chunk: 一段被切出来喂给 embedding / 检索的连续文本块
+- chunk_id: chunk 的唯一标识,常用 `{source}#{page}#p{n}` 格式
+- 句界切: 在 [.。!?！？] 等中英文标点后切分,避免把句子劈成两半
+- lookbehind 正则: `(?<=...)` 零宽断言,从右往左看但不消耗字符
+- 贪心装桶: 把句子按顺序塞桶,桶满就开新桶,保证块长度 ≤ cap
+- max_chars: 每块最大字符数,本教程默认 500
 """
 import re
 import sys

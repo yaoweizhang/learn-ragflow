@@ -8,6 +8,14 @@ unit 02 的路由分发会把同款本地实现当成 EMBED_PROVIDER=local 的 d
 需要: pip install sentence-transformers；首次运行会从 HF Hub 下载 ~100MB 模型到
 ~/.cache/huggingface/hub/，离线环境会失败——生产通常构建镜像时预下载并挂
 HF_HOME。
+
+术语速览 (本文件首次出现):
+- Embedding: 把文本映射成稠密实数向量的过程,语义相近的文本向量距离近
+- SentenceTransformer: Hugging Face 的句向量库,一行代码加载预训练模型
+- BGE (BAAI General Embedding): 智源研究院开源的中英文通用 embedding 模型族
+- HF Hub: Hugging Face 模型仓库,可用 model_id 一键下载模型
+- 归一化 (L2 norm): 把向量缩到单位长度,使 cosine 等价于点积
+- lru_cache: Python 标准装饰器,缓存函数结果避免重复加载模型
 """
 import os
 import sys

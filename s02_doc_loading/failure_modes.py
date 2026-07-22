@@ -7,6 +7,13 @@ s02 / unit 02 — 失败模式：把 unit 01 的 loader 跑在真实样本上,
 
 运行: python s02_doc_loading/failure_modes.py
 需要: 同 unit 01 + samples/{server_whitepaper.pdf,disclosure.docx}
+
+术语速览 (本文件首次出现):
+- 版面分析 (layout analysis): 把页面切分为标题/正文/表格/图片等区域并标注类型
+- XGBoost: 梯度提升树模型,RAGFlow 用来训练版面分类器
+- 多栏错位 (multi-column reflow): PDF 双栏排版被按行扫,左右栏文本被串成一行
+- importlib.util.spec_from_file_location: 用文件路径加载 Python 模块的 API
+- DOCX 表格: Word 里的 table 对象,与 paragraph 平级;普通 loader 只读 paragraph 会丢表
 """
 import importlib.util
 import sys
