@@ -170,6 +170,8 @@ source env.sh                     # 可选：HF_ENDPOINT=https://hf-mirror.com +
 python s01_what_is_rag/substring_match.py         # 第 1 章 unit 1：朴素检索
 ```
 
+> 注: `env.sh`（项目自带的一键环境脚本,设 `HF_ENDPOINT` 指到 `hf-mirror.com` 国内镜像加速模型下载;用 `LD_PRELOAD` 临时替换新版 `libstdc++` 以兼容较老的 `pyarrow` / `datasets` 符号）;`OpenAI 兼容`（OpenAI-compatible,沿用 OpenAI Chat Completions API 协议的服务,如 DeepSeek / 智谱 GLM / 通义千问 / 自部署 vLLM 等都可填同一份 `LLM_BASE_URL + LLM_MODEL`）。
+
 LLM 端点默认配置 OpenAI 兼容协议（`LLM_BASE_URL` + `LLM_MODEL`），用户可指向任意 OpenAI 兼容服务（OpenAI / DeepSeek / 智谱 / MiniMax / vLLM 自部署等）。`LLM_MODEL` 填你所用服务实际支持的 chat 模型名即可。
 
 ## 目录结构

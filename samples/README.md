@@ -14,7 +14,7 @@
 
 ### 2. `disclosure.docx`
 
-- **格式**：DOCX（Word 文档）
+- **格式**：DOCX（Word 文档,Microsoft Office Open XML 格式,本质是 zip 压缩的 XML 文件,`python-docx` 库可解析）
 - **语言**：中文
 - **内容**：财务披露文档（虚构示例，所有公司名、股票代码、人物、数字均为虚构）
 - **必须包含**：多个段落 + 多个表格
