@@ -17,17 +17,17 @@
 
 **因为向量飘在内存里等于没存。** 如果只把 s04 跑出来的向量扔进 Python `list`、每次启进程重算一次，几万条 chunk 还能忍，几十万条就要算几分钟；更致命的是 —— 你**根本没法在线查**。一次用户 query 进来，难道要把全部向量重新 embed 一遍、再逐条算余弦？s05 要解决的第一件事就是**持久化**（进程关掉不丢）和 **ANN 查询**（百万级向量毫秒级 top-k），把"飘在内存里的向量"变成"可持久化、可检索的数据结构"。
 
-而向量索引本身不是一个黑盒，拆开看是三个独立部件：**ANN 索引 (HNSW)** —— 一种基于图的近似最近邻算法，多层邻近图让搜索从 O(N) 降到 O(log N)，代价是 *近似* 而非 *精确*；**元数据存储 (SQLite)** —— 每条向量附带几列标量字段 (`source` / `page`)，查询时可以 `where={"source": "x.pdf"}` 先过滤再近邻；**持久化层 (PersistentClient)** —— 把 ANN 索引 + SQLite + 文档原文一起写到本地目录，下次 `PersistentClient(path=...)` 直接打开，不丢数据、不重 embed。
+而向量索引本身不是一个黑盒，拆开看是三个独立部件：**ANN 索引 (HNSW)**（Hierarchical Navigable Small World,分层可导航小世界图——一种基于图的近似最近邻算法,多层邻近图让搜索从 O(N) 降到 O(log N),代价是 *近似* 而非 *精确*）；**元数据存储 (SQLite)**（嵌入式 SQL 数据库,Chroma 用它存每条向量的标量字段和原文）—— 每条向量附带几列标量字段 (`source` / `page`)，查询时可以 `where={"source": "x.pdf"}` 先过滤再近邻;**持久化层 (PersistentClient)** —— 把 ANN 索引 + SQLite + 文档原文一起写到本地目录，下次 `PersistentClient(path=...)` 直接打开，不丢数据、不重 embed。
 
 但真正接进链路后，几类典型问题会一个个冒出来：
 
 **第一，维度对不上会爆索引**。同一 collection 混用 512 维 BGE 和 1536 维 OpenAI，Chroma 在 insert 阶段直接 `Dimension mismatch` 报错。s05 这一层只能用"一 collection 一维度 + 重建"的笨办法保证不混 —— `vectors[0]` 硬编码 512 是 BGE-small-zh 的维度，换模型 (`bge-large-zh-v1.5` 是 1024 维) 整张 collection 必须删掉重建，**没有 schema 迁移**。
 
-**第二，元数据过滤做不深**。Chroma 的 `where` 只支持 `$eq / $ne / $in / $nin / $gt / $gte / $lt / $lte` 数值比较 + `$and / $or` 复合，**做不了全文 BM25、做不了 `rank_feature` 加权、做不了聚合桶**。业务侧要做"按部门 / 时间段 / 标签"切片时，`where` 撑不住。
+**第二，元数据过滤做不深**。Chroma 的 `where`（结构化过滤子句,等价于 SQL 的 WHERE）只支持 `$eq / $ne / $in / $nin / $gt / $gte / $lt / $lte` 数值比较 + `$and / $or` 复合，**做不了全文 BM25、做不了 `rank_feature` 加权、做不了聚合桶**。业务侧要做"按部门 / 时间段 / 标签"切片时，`where` 撑不住。
 
 **第三，top-k 召回 vs 精度的取舍**。ANN 是 *近似* 算法 —— `n_results=k` 返回的 k 条不一定是全局最像的，只是大概率最像；更糟的是 **top-k 强制返回 k 条，哪怕最差一条 score 接近 0 也照样返回**，应该加一个分数下限把噪音砍掉，但 Chroma 没有原生 `where` 分数过滤，得在后处理里加。
 
-这三条每一条都对应不同的工业级解法 —— schema 注册、混合检索、分数阈值，都是 s06+ 的主题。**s05 的目标不是解决它们，而是把它们显式暴露出来，让你看到 toy 方案的边界**。这也是为什么不直接用 FAISS / Milvus / Pinecone —— FAISS 没有 `where` 元数据过滤，Pinecone 是托管服务要钱，Milvus 是分布式集群单机跑不起来。Chroma 是"最小可用 toy"，**看得到每一步**：先见边界，再看生产，比直接用封装库学到的多。
+这三条每一条都对应不同的工业级解法 —— schema 注册、混合检索、分数阈值，都是 s06+ 的主题。**s05 的目标不是解决它们，而是把它们显式暴露出来，让你看到 toy 方案的边界**。这也是为什么不直接用 **FAISS**（Facebook AI Similarity Search,Meta 开源的纯向量检索库,速度快但无元数据过滤） / **Milvus**（分布式向量数据库,支持亿级向量 + HA,但需要集群） / **Pinecone**（托管 SaaS 向量库,免运维但按量付费） —— FAISS 没有 `where` 元数据过滤，Pinecone 是托管服务要钱，Milvus 是分布式集群单机跑不起来。Chroma 是"最小可用 toy"，**看得到每一步**：先见边界，再看生产，比直接用封装库学到的多。
 
 ---
 
@@ -127,7 +127,7 @@ python s05_vector_index/chroma_build.py
 indexed 34 chunks into _chroma/ (collection=docs, dim=512)
 ```
 
-磁盘上留下 `s05_vector_index/_chroma/chroma.sqlite3` (文档原文 + metadata) + 一个 `<uuid>/` 目录 (HNSW 索引的 `data_level0.bin` / `header.bin` / `link_lists.bin` / `length.bin` 二进制)。
+磁盘上留下 `s05_vector_index/_chroma/chroma.sqlite3` (文档原文 + metadata) + 一个 `<uuid>/` 目录 (HNSW 索引的 `data_level0.bin`（最底层向量原始数据） / `header.bin`（索引头信息） / `link_lists.bin`（图上每节点的邻居列表） / `length.bin`（节点邻居数） 二进制)。
 
 **观察**: 再次跑会先 `rmtree` 整个目录再重建 —— **重建而非合并**是当前最简单的正确性取舍，跑两次结果完全一样，不会塞重复 `chunk_id`。metadata 里 `page` 是 `str` 不是 `int` (`"1"` / `""`)，因为 Chroma 0.5.x 拒绝 int+string 混合、拒绝 `None`；类型抖动被吸收在 s05 层，下游 s06+ 拿到的 `page` 又会在 `chroma_query.py` 里翻回 `int / None`。
 
@@ -228,8 +228,8 @@ top-3 hits (query='应收账款'):
 
 s05 把 s04 算出的 512 维向量绑回 chunk 文本 + `source` / `page` 元数据，落到 Chroma `PersistentClient`，关掉 Python 不丢、重启直接打开继续查 —— 实现了"s05 = 持久化 + ANN 检索"的最小闭环。``chroma_build.py`` 把"写"做出来，``chroma_query.py`` 把"读"做出来，两者通过 `_chroma/` 目录解耦。但这个 toy 方案的每一处边界，都是后续章节的填空入口：
 
-- **重建成本 + 单机瓶颈** — `shutil.rmtree` 整棵目录树重建，几十万 chunk 时分钟级；Chroma 单点故障、不能水平扩展。生产要走 ES 的 `_bulk` 增量 upsert + 专用服务进程读写分离。
-- **维度硬编码 + metadata 太薄** — `vectors[0]` 锁死 512，换模型整张 collection 重建；metadata 只 `source` / `page` 两列，做不了"按部门 / 时间段 / 多标签"切片。生产在 ES 上跑 `bool + knn + terms + range + rank_feature` 一锅炖。
+- **重建成本 + 单机瓶颈** — `shutil.rmtree` 整棵目录树重建，几十万 chunk 时分钟级；Chroma 单点故障、不能水平扩展。生产要走 **ES**（Elasticsearch,分布式搜索 + 分析引擎,支持 BM25 + 向量混合检索） 的 `_bulk` 批量 upsert + 专用服务进程读写分离。
+- **维度硬编码 + metadata 太薄** — `vectors[0]` 锁死 512，换模型整张 collection 重建；metadata 只 `source` / `page` 两列，做不了"按部门 / 时间段 / 多标签"切片。生产在 ES 上跑 `bool + knn + terms + range + rank_feature`（ES 查询 DSL 组合:布尔过滤 + KNN 向量召回 + 精确词 + 范围 + 相关度加权）一锅炖。
 - **dense-only + 无 score 阈值** — 单向量通道漏掉"精确词 / 专业术语"query，top-k 强制返回噪音。这是 s06 混合检索 + s07 rerank 要解决的召回质量问题。
 
 s06 **混合检索**: 在 dense 召回旁边开一条 BM25 词法通道，两条结果按 α-weighted 融合 —— 既救回 dense 漏的"精确词 / 专业术语"query，又保留 dense 的语义兜底，single-channel 召回升级成 hybrid，把 `chroma_query.py` 留下的"近义但错"漏召回补上。
@@ -291,7 +291,7 @@ hits = col.query(
 
 #### 4. 一句话总结
 
-**`where={"source": "..."}` 就够了 —— 把"按业务维度切"和"按相似度排"两步合并成一次原子操作，是 Chroma 比手写 FAISS + 自己维护 dict 的唯一胜场**；真要做权限 / 时间段 / 多标签过滤，Chroma 就得换成 ES 或 Infinity（见 README.md 第二节"真实世界的问题"）。
+**`where={"source": "..."}` 就够了 —— 把"按业务维度切"和"按相似度排"两步合并成一次原子操作，是 Chroma 比手写 FAISS + 自己维护 dict 的唯一胜场**；真要做权限 / 时间段 / 多标签过滤，Chroma 就得换成 ES 或 **Infinity**（国产 AI 原生数据库,支持 BM25 + 向量 + 全文 + 过滤的统一检索,见 README.md 第二节"真实世界的问题"）。
 
 ### Q2. 重建索引时 `shutil.rmtree(DB_DIR)` 是不是最干净的取舍？
 
