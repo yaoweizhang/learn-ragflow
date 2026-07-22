@@ -17,7 +17,7 @@ s05 把 chunk 落盘成可查的索引, 但"查"这个动作还没定义: 用户
 
 **第一, 纯 dense 漏字面**。s04 的 BGE dense 向量擅长语义近邻: query `营收` 能召回写着 `营业收入` 的 chunk, `内存` 能召回 `RAM`。但对精确型号 (`R3630 G5`)、编号 (`ZX-00123`)、专有术语, dense 会把它们拉偏到"语义相似但字面不对"的邻居 — 长 ID 在 embedding 空间里噪声大, 一个字符差异在 512 维里几乎不改变方向。用户想精确定位一个型号, dense 却给他一堆"看起来相关"的近似段。
 
-**第二, 纯 BM25 漏同义**。BM25 是纯统计的稀疏词法召回: 词项命中就打分 (tf + idf + 长度归一), 型号 / 编号 / 术语这类"字面强信号"它抓得极准, 可解释性也强 (每个分都能反推到具体 token)。但它对同义改写完全无能 — `内存` 和 `RAM` 在 BM25 下是 0 分, `营收` 和 `营业收入` 也互不命中。用户换个说法提问, BM25 就全 miss。
+**第二, 纯 BM25 漏同义**。**BM25**（Best Matching 25,经典的信息检索打分公式,基于词频 tf + 逆文档频率 idf + 长度归一）是纯统计的**稀疏词法召回**: 词项命中就打分 (**tf** = term frequency 词频,词在文档里出现的次数; **idf** = inverse document frequency 逆文档频率,词在多少文档里出现的反比,越罕见的词权重越高), 型号 / 编号 / 术语这类"字面强信号"它抓得极准, 可解释性也强 (每个分都能反推到具体 token)。但它对同义改写完全无能 — `内存` 和 `RAM` 在 BM25 下是 0 分, `营收` 和 `营业收入` 也互不命中。用户换个说法提问, BM25 就全 miss。
 
 **第三, 两路信号量纲不同, 不能直接相加**。就算你想"两路都要", 也不能简单把分加起来: BM25 累加分可能到几 (无界), dense cosine 落在 `[0, 1]`。直接相加会让 BM25 一边倒地主导排序, dense 的语义信号被淹没。融合前**必须先各自归一**, 再按一个权重 `α` 加权 — `α` 大偏语义, `α` 小偏字面。而 `α` 到底该取多少、是常数还是 per-query 入参, 又是一个必须面对的取舍。
 
@@ -61,7 +61,7 @@ s06 用 **两个递进的脚本** 把混合检索跑起来。代码 1 先把 BM2
 **5 步**:
 1. 内联 `pypdf` + `python-docx` 加载 `samples/` (复刻 s02 loader), 再按 500 字符 cap 中英句界切成 chunk (复刻 s03 chunker) — 得到 34 个自包含 chunk
 2. `tokenize(text)` — 中文按 1-2 字滑动窗口 + 英文/数字单词拆分 (整体 lowercase), 纯中文段落也有 df 命中
-3. `BM25(docs, k1=1.5, b=0.75)` — 构造期一次性算 `df` / `tf` / `avgdl`, 查询期只跑打分公式的 `tf` 部分
+3. `BM25(docs, k1=1.5, b=0.75)` — 构造期一次性算 `df` / `tf` / `avgdl`, 查询期只跑打分公式的 `tf` 部分;**k1**（词频饱和参数,控制 tf 增长到多大开始"封顶",1.5 是经典默认）**b**（长度归一参数,0=不做长度归一,1=完全按长度归一,0.75 是经典默认）
 4. `score(query)` — 对每个 doc 算 BM25 累加分 (`IDF * tf * (k1+1) / (tf + k1*(1 - b + b*dl/avgdl))`)
 5. `bm25_topk(docs, query, k)` — 按 BM25 分降序, 取分 > 0 的前 k 条
 
@@ -159,7 +159,7 @@ BM25 是纯字面召回 — `内存` 找不到 `RAM`, `营收` 找不到 `营业
 1. 用 `importlib` 加载 代码 1 (目录以数字开头, 普通 `import` 报 SyntaxError), 复用它的 `BM25` / `tokenize` / `_load_chunks` — 不重写、不跨章节
 2. 用 s04 同款本地 BGE (`bge-small-zh-v1.5`, `normalize_embeddings=True`) 把 34 chunk 和 query 编码成 512 维向量
 3. `dense_score_fn(chunk) -> float` — 由调用方注入, 本节就地实现"对每条 chunk 暴力算 cosine" (chunk 量级小、都在内存); 生产里换成 chroma `col.query` 或 ES `knn` 一行 import 替换
-4. **归一 + 加权**: BM25 分除以 `max(bm25_scores)` 落 `[0, 1]`, dense cosine 已是 `[0, 1]`, 按 `final = α * vec + (1 - α) * bm25_norm` 融合; 默认 `α=0.95` 偏向量, 镜像生产 `FusionExpr("weighted_sum", {"weights": "0.05,0.95"})`
+4. **归一 + 加权**: BM25 分除以 `max(bm25_scores)` 落 `[0, 1]`, dense cosine 已是 `[0, 1]`, 按 `final = α * vec + (1 - α) * bm25_norm` 融合; 默认 `α=0.95` 偏向量, 镜像生产 `FusionExpr`（RAGFlow 的融合表达式 DSL）("weighted_sum"（加权求和）, {"weights": "0.05,0.95"})
 5. 打印 hybrid top-3, **两个子分都可见** (`vec` / `bm25` / `final`), 方便看是 dense 还是 BM25 把某条 chunk 拉上来的
 
 ```python
@@ -239,8 +239,8 @@ hybrid top-3 (with both sub-scores visible):
 
 s06 是在线检索链路的召回入口: 代码 1 把 BM25 字面召回跑通, 代码 2 把它和 dense cosine 融合成鲁棒的 hybrid 粗排。但每一步都留下脆弱点, 这些是后续章节的填空目标:
 
-- **代码 1 BM25 漏同义 + 分词 naive** — `内存` 找不到 `RAM`, 1-2 字滑动窗口噪声大; 前者靠 代码 2 叠 dense 补, 后者生产里换 `jieba` 带词典 tokenizer + 倒排索引 (`bm25s` / `pyserini`)。
-- **代码 2 `α` 写死 + 无第三层信号** — 同一个 `α` 对术语型和概念型 query 一刀切; 生产把 `vector_similarity_weight` 做成 API 入参, 并加 `sim = tkweight*tksim + vtweight*vtsim + rank_fea` 的 PageRank / tag boost 第三层信号。
+- **代码 1 BM25 漏同义 + 分词 naive** — `内存` 找不到 `RAM`, 1-2 字滑动窗口噪声大; 前者靠 代码 2 叠 dense 补, 后者生产里换 `jieba`（中文分词库,带词典 + HMM,比滑动窗口准得多）带词典 tokenizer + 倒排索引 (`bm25s`（纯 Python BM25 库,带预建倒排索引） / `pyserini`（Lucene 底层 BM25 库,工业级）)。
+- **代码 2 `α` 写死 + 无第三层信号** — 同一个 `α` 对术语型和概念型 query 一刀切; 生产把 `vector_similarity_weight` 做成 API 入参, 并加 `sim = tkweight*tksim + vtweight*vtsim + rank_fea` 的 **PageRank**（Google 的网页权威度算法,把图上的"被引用"度作为权威信号） / **tag boost**（按业务标签加权,如文档类型 / 时效性 / 部门）第三层信号。
 - **代码 2 只出粗排, 无精排** — `hybrid_topk` 的 top-k 是召回粗排, "对不对"还得靠精排。
 
 s07 **rerank 精排**: 在 s06 输出的 hybrid top-k 顶上叠一层 cross-encoder — 把 query 和每条候选 chunk 拼成 pair 送 `[CLS]` 头重打分, 把 hybrid 的 top-20 重排成真正相关的 top-3 给 LLM。粗排看"召回全不全", 精排看"排序对不对", 两级串起来才是生产级的检索质量。
@@ -282,7 +282,7 @@ query=内存 alpha=0.95
 
 第三个 hit 在 α=1.0 时已经不是"内存"字面了，是向量把"内存"和"7。存货"拉得太近——这正是 alpha=1 的副作用：牺牲字面精度换语义召回。
 
-**怎么调？** 靠**带标签的交叉验证集**——一批 query + 人工标注的相关 chunk id，跑一遍 sweep(0.0， 0.1， 。。。， 1.0），看每个 alpha 下的 recall@k / MRR。经验上 0.3 ~ 0.7 都合理，极端值只在特定场景才合适：
+**怎么调？** 靠**带标签的交叉验证集**——一批 query + 人工标注的相关 chunk id，跑一遍 sweep(0.0， 0.1， 。。。， 1.0），看每个 alpha 下的 **recall@k**（top-k 里召回正确答案的比例） / **MRR**（Mean Reciprocal Rank,第一个正确答案出现位置的倒数取平均,值越高排序越准）。经验上 0.3 ~ 0.7 都合理，极端值只在特定场景才合适：
 
 - 0.0~0.3：术语密集的财务/法务/医疗场景；
 - 0.7~1.0：开放域问答、闲聊、文档摘要型场景。
